@@ -1,0 +1,205 @@
+﻿<Window x:Class="MetroCarpinteria.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="clr-namespace:MetroCarpinteria.App.Models"
+        mc:Ignorable="d"
+        Title="METRO CARPINTERÍA"
+        MinWidth="1100"
+        MinHeight="700"
+        Width="1280"
+        Height="800"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource ContentBackgroundBrush}"
+        FontFamily="{StaticResource AppFont}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Grid.Column="0"
+                Background="{StaticResource SidebarDarkBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Brand -->
+                <StackPanel Grid.Row="0" Margin="20,28,20,24">
+                    <Image Source="/Assets/logo-circle.jpeg"
+                           Height="72"
+                           Stretch="Uniform"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,12" />
+                    <TextBlock Text="METRO CARPINTERÍA"
+                               Foreground="{StaticResource AccentGoldBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               Opacity="0.85" />
+                </StackPanel>
+
+                <!-- Navigation -->
+                <ListBox Grid.Row="1"
+                         ItemsSource="{Binding NavItems}"
+                         SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="0,0,0,8"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="8,2" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="itemBorder"
+                                                Background="Transparent"
+                                                CornerRadius="10"
+                                                Padding="16,14">
+                                            <ContentPresenter />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="itemBorder" Property="Background" Value="{StaticResource SidebarHoverBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="itemBorder" Property="Background" Value="{StaticResource PrimaryBrownBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:NavItem}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Icon}"
+                                           FontSize="16"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,12,0" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Title}"
+                                           Foreground="{StaticResource TextOnDarkBrush}"
+                                           FontSize="14"
+                                           VerticalAlignment="Center" />
+                                <Border Grid.Column="2"
+                                        Background="{StaticResource AlertBrush}"
+                                        CornerRadius="10"
+                                        MinWidth="20"
+                                        Height="20"
+                                        Padding="6,0"
+                                        VerticalAlignment="Center"
+                                        Visibility="{Binding DataContext.LowStockAlertCount, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IntToVisibilityConverter}}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Section}" Value="{x:Static models:NavigationSection.Inventory}">
+                                                    <Setter Property="Visibility" Value="{Binding DataContext.LowStockAlertCount, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IntToVisibilityConverter}}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding DataContext.LowStockAlertCount, RelativeSource={RelativeSource AncestorType=Window}}"
+                                               Foreground="White"
+                                               FontSize="11"
+                                               FontWeight="Bold"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Footer -->
+                <StackPanel Grid.Row="2" Margin="20,16,20,24">
+                    <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,0,0,16" />
+                    <TextBlock Text="Gestión local"
+                               Foreground="{StaticResource TextOnDarkBrush}"
+                               Opacity="0.5"
+                               FontSize="11"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="v1.0"
+                               Foreground="{StaticResource AccentGoldBrush}"
+                               Opacity="0.7"
+                               FontSize="11"
+                               HorizontalAlignment="Center"
+                               Margin="0,4,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main content -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="64" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Top bar -->
+            <Border Grid.Row="0"
+                    Background="{StaticResource CardBackgroundBrush}"
+                    BorderBrush="#1A3D2914"
+                    BorderThickness="0,0,0,1"
+                    Padding="32,0">
+                <Grid>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SelectedNavItem.Title}"
+                                   FontSize="20"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                        <TextBlock Text="{Binding CurrentDate}"
+                                   Style="{StaticResource SubtitleStyle}"
+                                   FontSize="12"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center">
+                        <Border Background="#1AC45C26"
+                                CornerRadius="8"
+                                Padding="12,6"
+                                Margin="0,0,12,0"
+                                Visibility="{Binding LowStockAlertCount, Converter={StaticResource IntToVisibilityConverter}}">
+                            <TextBlock Foreground="{StaticResource AlertBrush}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold">
+                                <Run Text="⚠ " />
+                                <Run Text="{Binding LowStockAlertCount, Mode=OneWay}" />
+                                <Run Text=" stock bajo" />
+                            </TextBlock>
+                        </Border>
+                        <Image Source="/Assets/logo-horizontal.jpeg"
+                               Height="36"
+                               Stretch="Uniform"
+                               Opacity="0.9" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Page content -->
+            <ContentControl Grid.Row="1"
+                            Content="{Binding CurrentViewModel}"
+                            x:Name="PageContent" />
+        </Grid>
+    </Grid>
+</Window>

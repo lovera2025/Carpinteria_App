@@ -1,0 +1,169 @@
+<UserControl x:Class="MetroCarpinteria.App.Views.HomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:MetroCarpinteria.App.Controls"
+             mc:Ignorable="d"
+             d:DesignHeight="600"
+             d:DesignWidth="900">
+    <Grid>
+        <controls:AnimatedBackground />
+
+        <ScrollViewer x:Name="PageRoot"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="32,24"
+                      Opacity="0">
+            <StackPanel MaxWidth="1100">
+                <!-- Hero -->
+                <Border CornerRadius="20"
+                        Margin="0,0,0,28"
+                        ClipToBounds="True"
+                        Height="200">
+                    <Grid>
+                        <Image Source="/Assets/banner.jpeg"
+                               Stretch="UniformToFill"
+                               Opacity="0.85" />
+                        <Rectangle>
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                                    <GradientStop Color="#CC1A1614" Offset="0" />
+                                    <GradientStop Color="#661A1614" Offset="0.6" />
+                                    <GradientStop Color="#331A1614" Offset="1" />
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                        </Rectangle>
+                        <StackPanel VerticalAlignment="Center"
+                                    Margin="36,0"
+                                    MaxWidth="520">
+                            <Image Source="/Assets/logo-horizontal.jpeg"
+                                   Height="56"
+                                   HorizontalAlignment="Left"
+                                   Stretch="Uniform" />
+                            <TextBlock Text="{Binding WelcomeMessage}"
+                                       Foreground="{StaticResource TextOnDarkBrush}"
+                                       FontSize="18"
+                                       Margin="0,16,0,4"
+                                       Opacity="0.95" />
+                            <TextBlock Text="{Binding ContactInfo}"
+                                       Foreground="{StaticResource AccentGoldLightBrush}"
+                                       FontSize="13"
+                                       Opacity="0.9" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Dashboard cards -->
+                <TextBlock Text="Resumen del día"
+                           Style="{StaticResource PageTitleStyle}"
+                           Margin="0,0,0,16" />
+
+                <ItemsControl ItemsSource="{Binding Cards}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="2" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource CardStyle}"
+                                    Margin="0,0,16,16"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="1" ScaleY="1" />
+                                </Border.RenderTransform>
+                                <Border.Triggers>
+                                    <EventTrigger RoutedEvent="MouseEnter">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                 To="1.02"
+                                                                 Duration="0:0:0.2" />
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                 To="1.02"
+                                                                 Duration="0:0:0.2" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                    <EventTrigger RoutedEvent="MouseLeave">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                 To="1"
+                                                                 Duration="0:0:0.2" />
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                 To="1"
+                                                                 Duration="0:0:0.2" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Border.Triggers>
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,10,0">
+                                            <Ellipse.Fill>
+                                                <Binding Path="AccentColor" Converter="{StaticResource StringToBrushConverter}" />
+                                            </Ellipse.Fill>
+                                        </Ellipse>
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontSize="14"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Value}"
+                                               FontSize="32"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                               Margin="0,0,0,6" />
+                                    <TextBlock Text="{Binding Description}"
+                                               Style="{StaticResource SubtitleStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Quick actions -->
+                <TextBlock Text="Accesos rápidos"
+                           Style="{StaticResource PageTitleStyle}"
+                           FontSize="22"
+                           Margin="0,12,0,16" />
+
+                <WrapPanel>
+                    <Button Content="Nuevo proyecto"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Margin="0,0,12,12"
+                            IsEnabled="False"
+                            ToolTip="Disponible en Parte 5" />
+                    <Button Content="Registrar stock"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="0,0,12,12"
+                            IsEnabled="False"
+                            ToolTip="Disponible en Parte 3" />
+                    <Button Content="Abrir caja"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="0,0,12,12"
+                            IsEnabled="False"
+                            ToolTip="Disponible en Parte 4" />
+                </WrapPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+
+    <UserControl.Triggers>
+        <EventTrigger RoutedEvent="Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="PageRoot"
+                                     Storyboard.TargetProperty="Opacity"
+                                     From="0"
+                                     To="1"
+                                     Duration="0:0:0.35">
+                        <DoubleAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut" />
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </UserControl.Triggers>
+</UserControl>
