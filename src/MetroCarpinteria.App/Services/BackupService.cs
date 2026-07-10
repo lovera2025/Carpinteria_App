@@ -44,6 +44,29 @@ public sealed class BackupService
         return backupInfo;
     }
 
+    public void RestoreBackup(string backupPath)
+    {
+        if (string.IsNullOrWhiteSpace(backupPath) || !File.Exists(backupPath))
+        {
+            throw new InvalidOperationException("No se encontró el archivo de respaldo.");
+        }
+
+        _paths.EnsureDirectories();
+
+        if (File.Exists(_paths.DatabasePath))
+        {
+            CheckpointWal();
+            var safetyName = $"carpinteria_pre_restore_{DateTime.Now:yyyyMMdd_HHmmss}.db";
+            var safetyPath = Path.Combine(_paths.BackupsDirectory, safetyName);
+            File.Copy(_paths.DatabasePath, safetyPath, overwrite: false);
+        }
+
+        DeleteSidecarFiles(_paths.DatabasePath);
+        File.Copy(backupPath, _paths.DatabasePath, overwrite: true);
+        DeleteSidecarFiles(_paths.DatabasePath);
+        SqliteConnection.ClearAllPools();
+    }
+
     public IReadOnlyList<BackupInfo> GetRecentBackups()
     {
         if (!Directory.Exists(_paths.BackupsDirectory))
@@ -71,6 +94,25 @@ public sealed class BackupService
         using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
         command.ExecuteNonQuery();
+    }
+
+    private static void DeleteSidecarFiles(string databasePath)
+    {
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            var sidecar = databasePath + suffix;
+            if (File.Exists(sidecar))
+            {
+                try
+                {
+                    File.Delete(sidecar);
+                }
+                catch
+                {
+                    // Best effort: restore still proceeds with the main db file.
+                }
+            }
+        }
     }
 
     private void CleanupOldBackups()

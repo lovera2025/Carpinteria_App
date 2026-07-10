@@ -149,6 +149,7 @@
                                     FontSize="12" />
                         </Grid>
                         <ListView ItemsSource="{Binding RecentBackups}"
+                                  SelectedItem="{Binding SelectedBackup}"
                                   BorderThickness="0"
                                   Background="Transparent"
                                   MaxHeight="220">
@@ -160,7 +161,13 @@
                                 </GridView>
                             </ListView.View>
                         </ListView>
-                        <TextBlock Text="Los datos se guardan solo en tu PC. No se requiere conexión a internet."
+                        <WrapPanel Margin="0,12,0,0">
+                            <Button Content="Restaurar seleccionado"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Command="{Binding RestoreBackupCommand}"
+                                    Margin="0,0,12,0" />
+                        </WrapPanel>
+                        <TextBlock Text="Los datos se guardan solo en tu PC. Al restaurar, se crea una copia de seguridad previa automáticamente."
                                    Style="{StaticResource SubtitleStyle}"
                                    Margin="0,16,0,0"
                                    TextWrapping="Wrap" />

@@ -20,7 +20,8 @@ public sealed class ReportService
         var culture = new System.Globalization.CultureInfo("es-AR");
 
         var activeProducts = context.Products.Count(p => !p.IsArchived);
-        var lowStock = context.Products.Count(p => !p.IsArchived && p.CurrentStock > 0 && p.CurrentStock <= p.MinimumStock);
+        // Same rule as Home / DatabaseService.GetLowStockCount: stock at or below minimum (includes out of stock).
+        var lowStock = context.Products.Count(p => !p.IsArchived && p.CurrentStock <= p.MinimumStock);
         var outOfStock = context.Products.Count(p => !p.IsArchived && p.CurrentStock <= 0);
         var archivedProducts = context.Products.Count(p => p.IsArchived);
 

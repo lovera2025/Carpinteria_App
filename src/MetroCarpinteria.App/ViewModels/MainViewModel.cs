@@ -18,6 +18,7 @@ public class MainViewModel : ObservableObject
     private readonly ProjectsViewModel _projectsViewModel;
     private readonly StaffViewModel _staffViewModel;
     private readonly ReportsViewModel _reportsViewModel;
+    private readonly SettingsViewModel _settingsViewModel;
 
     public MainViewModel()
     {
@@ -27,6 +28,7 @@ public class MainViewModel : ObservableObject
         _projectsViewModel = new ProjectsViewModel(RefreshDashboardMetrics);
         _staffViewModel = new StaffViewModel(RefreshDashboardMetrics);
         _reportsViewModel = new ReportsViewModel();
+        _settingsViewModel = new SettingsViewModel();
 
         NavItems = new ObservableCollection<NavItem>
         {
@@ -48,7 +50,7 @@ public class MainViewModel : ObservableObject
             [NavigationSection.Projects] = _projectsViewModel,
             [NavigationSection.Staff] = _staffViewModel,
             [NavigationSection.Reports] = _reportsViewModel,
-            [NavigationSection.Settings] = new SettingsViewModel(),
+            [NavigationSection.Settings] = _settingsViewModel,
             [NavigationSection.About] = new AboutViewModel()
         };
 
@@ -128,6 +130,9 @@ public class MainViewModel : ObservableObject
                 break;
             case NavigationSection.Reports:
                 _reportsViewModel.Load();
+                break;
+            case NavigationSection.Settings:
+                _settingsViewModel.Refresh();
                 break;
         }
 

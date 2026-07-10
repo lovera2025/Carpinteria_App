@@ -98,7 +98,7 @@ public sealed class ProjectService
 
     public Project Create(string title, string clientName, string? description, decimal? budget, ProjectStatus status)
     {
-        ValidateProject(title, clientName);
+        ValidateProject(title, clientName, budget);
 
         using var context = _databaseService.CreateContext();
         var now = DateTime.UtcNow;
@@ -120,7 +120,7 @@ public sealed class ProjectService
 
     public void Update(int id, string title, string clientName, string? description, decimal? budget, ProjectStatus status)
     {
-        ValidateProject(title, clientName);
+        ValidateProject(title, clientName, budget);
 
         using var context = _databaseService.CreateContext();
         var project = context.Projects.FirstOrDefault(p => p.Id == id)
@@ -278,6 +278,49 @@ public sealed class ProjectService
         context.SaveChanges();
     }
 
+    public void RemoveMaterial(int materialId)
+    {
+        using var context = _databaseService.CreateContext();
+        using var transaction = context.Database.BeginTransaction();
+
+        try
+        {
+            var material = context.ProjectMaterials
+                .Include(m => m.Project)
+                .Include(m => m.Product)
+                .FirstOrDefault(m => m.Id == materialId)
+                ?? throw new InvalidOperationException("Material no encontrado.");
+
+            if (material.Project.IsArchived)
+            {
+                throw new InvalidOperationException("No se pueden quitar materiales de proyectos archivados.");
+            }
+
+            var now = DateTime.UtcNow;
+            material.Product.CurrentStock += material.Quantity;
+            material.Product.UpdatedAtUtc = now;
+
+            context.StockMovements.Add(new StockMovement
+            {
+                ProductId = material.ProductId,
+                Type = StockMovementType.In,
+                Quantity = material.Quantity,
+                Reason = $"Devuelto desde proyecto: {material.Project.Title}",
+                CreatedAtUtc = now
+            });
+
+            material.Project.UpdatedAtUtc = now;
+            context.ProjectMaterials.Remove(material);
+            context.SaveChanges();
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
     public void RemoveAssignment(int assignmentId)
     {
         using var context = _databaseService.CreateContext();
@@ -298,7 +341,7 @@ public sealed class ProjectService
             || context.ProjectAssignments.Any(a => a.ProjectId == projectId);
     }
 
-    private static void ValidateProject(string title, string clientName)
+    private static void ValidateProject(string title, string clientName, decimal? budget)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -308,6 +351,11 @@ public sealed class ProjectService
         if (string.IsNullOrWhiteSpace(clientName))
         {
             throw new InvalidOperationException("El nombre del cliente es obligatorio.");
+        }
+
+        if (budget is < 0)
+        {
+            throw new InvalidOperationException("El presupuesto no puede ser negativo.");
         }
     }
 }

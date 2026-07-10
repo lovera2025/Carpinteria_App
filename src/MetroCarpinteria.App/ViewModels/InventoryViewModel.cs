@@ -224,6 +224,7 @@ public class InventoryViewModel : ObservableObject
 
         LoadMovementsForSelection();
         _onDataChanged();
+        CommandManager.InvalidateRequerySuggested();
     }
 
     private void LoadMovementsForSelection()

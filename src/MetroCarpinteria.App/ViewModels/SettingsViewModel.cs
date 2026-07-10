@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Windows;
 using System.Windows.Input;
 using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
@@ -13,6 +14,7 @@ public class SettingsViewModel : ObservableObject
     private int _maxBackupFiles;
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
+    private BackupInfo? _selectedBackup;
 
     public SettingsViewModel()
     {
@@ -21,6 +23,7 @@ public class SettingsViewModel : ObservableObject
 
         SaveSettingsCommand = new RelayCommand(SaveSettings);
         BackupNowCommand = new RelayCommand(BackupNow);
+        RestoreBackupCommand = new RelayCommand(_ => RestoreSelectedBackup(), _ => SelectedBackup is not null);
         OpenDataFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.DataDirectory));
         OpenBackupsFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.BackupsDirectory));
         RefreshBackupsCommand = new RelayCommand(_ => RefreshBackups());
@@ -57,6 +60,12 @@ public class SettingsViewModel : ObservableObject
         set => SetProperty(ref _maxBackupFiles, Math.Clamp(value, 5, 200));
     }
 
+    public BackupInfo? SelectedBackup
+    {
+        get => _selectedBackup;
+        set => SetProperty(ref _selectedBackup, value);
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -73,9 +82,18 @@ public class SettingsViewModel : ObservableObject
 
     public ICommand SaveSettingsCommand { get; }
     public ICommand BackupNowCommand { get; }
+    public ICommand RestoreBackupCommand { get; }
     public ICommand OpenDataFolderCommand { get; }
     public ICommand OpenBackupsFolderCommand { get; }
     public ICommand RefreshBackupsCommand { get; }
+
+    public void Refresh()
+    {
+        LoadFromSettings();
+        RefreshBackups();
+        OnPropertyChanged(nameof(LastBackupDisplay));
+        ClearStatus();
+    }
 
     private void LoadFromSettings()
     {
@@ -110,13 +128,52 @@ public class SettingsViewModel : ObservableObject
         }
     }
 
+    private void RestoreSelectedBackup()
+    {
+        if (SelectedBackup is null)
+        {
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"¿Restaurar el respaldo «{SelectedBackup.FileName}»?\n\n" +
+            "Se reemplazará la base de datos actual. Antes se creará una copia de seguridad automática.\n" +
+            "Reiniciá la app después de restaurar para ver los datos recuperados.",
+            "Confirmar restauración",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            AppHost.BackupService.RestoreBackup(SelectedBackup.FullPath);
+            RefreshBackups();
+            SetStatus(
+                $"Respaldo restaurado: {SelectedBackup.FileName}. Reiniciá la aplicación para aplicar los cambios.",
+                isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Error al restaurar: {ex.Message}", isError: true);
+        }
+    }
+
     private void RefreshBackups()
     {
+        var selectedPath = SelectedBackup?.FullPath;
         RecentBackups.Clear();
         foreach (var backup in AppHost.BackupService.GetRecentBackups())
         {
             RecentBackups.Add(backup);
         }
+
+        SelectedBackup = selectedPath is null
+            ? RecentBackups.FirstOrDefault()
+            : RecentBackups.FirstOrDefault(b => b.FullPath == selectedPath) ?? RecentBackups.FirstOrDefault();
     }
 
     private static void OpenFolder(string path)
@@ -133,5 +190,11 @@ public class SettingsViewModel : ObservableObject
     {
         StatusMessage = message;
         IsStatusError = isError;
+    }
+
+    private void ClearStatus()
+    {
+        StatusMessage = string.Empty;
+        IsStatusError = false;
     }
 }

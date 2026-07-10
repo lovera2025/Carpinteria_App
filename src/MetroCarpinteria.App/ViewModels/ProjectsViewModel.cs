@@ -53,6 +53,7 @@ public class ProjectsViewModel : ObservableObject
         DeleteProjectCommand = new RelayCommand(_ => DeleteSelected(), _ => CanDeleteSelected);
         AssignMaterialCommand = new RelayCommand(_ => AssignMaterial(), _ => CanAssignToProject);
         AssignEmployeeCommand = new RelayCommand(_ => AssignEmployee(), _ => CanAssignToProject);
+        RemoveMaterialCommand = new RelayCommand(p => RemoveMaterial(p), _ => CanAssignToProject);
         RemoveAssignmentCommand = new RelayCommand(p => RemoveAssignment(p), _ => SelectedProject is not null);
     }
 
@@ -220,6 +221,7 @@ public class ProjectsViewModel : ObservableObject
     public ICommand DeleteProjectCommand { get; }
     public ICommand AssignMaterialCommand { get; }
     public ICommand AssignEmployeeCommand { get; }
+    public ICommand RemoveMaterialCommand { get; }
     public ICommand RemoveAssignmentCommand { get; }
 
     public void Load()
@@ -328,6 +330,11 @@ public class ProjectsViewModel : ObservableObject
                 if (!TryParseDecimal(FormBudget, out var parsedBudget))
                 {
                     throw new InvalidOperationException("Presupuesto inválido.");
+                }
+
+                if (parsedBudget < 0)
+                {
+                    throw new InvalidOperationException("El presupuesto no puede ser negativo.");
                 }
 
                 budget = parsedBudget;
@@ -473,6 +480,34 @@ public class ProjectsViewModel : ObservableObject
                 SelectedProject.Id, SelectedEmployee.Id, AssignmentNotes);
             AssignmentNotes = string.Empty;
             SetStatus($"{SelectedEmployee.FullName} asignado al proyecto.", isError: false);
+            Load();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private void RemoveMaterial(object? parameter)
+    {
+        if (parameter is not ProjectMaterialItem material)
+        {
+            return;
+        }
+
+        if (MessageBox.Show(
+                $"¿Quitar «{material.ProductName}» ({material.QuantityDisplay}) del proyecto?\n\nSe devolverá al inventario.",
+                "Confirmar",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            AppHost.ProjectService.RemoveMaterial(material.Id);
+            SetStatus("Material quitado y stock devuelto al inventario.", isError: false);
             Load();
         }
         catch (Exception ex)

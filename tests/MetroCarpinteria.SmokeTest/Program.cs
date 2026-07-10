@@ -244,6 +244,39 @@ internal static class Program
                 }
             });
 
+            Run("Project: remove material restores stock", () =>
+            {
+                var material = projects.GetProjectMaterials(projectId).First();
+                projects.RemoveMaterial(material.Id);
+
+                if (projects.GetProjectMaterials(projectId).Count != 0)
+                {
+                    throw new InvalidOperationException("El material debía eliminarse del proyecto.");
+                }
+
+                var product = inventory.GetProducts(false, false, "Tornillo test").First();
+                if (product.CurrentStock != 80m)
+                {
+                    throw new InvalidOperationException($"Stock tras devolver material: esperado 80, actual {product.CurrentStock}.");
+                }
+
+                // Re-assign for remaining project dependency checks.
+                projects.AssignMaterial(projectId, productId, 5m);
+            });
+
+            Run("Project: validation (negative budget)", () =>
+            {
+                try
+                {
+                    projects.Create("Proyecto inválido", "Cliente", null, -10m, ProjectStatus.Quote);
+                    throw new InvalidOperationException("Debía fallar por presupuesto negativo.");
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("presupuesto", StringComparison.OrdinalIgnoreCase))
+                {
+                    // expected
+                }
+            });
+
             Run("Project: validation (duplicate assignment)", () =>
             {
                 try
@@ -254,6 +287,89 @@ internal static class Program
                 catch (InvalidOperationException ex) when (ex.Message.Contains("ya está asignado", StringComparison.OrdinalIgnoreCase))
                 {
                     // expected
+                }
+            });
+
+            Run("Cash: close with difference", () =>
+            {
+                cash.OpenSession(100m, "Segunda sesión");
+                cash.RegisterMovement(CashMovementType.Income, 50m, "Ingreso extra");
+                var closed = cash.CloseSession(140m, "Cierre con diferencia");
+                if (closed.Difference != -10m)
+                {
+                    throw new InvalidOperationException($"Diferencia esperada -10, actual {closed.Difference}.");
+                }
+            });
+
+            Run("Inventory: archive and restore", () =>
+            {
+                inventory.ArchiveProduct(productId);
+                var archived = inventory.GetProducts(true, false, "Tornillo test").First();
+                if (!archived.IsArchived)
+                {
+                    throw new InvalidOperationException("El producto debía quedar archivado.");
+                }
+
+                inventory.RestoreProduct(productId);
+                var restored = inventory.GetProducts(false, false, "Tornillo test").First();
+                if (restored.IsArchived)
+                {
+                    throw new InvalidOperationException("El producto debía restaurarse.");
+                }
+            });
+
+            Run("Inventory: delete only without movements", () =>
+            {
+                var empty = inventory.CreateProduct("Producto vacío", 0m, 0m, "Pieza");
+                if (inventory.HasMovements(empty.Id))
+                {
+                    throw new InvalidOperationException("Producto sin stock inicial no debía tener movimientos.");
+                }
+
+                inventory.DeleteProduct(empty.Id);
+                if (inventory.GetProducts(true, false, "Producto vacío").Count != 0)
+                {
+                    throw new InvalidOperationException("El producto vacío debía eliminarse.");
+                }
+            });
+
+            Run("Reports: low stock matches home counter", () =>
+            {
+                var lowFromDb = database.GetLowStockCount();
+                var sections = reports.BuildSummary();
+                var inventorySection = sections.First(s => s.Title == "Inventario");
+                var lowFromReport = int.Parse(
+                    inventorySection.Metrics.First(m => m.Label == "Stock bajo").Value);
+
+                if (lowFromDb != lowFromReport)
+                {
+                    throw new InvalidOperationException(
+                        $"Stock bajo inconsistente: DB={lowFromDb}, Reportes={lowFromReport}.");
+                }
+            });
+
+            Run("Backup: create and restore", () =>
+            {
+                var settings = new SettingsService(paths);
+                var backupService = new BackupService(paths, settings);
+                var backup = backupService.CreateBackup();
+                if (!File.Exists(backup.FullPath) || backup.SizeBytes <= 0)
+                {
+                    throw new InvalidOperationException("El respaldo no se creó correctamente.");
+                }
+
+                inventory.CreateProduct("Producto post-backup", 1m, 0m, "Pieza");
+                backupService.RestoreBackup(backup.FullPath);
+
+                var afterRestore = inventory.GetProducts(true, false, "Producto post-backup");
+                if (afterRestore.Count != 0)
+                {
+                    throw new InvalidOperationException("Tras restaurar, el producto post-backup no debía existir.");
+                }
+
+                if (inventory.GetProducts(false, false, "Tornillo test").Count != 1)
+                {
+                    throw new InvalidOperationException("Tras restaurar, debía existir Tornillo test.");
                 }
             });
 
@@ -310,7 +426,8 @@ internal static class Program
             "Proyectos: crear, asignar material y empleado",
             "Personal: alta de empleado y asignación",
             "Reportes: revisar que los números coinciden con los módulos",
-            "Configuración: abrir carpetas de datos y probar backup manual"
+            "Configuración: respaldar y restaurar un backup de prueba",
+            "Proyectos: quitar material y verificar que vuelve el stock"
         ];
 
         foreach (var item in items)
