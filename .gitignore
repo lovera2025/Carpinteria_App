@@ -13,3 +13,6 @@ Desktop.ini
 
 ## Publish
 publish/
+
+## Velopack (paquetes e instaladores generados por vpk)
+Releases/

@@ -13,13 +13,40 @@ Aplicación de escritorio Windows para gestión de carpintería.
 dotnet run --project src/MetroCarpinteria.App
 ```
 
-## Crear instalador (.exe) para la notebook
+## Publicar una versión nueva
+
+Basta con etiquetar el commit y empujarlo:
 
 ```bash
-dotnet publish src/MetroCarpinteria.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+git tag v1.1.0 && git push origin v1.1.0
 ```
 
-El ejecutable queda en `publish/MetroCarpinteria.exe`. Copialo a la notebook del taller (no requiere instalar .NET por separado).
+GitHub Actions compila, arma el instalador y publica el release solo. El proceso
+está en [`.github/workflows/release.yml`](.github/workflows/release.yml) y no usa
+tu conexión: todo corre en los servidores de GitHub.
+
+La versión sale del tag, así que no hay que editar el `.csproj` en cada publicación.
+
+## Instalar en la notebook del taller
+
+Bajar el `MetroCarpinteria-win-Setup.exe` de la
+[última versión](https://github.com/lovera2025/Carpinteria_App/releases/latest)
+y ejecutarlo. Se instala para el usuario actual, sin pedir permisos de
+administrador, y deja el acceso directo en el menú inicio.
+
+La primera vez Windows puede mostrar *"Windows protegió tu PC"* porque el
+instalador no está firmado digitalmente: entrar en **Más información → Ejecutar
+de todos modos**.
+
+**Se hace una sola vez.** De ahí en adelante la app se actualiza sola: al abrir
+busca si hay una versión nueva, la descarga en segundo plano y la instala cuando
+la cerrás. Velopack baja solo las diferencias, así que una actualización suele
+pesar pocos megas y no el paquete completo.
+
+Sin internet la aplicación funciona igual: el chequeo falla en silencio.
+
+El comportamiento se configura en **Configuración → Actualizaciones**, donde
+también se puede buscar una actualización a mano.
 
 ## Módulos
 

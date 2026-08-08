@@ -16,6 +16,13 @@ public class SettingsViewModel : ObservableObject
     private bool _isStatusError;
     private BackupInfo? _selectedBackup;
 
+    private bool _checkUpdatesOnStartup;
+    private string _updateStatus = string.Empty;
+    private bool _isCheckingUpdates;
+    private bool _isDownloadingUpdate;
+    private int _updateProgress;
+    private bool _updateReady;
+
     public SettingsViewModel()
     {
         LoadFromSettings();
@@ -27,6 +34,133 @@ public class SettingsViewModel : ObservableObject
         OpenDataFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.DataDirectory));
         OpenBackupsFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.BackupsDirectory));
         RefreshBackupsCommand = new RelayCommand(_ => RefreshBackups());
+
+        CheckUpdatesCommand = new AsyncRelayCommand(CheckUpdatesAsync, () => !IsCheckingUpdates);
+        _updateStatus = AppHost.UpdateService.IsSupported
+            ? "Presioná «Buscar actualizaciones» para consultar."
+            : "Estás usando una copia portable: las actualizaciones automáticas no aplican.";
+    }
+
+    // --- Actualizaciones ------------------------------------------------------
+
+    public string CurrentVersionDisplay => AppHost.UpdateService.CurrentVersion;
+
+    public bool UpdatesSupported => AppHost.UpdateService.IsSupported;
+
+    public bool CheckUpdatesOnStartup
+    {
+        get => _checkUpdatesOnStartup;
+        set
+        {
+            if (SetProperty(ref _checkUpdatesOnStartup, value))
+            {
+                AppHost.SettingsService.Update(s => s.CheckUpdatesOnStartup = value);
+            }
+        }
+    }
+
+    public string UpdateStatus
+    {
+        get => _updateStatus;
+        private set => SetProperty(ref _updateStatus, value);
+    }
+
+    public bool IsCheckingUpdates
+    {
+        get => _isCheckingUpdates;
+        private set => SetProperty(ref _isCheckingUpdates, value);
+    }
+
+    public bool IsDownloadingUpdate
+    {
+        get => _isDownloadingUpdate;
+        private set => SetProperty(ref _isDownloadingUpdate, value);
+    }
+
+    public int UpdateProgress
+    {
+        get => _updateProgress;
+        private set => SetProperty(ref _updateProgress, value);
+    }
+
+    /// <summary>Ya está descargada y se instala al cerrar la app.</summary>
+    public bool UpdateReady
+    {
+        get => _updateReady;
+        private set => SetProperty(ref _updateReady, value);
+    }
+
+    public string LastUpdateCheckDisplay
+    {
+        get
+        {
+            var last = AppHost.Settings.LastUpdateCheckUtc;
+            return last is null
+                ? "Todavía no se buscaron actualizaciones"
+                : AppCulture.DateTimeShort(last.Value.ToLocalTime());
+        }
+    }
+
+    public ICommand CheckUpdatesCommand { get; }
+
+    /// <summary>La avisa el chequeo automático de arranque.</summary>
+    public void NotifyUpdateReady(string version)
+    {
+        UpdateReady = true;
+        UpdateStatus = $"La versión {version} está lista. Se instala sola cuando cierres la app.";
+        OnPropertyChanged(nameof(LastUpdateCheckDisplay));
+    }
+
+    private async Task CheckUpdatesAsync()
+    {
+        if (!AppHost.UpdateService.IsSupported)
+        {
+            UpdateStatus = "Estás usando una copia portable: las actualizaciones automáticas no aplican.";
+            return;
+        }
+
+        IsCheckingUpdates = true;
+        UpdateStatus = "Buscando actualizaciones…";
+
+        try
+        {
+            var update = await AppHost.UpdateService.CheckAsync();
+            OnPropertyChanged(nameof(LastUpdateCheckDisplay));
+
+            if (update is null)
+            {
+                UpdateStatus = AppHost.UpdateService.HasPendingUpdate
+                    ? UpdateStatus
+                    : "Ya tenés la última versión.";
+                return;
+            }
+
+            var version = update.TargetFullRelease.Version.ToString();
+            UpdateStatus = $"Descargando la versión {version}…";
+            IsDownloadingUpdate = true;
+            UpdateProgress = 0;
+
+            var progress = new Progress<int>(p => UpdateProgress = p);
+            var ok = await AppHost.UpdateService.DownloadAsync(update, progress);
+
+            if (ok)
+            {
+                NotifyUpdateReady(version);
+            }
+            else
+            {
+                UpdateStatus = "No se pudo descargar la actualización. Probá más tarde.";
+            }
+        }
+        catch
+        {
+            UpdateStatus = "No se pudo consultar. Revisá la conexión a internet.";
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+            IsDownloadingUpdate = false;
+        }
     }
 
     public string DatabasePath => AppHost.Paths.DatabasePath;
@@ -99,6 +233,10 @@ public class SettingsViewModel : ObservableObject
     {
         BackupOnExit = AppHost.Settings.BackupOnExit;
         MaxBackupFiles = AppHost.Settings.MaxBackupFiles;
+
+        // Directo al campo: el setter público escribe en settings.json y esto es una lectura.
+        _checkUpdatesOnStartup = AppHost.Settings.CheckUpdatesOnStartup;
+        OnPropertyChanged(nameof(CheckUpdatesOnStartup));
     }
 
     private void SaveSettings()

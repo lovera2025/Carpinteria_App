@@ -20,6 +20,8 @@ public class MainViewModel : ObservableObject
     private readonly StaffViewModel _staffViewModel;
     private readonly ReportsViewModel _reportsViewModel;
     private readonly SettingsViewModel _settingsViewModel;
+    private bool _hasUpdateReady;
+    private string _updateReadyVersion = string.Empty;
 
     public MainViewModel()
     {
@@ -96,6 +98,42 @@ public class MainViewModel : ObservableObject
     public string CurrentDate => DateTime.Now.ToString("dddd, d 'de' MMMM yyyy", AppCulture.Current);
 
     public int LowStockAlertCount => AppHost.DatabaseService.GetLowStockCount();
+
+    /// <summary>Versión en ejecución, para el pie del menú lateral.</summary>
+    public string AppVersionDisplay => $"v{AppHost.UpdateService.CurrentVersion}";
+
+    /// <summary>Hay una actualización descargada esperando el cierre de la app.</summary>
+    public bool HasUpdateReady
+    {
+        get => _hasUpdateReady;
+        private set
+        {
+            if (SetProperty(ref _hasUpdateReady, value))
+            {
+                OnPropertyChanged(nameof(UpdateBadgeCount));
+            }
+        }
+    }
+
+    /// <summary>El badge del menú se dibuja igual que el de stock bajo, con un número.</summary>
+    public int UpdateBadgeCount => HasUpdateReady ? 1 : 0;
+
+    public string UpdateReadyVersion
+    {
+        get => _updateReadyVersion;
+        private set => SetProperty(ref _updateReadyVersion, value);
+    }
+
+    /// <summary>
+    /// La llama el chequeo de arranque cuando ya bajó una versión nueva. Solo prende
+    /// el aviso: la actualización se aplica sola al cerrar.
+    /// </summary>
+    public void NotifyUpdateReady(string version)
+    {
+        UpdateReadyVersion = version;
+        HasUpdateReady = true;
+        _settingsViewModel.NotifyUpdateReady(version);
+    }
 
     public ICommand NavigateCommand { get; }
 

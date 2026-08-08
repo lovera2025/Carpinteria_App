@@ -49,6 +49,67 @@
                     </TextBlock>
                 </Border>
 
+                <!-- Actualizaciones -->
+                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Actualizaciones"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,0,0,12" />
+
+                        <Grid Margin="0,0,0,12">
+                            <TextBlock Style="{StaticResource SubtitleStyle}" VerticalAlignment="Center"
+                                       Text="Versión instalada" />
+                            <TextBlock Text="{Binding CurrentVersionDisplay}" HorizontalAlignment="Right"
+                                       FontSize="15" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                        </Grid>
+
+                        <!-- Aviso destacado cuando ya está bajada y espera el cierre -->
+                        <Border CornerRadius="8" Padding="12,10" Margin="0,0,0,12"
+                                Background="#1A4A7C59"
+                                Visibility="{Binding UpdateReady, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="{Binding UpdateStatus}" TextWrapping="Wrap"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource SuccessBrush}" />
+                        </Border>
+
+                        <TextBlock Text="{Binding UpdateStatus}" Style="{StaticResource SubtitleStyle}"
+                                   TextWrapping="Wrap" Margin="0,0,0,12"
+                                   Visibility="{Binding UpdateReady, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+
+                        <ProgressBar Height="6" Margin="0,0,0,12"
+                                     Minimum="0" Maximum="100"
+                                     Value="{Binding UpdateProgress, Mode=OneWay}"
+                                     Foreground="{StaticResource AccentGoldBrush}"
+                                     Background="#1A3D2914" BorderThickness="0"
+                                     Visibility="{Binding IsDownloadingUpdate, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                        <CheckBox Content="Buscar actualizaciones automáticamente al abrir"
+                                  IsChecked="{Binding CheckUpdatesOnStartup}"
+                                  Foreground="{StaticResource TextPrimaryBrush}"
+                                  Margin="0,0,0,8"
+                                  ToolTip="Solo revisa si hay internet. Sin conexión la app funciona igual." />
+
+                        <TextBlock Margin="0,0,0,16" FontSize="12">
+                            <Run Text="Última consulta: " Foreground="{StaticResource TextSecondaryBrush}" />
+                            <Run Text="{Binding LastUpdateCheckDisplay, Mode=OneWay}"
+                                 Foreground="{StaticResource TextPrimaryBrush}" />
+                        </TextBlock>
+
+                        <WrapPanel>
+                            <Button Content="Buscar actualizaciones"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Command="{Binding CheckUpdatesCommand}"
+                                    Margin="0,0,10,0" />
+                        </WrapPanel>
+
+                        <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,12,0,0"
+                                   Text="Las actualizaciones se instalan solas al cerrar la aplicación. Tus datos y respaldos no se tocan: viven en la carpeta de Documentos." />
+                    </StackPanel>
+                </Border>
+
                 <!-- Data paths -->
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
                     <StackPanel>

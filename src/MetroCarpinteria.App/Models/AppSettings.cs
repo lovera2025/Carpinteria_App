@@ -14,4 +14,10 @@ public class AppSettings
 
     /// <summary>Valor del jornal usado para prellenar la calculadora.</summary>
     public decimal? DefaultDailyRate { get; set; }
+
+    /// <summary>Buscar versiones nuevas al abrir la app, si hay internet.</summary>
+    public bool CheckUpdatesOnStartup { get; set; } = true;
+
+    /// <summary>Cuándo se buscaron actualizaciones por última vez.</summary>
+    public DateTime? LastUpdateCheckUtc { get; set; }
 }

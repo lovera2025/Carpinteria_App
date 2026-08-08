@@ -17,6 +17,7 @@ public static class AppHost
     public static QuoteDocumentService QuoteDocumentService { get; private set; } = null!;
     public static EmployeeService EmployeeService { get; private set; } = null!;
     public static ReportService ReportService { get; private set; } = null!;
+    public static UpdateService UpdateService { get; private set; } = null!;
 
     public static AppSettings Settings => SettingsService.Current;
 
@@ -44,8 +45,26 @@ public static class AppHost
         QuoteDocumentService = new QuoteDocumentService();
         EmployeeService = new EmployeeService(DatabaseService);
         ReportService = new ReportService(DatabaseService);
+        UpdateService = new UpdateService(SettingsService);
 
         _initialized = true;
+    }
+
+    /// <summary>
+    /// Deja aplicada la actualización que se haya descargado durante la sesión.
+    /// Va al final del cierre: el respaldo tiene que terminar antes, porque el
+    /// actualizador solo espera un rato a que el proceso muera.
+    /// </summary>
+    public static void ApplyPendingUpdateOnExit()
+    {
+        try
+        {
+            UpdateService?.ApplyPendingOnExit();
+        }
+        catch
+        {
+            // Nunca bloquear el cierre por una actualización.
+        }
     }
 
     public static void RunBackupOnExitIfEnabled()

@@ -7,15 +7,33 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationTitle>METRO CARPINTERÍA</ApplicationTitle>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <RootNamespace>MetroCarpinteria.App</RootNamespace>
     <AssemblyName>MetroCarpinteria</AssemblyName>
+    <Company>Metro Carpintería</Company>
+    <Product>Metro Carpintería</Product>
     <Version>1.0.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
+    <!-- AssemblyVersion no admite sufijos tipo "-beta"; este sí, y es el que lee la app. -->
+    <InformationalVersion>1.0.0</InformationalVersion>
+
+    <!--
+      Velopack corre su bootstrap antes que cualquier otra cosa, así que la app
+      necesita un Main propio. WPF genera uno implícito a partir de App.xaml como
+      ApplicationDefinition; abajo se lo declara como Page para poder escribirlo a mano.
+    -->
+    <StartupObject>MetroCarpinteria.App.App</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
   </ItemGroup>
 
   <ItemGroup>

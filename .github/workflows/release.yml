@@ -1,0 +1,94 @@
+name: Publicar versión
+
+# Se dispara al empujar un tag de versión:
+#   git tag v1.1.0 && git push origin v1.1.0
+on:
+  push:
+    tags:
+      - 'v*'
+  # Permite lanzarlo a mano desde la pestaña Actions indicando la versión.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión a publicar (sin la v, por ejemplo 1.1.0)'
+        required: true
+
+# Necesario para que la acción pueda crear el release y subir los archivos.
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: windows-latest
+
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+
+      - name: Instalar .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Determinar la versión
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # refs/tags/v1.1.0 -> 1.1.0
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publicando la versión $VERSION"
+
+      - name: Compilar y probar
+        run: |
+          dotnet build MetroCarpinteria.sln -c Release --nologo
+
+      - name: Publicar la aplicación
+        shell: bash
+        run: |
+          # Sin PublishSingleFile: Velopack empaqueta la carpeta y arma el instalador.
+          # -p:Version deja el ensamblado con el mismo número que el tag.
+          dotnet publish src/MetroCarpinteria.App/MetroCarpinteria.App.csproj \
+            -c Release \
+            -r win-x64 \
+            --self-contained true \
+            -p:Version=${{ steps.version.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.version }}.0 \
+            -p:FileVersion=${{ steps.version.outputs.version }}.0 \
+            -p:InformationalVersion=${{ steps.version.outputs.version }} \
+            -o publish
+
+      - name: Instalar la herramienta vpk
+        run: dotnet tool install -g vpk
+
+      - name: Traer los releases anteriores
+        # Este paso es el que habilita las actualizaciones diferenciales: vpk compara
+        # contra la versión anterior y genera un parche de pocos megas en vez de
+        # obligar a bajar el paquete entero. Sin esto, cada update pesa como una
+        # instalación completa.
+        continue-on-error: true
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Armar el paquete
+        run: >
+          vpk pack
+          --packId MetroCarpinteria
+          --packVersion ${{ steps.version.outputs.version }}
+          --packDir publish
+          --mainExe MetroCarpinteria.exe
+          --packTitle "Metro Carpintería"
+          --packAuthors "L.M"
+          --icon src/MetroCarpinteria.App/Assets/app.ico
+
+      - name: Subir el release a GitHub
+        run: >
+          vpk upload github
+          --repoUrl https://github.com/${{ github.repository }}
+          --publish
+          --releaseName "Metro Carpintería ${{ steps.version.outputs.version }}"
+          --tag v${{ steps.version.outputs.version }}
+          --token ${{ secrets.GITHUB_TOKEN }}
