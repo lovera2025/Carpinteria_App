@@ -14,14 +14,50 @@ public sealed class DatabaseService
         _paths = paths;
     }
 
-    public void Initialize()
+    /// <summary>Última migración aplicada al arrancar. Vacía si no había nada pendiente.</summary>
+    public SchemaMigrationResult? LastMigration { get; private set; }
+
+    /// <param name="beforeMigration">
+    /// Se invoca solo si hay migraciones pendientes sobre una base preexistente, para
+    /// dejar un respaldo antes de tocar el esquema. No corre en una instalación nueva.
+    /// </param>
+    public void Initialize(Action? beforeMigration = null)
     {
-        using var context = CreateContext();
-        context.Database.EnsureCreated();
-        EnsureStockMovementsTable(context);
-        EnsureCashTables(context);
-        EnsureProjectTables(context);
-        MigrateProductUnits(context);
+        var existedBefore = File.Exists(_paths.DatabasePath);
+
+        // Esquema base. Solo SQL crudo: todavía no se puede consultar por EF, porque el
+        // modelo ya conoce columnas que en una base vieja no existen hasta migrar.
+        using (var context = CreateContext())
+        {
+            context.Database.EnsureCreated();
+            EnsureStockMovementsTable(context);
+            EnsureCashTables(context);
+            EnsureProjectTables(context);
+        }
+
+        var migrator = new SchemaMigrator(_paths.DatabasePath);
+
+        if (existedBefore && beforeMigration is not null && migrator.HasPendingMigrations())
+        {
+            try
+            {
+                beforeMigration();
+            }
+            catch
+            {
+                // Un respaldo que falla no puede impedir que la app abra; la migración
+                // en sí es transaccional y se revierte sola si algo sale mal.
+            }
+        }
+
+        LastMigration = migrator.MigrateToLatest();
+
+        // Recién ahora el esquema coincide con el modelo y se puede usar EF.
+        using (var context = CreateContext())
+        {
+            MigrateProductUnits(context);
+        }
+
         EnableWalMode();
     }
 
@@ -160,9 +196,15 @@ public sealed class DatabaseService
     public int GetLowStockCount()
     {
         using var context = CreateContext();
+
+        // La comparación se hace en memoria: los decimales viven como TEXT en SQLite
+        // y del lado del SQL se ordenan alfabéticamente ('9.0' > '15.0'). Ver StockRules.
         return context.Products
             .AsNoTracking()
-            .Count(p => !p.IsArchived && p.CurrentStock <= p.MinimumStock);
+            .Where(p => !p.IsArchived)
+            .Select(p => new { p.CurrentStock, p.MinimumStock })
+            .AsEnumerable()
+            .Count(p => StockRules.IsLowOrOut(p.CurrentStock, p.MinimumStock));
     }
 
     private void EnableWalMode()

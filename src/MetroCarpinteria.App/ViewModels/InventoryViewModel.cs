@@ -22,6 +22,7 @@ public class InventoryViewModel : ObservableObject
     private string _formInitialStock = "0";
     private string _formMinimumStock = "0";
     private string _formUnit = ProductUnits.Unit;
+    private string _formCostPrice = string.Empty;
     private string _formCurrentStockDisplay = string.Empty;
     private string _movementQuantity = string.Empty;
     private string _movementReason = string.Empty;
@@ -153,6 +154,13 @@ public class InventoryViewModel : ObservableObject
         set => SetProperty(ref _formUnit, value);
     }
 
+    /// <summary>Precio de costo por unidad. Prellena las líneas de presupuesto.</summary>
+    public string FormCostPrice
+    {
+        get => _formCostPrice;
+        set => SetProperty(ref _formCostPrice, value);
+    }
+
     public string FormCurrentStockDisplay
     {
         get => _formCurrentStockDisplay;
@@ -248,6 +256,7 @@ public class InventoryViewModel : ObservableObject
         FormInitialStock = "0";
         FormMinimumStock = "0";
         FormUnit = ProductUnits.Unit;
+        FormCostPrice = string.Empty;
         FormCurrentStockDisplay = string.Empty;
         IsCreating = true;
         IsFormOpen = true;
@@ -264,6 +273,9 @@ public class InventoryViewModel : ObservableObject
         FormName = SelectedProduct.Name;
         FormMinimumStock = SelectedProduct.MinimumStock.ToString(CultureInfo.CurrentCulture);
         FormUnit = SelectedProduct.Unit;
+        FormCostPrice = SelectedProduct.CostPrice.HasValue
+            ? SelectedProduct.CostPrice.Value.ToString("0.##", CultureInfo.CurrentCulture)
+            : string.Empty;
         FormCurrentStockDisplay = SelectedProduct.StockDisplay;
         IsCreating = false;
         IsFormOpen = true;
@@ -274,26 +286,37 @@ public class InventoryViewModel : ObservableObject
     {
         try
         {
-            if (!TryParseDecimal(FormMinimumStock, out var minimumStock))
+            if (!NumberInput.TryParseDecimal(FormMinimumStock, out var minimumStock))
             {
                 throw new InvalidOperationException("Stock mínimo inválido.");
             }
 
+            decimal? costPrice = null;
+            if (!string.IsNullOrWhiteSpace(FormCostPrice))
+            {
+                if (!NumberInput.TryParseDecimal(FormCostPrice, out var parsedCost))
+                {
+                    throw new InvalidOperationException("Precio de costo inválido.");
+                }
+
+                costPrice = parsedCost;
+            }
+
             if (IsCreating)
             {
-                if (!TryParseDecimal(FormInitialStock, out var initialStock))
+                if (!NumberInput.TryParseDecimal(FormInitialStock, out var initialStock))
                 {
                     throw new InvalidOperationException("Stock inicial inválido.");
                 }
 
                 var product = AppHost.InventoryService.CreateProduct(
-                    FormName, initialStock, minimumStock, FormUnit);
+                    FormName, initialStock, minimumStock, FormUnit, costPrice);
                 SetStatus($"Producto «{product.Name}» creado.", isError: false);
             }
             else if (SelectedProduct is not null)
             {
                 AppHost.InventoryService.UpdateProduct(
-                    SelectedProduct.Id, FormName, minimumStock, FormUnit);
+                    SelectedProduct.Id, FormName, minimumStock, FormUnit, costPrice);
                 SetStatus($"Producto «{FormName.Trim()}» actualizado.", isError: false);
             }
 
@@ -402,7 +425,7 @@ public class InventoryViewModel : ObservableObject
 
         try
         {
-            if (!TryParseDecimal(MovementQuantity, out var quantity))
+            if (!NumberInput.TryParseDecimal(MovementQuantity, out var quantity))
             {
                 throw new InvalidOperationException("Cantidad inválida.");
             }
@@ -421,12 +444,6 @@ public class InventoryViewModel : ObservableObject
         {
             SetStatus(ex.Message, isError: true);
         }
-    }
-
-    private static bool TryParseDecimal(string value, out decimal result)
-    {
-        return decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out result)
-            || decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
     }
 
     private void SetStatus(string message, bool isError)

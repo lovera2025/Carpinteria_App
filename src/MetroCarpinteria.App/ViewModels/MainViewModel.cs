@@ -15,6 +15,7 @@ public class MainViewModel : ObservableObject
     private readonly HomeViewModel _homeViewModel;
     private readonly InventoryViewModel _inventoryViewModel;
     private readonly CashRegisterViewModel _cashRegisterViewModel;
+    private readonly QuotesViewModel _quotesViewModel;
     private readonly ProjectsViewModel _projectsViewModel;
     private readonly StaffViewModel _staffViewModel;
     private readonly ReportsViewModel _reportsViewModel;
@@ -25,6 +26,7 @@ public class MainViewModel : ObservableObject
         _homeViewModel = new HomeViewModel();
         _inventoryViewModel = new InventoryViewModel(RefreshDashboardMetrics);
         _cashRegisterViewModel = new CashRegisterViewModel(RefreshDashboardMetrics);
+        _quotesViewModel = new QuotesViewModel(RefreshDashboardMetrics);
         _projectsViewModel = new ProjectsViewModel(RefreshDashboardMetrics);
         _staffViewModel = new StaffViewModel(RefreshDashboardMetrics);
         _reportsViewModel = new ReportsViewModel();
@@ -35,6 +37,7 @@ public class MainViewModel : ObservableObject
             new() { Section = NavigationSection.Home, Title = "Inicio", Icon = "🏠" },
             new() { Section = NavigationSection.Inventory, Title = "Inventario", Icon = "📦" },
             new() { Section = NavigationSection.CashRegister, Title = "Caja", Icon = "💰" },
+            new() { Section = NavigationSection.Quotes, Title = "Presupuestos", Icon = "🧮" },
             new() { Section = NavigationSection.Projects, Title = "Proyectos", Icon = "🪚" },
             new() { Section = NavigationSection.Staff, Title = "Personal", Icon = "👷" },
             new() { Section = NavigationSection.Reports, Title = "Reportes", Icon = "📊" },
@@ -47,6 +50,7 @@ public class MainViewModel : ObservableObject
             [NavigationSection.Home] = _homeViewModel,
             [NavigationSection.Inventory] = _inventoryViewModel,
             [NavigationSection.CashRegister] = _cashRegisterViewModel,
+            [NavigationSection.Quotes] = _quotesViewModel,
             [NavigationSection.Projects] = _projectsViewModel,
             [NavigationSection.Staff] = _staffViewModel,
             [NavigationSection.Reports] = _reportsViewModel,
@@ -89,7 +93,7 @@ public class MainViewModel : ObservableObject
         }
     }
 
-    public string CurrentDate => DateTime.Now.ToString("dddd, d 'de' MMMM yyyy", new System.Globalization.CultureInfo("es-AR"));
+    public string CurrentDate => DateTime.Now.ToString("dddd, d 'de' MMMM yyyy", AppCulture.Current);
 
     public int LowStockAlertCount => AppHost.DatabaseService.GetLowStockCount();
 
@@ -121,6 +125,9 @@ public class MainViewModel : ObservableObject
                 break;
             case NavigationSection.CashRegister:
                 _cashRegisterViewModel.Load();
+                break;
+            case NavigationSection.Quotes:
+                _quotesViewModel.Load();
                 break;
             case NavigationSection.Projects:
                 _projectsViewModel.Load();

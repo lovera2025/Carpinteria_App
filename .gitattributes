@@ -1,0 +1,19 @@
+# Normaliza los finales de línea para que los diffs no ensucien con cambios
+# invisibles. Sin esto git avisa "LF will be replaced by CRLF" en cada commit.
+* text=auto
+
+*.cs      text diff=csharp
+*.xaml    text
+*.csproj  text
+*.sln     text eol=crlf
+*.md      text
+*.json    text
+*.yml     text
+*.ps1     text eol=crlf
+
+# Binarios: que git no los toque.
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.ico     binary
+*.db      binary

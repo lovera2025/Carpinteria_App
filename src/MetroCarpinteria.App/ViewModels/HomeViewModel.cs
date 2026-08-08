@@ -28,9 +28,17 @@ public class HomeViewModel : ObservableObject
         var cashState = AppHost.CashRegisterService.GetOpenSessionState();
         var activeProjects = AppHost.DatabaseService.GetActiveProjectCount();
         var employeeCount = AppHost.DatabaseService.GetEmployeeCount();
+        var quotes = AppHost.QuoteService.GetPendingSummary();
 
         Cards =
         [
+            new DashboardCard
+            {
+                Title = "Presupuestos pendientes",
+                Value = quotes.Pending.ToString(),
+                Description = BuildQuotesDescription(quotes),
+                AccentColor = "#8B5A2B"
+            },
             new DashboardCard
             {
                 Title = "Stock bajo",
@@ -68,5 +76,27 @@ public class HomeViewModel : ObservableObject
         ];
 
         OnPropertyChanged(nameof(Cards));
+    }
+
+    /// <summary>Lo primero que hay que saber al abrir la app: a quién hay que llamar hoy.</summary>
+    private static string BuildQuotesDescription(QuotePendingSummary summary)
+    {
+        if (summary.DueSoon > 0)
+        {
+            return summary.DueSoon == 1
+                ? "1 por vencer — conviene llamar"
+                : $"{summary.DueSoon} por vencer — conviene llamar";
+        }
+
+        if (summary.Pending == 0)
+        {
+            return summary.Expired > 0
+                ? $"Ninguno en juego · {summary.Expired} vencidos"
+                : "Ninguno esperando respuesta";
+        }
+
+        return summary.Pending == 1
+            ? "Esperando respuesta del cliente"
+            : "Esperando respuesta de los clientes";
     }
 }

@@ -1,5 +1,6 @@
 using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
+using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,6 +40,7 @@ public sealed class InventoryService
                 p.CurrentStock,
                 p.MinimumStock,
                 p.Unit,
+                p.CostPrice,
                 p.IsArchived
             })
             .ToList();
@@ -51,8 +53,9 @@ public sealed class InventoryService
                 CurrentStock = p.CurrentStock,
                 MinimumStock = p.MinimumStock,
                 Unit = p.Unit,
+                CostPrice = p.CostPrice,
                 IsArchived = p.IsArchived,
-                Status = GetStockStatus(p.CurrentStock, p.MinimumStock)
+                Status = StockRules.GetStatus(p.CurrentStock, p.MinimumStock)
             })
             .ToList();
 
@@ -95,9 +98,14 @@ public sealed class InventoryService
             .ToList();
     }
 
-    public Product CreateProduct(string name, decimal initialStock, decimal minimumStock, string unit)
+    public Product CreateProduct(
+        string name,
+        decimal initialStock,
+        decimal minimumStock,
+        string unit,
+        decimal? costPrice = null)
     {
-        ValidateProductInput(name, minimumStock, unit);
+        ValidateProductInput(name, minimumStock, unit, costPrice);
         unit = ProductUnits.Normalize(unit);
 
         if (initialStock < 0)
@@ -117,6 +125,7 @@ public sealed class InventoryService
                 CurrentStock = initialStock,
                 MinimumStock = minimumStock,
                 Unit = unit.Trim(),
+                CostPrice = costPrice,
                 IsArchived = false,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now
@@ -148,9 +157,9 @@ public sealed class InventoryService
         }
     }
 
-    public void UpdateProduct(int id, string name, decimal minimumStock, string unit)
+    public void UpdateProduct(int id, string name, decimal minimumStock, string unit, decimal? costPrice = null)
     {
-        ValidateProductInput(name, minimumStock, unit);
+        ValidateProductInput(name, minimumStock, unit, costPrice);
         unit = ProductUnits.Normalize(unit);
 
         using var context = _databaseService.CreateContext();
@@ -160,6 +169,7 @@ public sealed class InventoryService
         product.Name = name.Trim();
         product.MinimumStock = minimumStock;
         product.Unit = unit.Trim();
+        product.CostPrice = costPrice;
         product.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
     }
@@ -203,6 +213,14 @@ public sealed class InventoryService
                     "No se puede eliminar un producto con movimientos. Archivalo en su lugar.");
             }
 
+            // Las líneas de presupuesto también apuntan al producto con FK RESTRICT:
+            // sin este chequeo el borrado explotaría contra la base en vez de avisar.
+            if (context.ProjectBudgetLines.Any(l => l.ProductId == id))
+            {
+                throw new InvalidOperationException(
+                    "No se puede eliminar un producto usado en un presupuesto. Archivalo en su lugar.");
+            }
+
             context.Products.Remove(product);
             context.SaveChanges();
             transaction.Commit();
@@ -242,7 +260,8 @@ public sealed class InventoryService
             if (type == StockMovementType.Out && product.CurrentStock < quantity)
             {
                 throw new InvalidOperationException(
-                    $"Stock insuficiente. Disponible: {product.CurrentStock:N2} {product.Unit}");
+                    "Stock insuficiente. Disponible: " +
+                    AppCulture.QuantityWithUnit(product.CurrentStock, product.Unit));
             }
 
             product.CurrentStock = type == StockMovementType.In
@@ -269,14 +288,21 @@ public sealed class InventoryService
         }
     }
 
+    /// <summary>Cualquier referencia que impida borrar el producto.</summary>
     public bool HasMovements(int productId)
     {
         using var context = _databaseService.CreateContext();
-        return context.StockMovements.Any(m => m.ProductId == productId);
+        return context.StockMovements.Any(m => m.ProductId == productId)
+            || context.ProjectBudgetLines.Any(l => l.ProductId == productId);
     }
 
-    private static void ValidateProductInput(string name, decimal minimumStock, string unit)
+    private static void ValidateProductInput(string name, decimal minimumStock, string unit, decimal? costPrice)
     {
+        if (costPrice is < 0)
+        {
+            throw new InvalidOperationException("El precio de costo no puede ser negativo.");
+        }
+
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new InvalidOperationException("El nombre del producto es obligatorio.");
@@ -291,20 +317,5 @@ public sealed class InventoryService
         {
             throw new InvalidOperationException("La unidad es obligatoria.");
         }
-    }
-
-    private static ProductStockStatus GetStockStatus(decimal current, decimal minimum)
-    {
-        if (current <= 0)
-        {
-            return ProductStockStatus.Out;
-        }
-
-        if (current <= minimum)
-        {
-            return ProductStockStatus.Low;
-        }
-
-        return ProductStockStatus.Ok;
     }
 }

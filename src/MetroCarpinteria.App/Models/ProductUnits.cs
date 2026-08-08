@@ -40,4 +40,24 @@ public static class ProductUnits
         var trimmed = unit.Trim();
         return LegacyMap.TryGetValue(trimmed, out var mapped) ? mapped : trimmed;
     }
+
+    private static readonly Dictionary<string, string> Abbreviations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [Unit] = "u.",
+        [Piece] = "pza.",
+        [Meter] = "m",
+        [SquareMeter] = "m²",
+        [Kilogram] = "kg",
+        [Liter] = "L",
+    };
+
+    /// <summary>
+    /// Forma corta para listas y tablas: <c>Metro cuadrado</c> → <c>m²</c>. Una unidad
+    /// que el usuario escribió a mano se devuelve tal cual.
+    /// </summary>
+    public static string Abbreviate(string? unit)
+    {
+        var normalized = Normalize(unit);
+        return Abbreviations.TryGetValue(normalized, out var shortForm) ? shortForm : normalized;
+    }
 }

@@ -135,6 +135,43 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Presupuesto que originó el proyecto (solo lectura) -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding HasQuote, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="Presupuesto original" FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                <TextBlock Text="{Binding QuoteIssuedDisplay}" Style="{StaticResource SubtitleStyle}"
+                                           Margin="0,2,0,12" />
+
+                                <ItemsControl ItemsSource="{Binding QuoteLines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:BudgetBreakdownLine}">
+                                            <Grid Margin="0,3">
+                                                <TextBlock Text="{Binding Label}" FontSize="12"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <TextBlock Text="{Binding AmountDisplay}" HorizontalAlignment="Right"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="Precio final" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding QuoteFinalPriceDisplay}" HorizontalAlignment="Right"
+                                               FontSize="18" FontWeight="Bold"
+                                               Foreground="{StaticResource PrimaryBrownBrush}" />
+                                </Grid>
+
+                                <Button Content="Imprimir presupuesto" Style="{StaticResource SecondaryButtonStyle}"
+                                        HorizontalAlignment="Left" Padding="12,6" FontSize="12" Margin="0,14,0,0"
+                                        Command="{Binding PrintQuoteCommand}" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
                             <StackPanel>
                                 <TextBlock Text="Asignar material" FontSize="16" FontWeight="SemiBold"

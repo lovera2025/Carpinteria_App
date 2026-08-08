@@ -29,6 +29,7 @@ public class ProjectsViewModel : ObservableObject
     private string _assignmentNotes = string.Empty;
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
+    private QuoteDetail? _quote;
 
     public ProjectsViewModel(Action onDataChanged)
     {
@@ -36,6 +37,7 @@ public class ProjectsViewModel : ObservableObject
         Projects = new ObservableCollection<ProjectListItem>();
         Materials = new ObservableCollection<ProjectMaterialItem>();
         Assignments = new ObservableCollection<ProjectAssignmentItem>();
+        QuoteLines = new ObservableCollection<BudgetBreakdownLine>();
         AvailableProducts = new ObservableCollection<ProductListItem>();
         AvailableEmployees = new ObservableCollection<EmployeeListItem>();
         StatusFilterOptions = ProjectStatusHelper.GetFilterOptions();
@@ -55,11 +57,13 @@ public class ProjectsViewModel : ObservableObject
         AssignEmployeeCommand = new RelayCommand(_ => AssignEmployee(), _ => CanAssignToProject);
         RemoveMaterialCommand = new RelayCommand(p => RemoveMaterial(p), _ => CanAssignToProject);
         RemoveAssignmentCommand = new RelayCommand(p => RemoveAssignment(p), _ => SelectedProject is not null);
+        PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => HasQuote);
     }
 
     public ObservableCollection<ProjectListItem> Projects { get; }
     public ObservableCollection<ProjectMaterialItem> Materials { get; }
     public ObservableCollection<ProjectAssignmentItem> Assignments { get; }
+    public ObservableCollection<BudgetBreakdownLine> QuoteLines { get; }
     public ObservableCollection<ProductListItem> AvailableProducts { get; }
     public ObservableCollection<EmployeeListItem> AvailableEmployees { get; }
     public IReadOnlyList<ProjectStatusOption> StatusFilterOptions { get; }
@@ -223,6 +227,31 @@ public class ProjectsViewModel : ObservableObject
     public ICommand AssignEmployeeCommand { get; }
     public ICommand RemoveMaterialCommand { get; }
     public ICommand RemoveAssignmentCommand { get; }
+    public ICommand PrintQuoteCommand { get; }
+
+    /// <summary>Presupuesto que originó el proyecto. Solo lectura: acá ya no se edita.</summary>
+    public QuoteDetail? Quote
+    {
+        get => _quote;
+        private set
+        {
+            if (SetProperty(ref _quote, value))
+            {
+                OnPropertyChanged(nameof(HasQuote));
+                OnPropertyChanged(nameof(QuoteMaterialsDisplay));
+                OnPropertyChanged(nameof(QuoteFinalPriceDisplay));
+                OnPropertyChanged(nameof(QuoteIssuedDisplay));
+            }
+        }
+    }
+
+    public bool HasQuote => Quote is not null && (Quote.Lines.Count > 0 || Quote.Breakdown is not null);
+    public string QuoteMaterialsDisplay => Quote?.MaterialsTotalDisplay ?? "—";
+    public string QuoteFinalPriceDisplay => Quote?.BudgetDisplay ?? "—";
+
+    public string QuoteIssuedDisplay => Quote?.QuotedAtLocal is null
+        ? string.Empty
+        : $"Cotizado el {AppCulture.ShortDate(Quote.QuotedAtLocal.Value)}";
 
     public void Load()
     {
@@ -274,10 +303,22 @@ public class ProjectsViewModel : ObservableObject
     {
         Materials.Clear();
         Assignments.Clear();
+        QuoteLines.Clear();
 
         if (SelectedProject is null)
         {
+            Quote = null;
             return;
+        }
+
+        Quote = AppHost.QuoteService.GetDetail(SelectedProject.Id);
+
+        if (Quote?.Breakdown is not null)
+        {
+            foreach (var line in Quote.Breakdown.Lines.Where(l => !l.IsTotal))
+            {
+                QuoteLines.Add(line);
+            }
         }
 
         foreach (var material in AppHost.ProjectService.GetProjectMaterials(SelectedProject.Id))
@@ -327,7 +368,7 @@ public class ProjectsViewModel : ObservableObject
             decimal? budget = null;
             if (!string.IsNullOrWhiteSpace(FormBudget))
             {
-                if (!TryParseDecimal(FormBudget, out var parsedBudget))
+                if (!NumberInput.TryParseDecimal(FormBudget, out var parsedBudget))
                 {
                     throw new InvalidOperationException("Presupuesto inválido.");
                 }
@@ -451,7 +492,7 @@ public class ProjectsViewModel : ObservableObject
 
         try
         {
-            if (!TryParseDecimal(MaterialQuantity, out var quantity))
+            if (!NumberInput.TryParseDecimal(MaterialQuantity, out var quantity))
             {
                 throw new InvalidOperationException("Cantidad inválida.");
             }
@@ -544,10 +585,26 @@ public class ProjectsViewModel : ObservableObject
         }
     }
 
-    private static bool TryParseDecimal(string value, out decimal result)
+    private void PrintQuote()
     {
-        return decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out result)
-            || decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
+        if (Quote is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var document = AppHost.QuoteDocumentService.BuildClientQuote(Quote, includeMaterialDetail: true);
+
+            if (AppHost.QuoteDocumentService.Print(document, $"Presupuesto {Quote.Id:0000}"))
+            {
+                SetStatus("Presupuesto enviado a la impresora.", isError: false);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
     }
 
     private void SetStatus(string message, bool isError)

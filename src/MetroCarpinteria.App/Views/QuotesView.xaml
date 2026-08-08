@@ -1,0 +1,672 @@
+<UserControl x:Class="MetroCarpinteria.App.Views.QuotesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:MetroCarpinteria.App.Models"
+             mc:Ignorable="d"
+             d:DesignHeight="760"
+             d:DesignWidth="1180">
+    <Grid x:Name="PageRoot" Background="{StaticResource ContentBackgroundBrush}" Opacity="0">
+        <Grid Margin="24,20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Encabezado -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                <TextBlock Text="Presupuestos" Style="{StaticResource PageTitleStyle}" Margin="0,0,0,4" />
+                <TextBlock Text="Cotizá un trabajo sin tocar el inventario. El stock se descuenta recién al aprobar."
+                           Style="{StaticResource SubtitleStyle}" Margin="0,0,0,16" />
+
+                <WrapPanel Margin="0,0,0,12">
+                    <Button Content="+ Nuevo presupuesto" Style="{StaticResource PrimaryButtonStyle}"
+                            Command="{Binding NewQuoteCommand}" Margin="0,0,10,8" />
+                    <Button Content="Editar datos" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding EditQuoteCommand}" Margin="0,0,10,8" />
+                    <Button Content="Duplicar" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding DuplicateCommand}" Margin="0,0,10,8"
+                            ToolTip="Copia el presupuesto con los precios de hoy" />
+                    <Button Content="Actualizar" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding LoadCommand}" Margin="0,0,10,8" />
+                </WrapPanel>
+
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="170" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" Padding="12,10" Margin="0,0,12,0"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Buscar por trabajo o cliente" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding FilterOptions}"
+                              SelectedItem="{Binding SelectedFilter}"
+                              DisplayMemberPath="Label" Padding="8,8" Margin="0,0,12,0" />
+                    <CheckBox Grid.Column="2" Content="Ver aprobados" IsChecked="{Binding ShowApproved}"
+                              VerticalAlignment="Center" Foreground="{StaticResource TextPrimaryBrush}"
+                              ToolTip="Muestra también los presupuestos que ya se convirtieron en trabajos" />
+                </Grid>
+
+                <Border CornerRadius="8" Padding="12,8"
+                        Visibility="{Binding StatusMessage, Converter={StaticResource StringToVisibilityConverter}}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="#1A4A7C59" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStatusError}" Value="True">
+                                    <Setter Property="Background" Value="#1AC45C26" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="13" TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsStatusError}" Value="True">
+                                        <Setter Property="Foreground" Value="{StaticResource AlertBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Border>
+            </StackPanel>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.15*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Lista -->
+                <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="0">
+                    <DataGrid ItemsSource="{Binding Quotes}" SelectedItem="{Binding SelectedQuote}"
+                              AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal" BorderThickness="0"
+                              Background="Transparent" RowBackground="White"
+                              AlternatingRowBackground="#08F5F0E8"
+                              CanUserAddRows="False" CanUserDeleteRows="False" SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Cliente" Binding="{Binding ClientName}" Width="130" />
+                            <DataGridTextColumn Header="Trabajo" Binding="{Binding Title}" Width="*" MinWidth="120" />
+                            <DataGridTextColumn Header="Total" Binding="{Binding BudgetDisplay}" Width="110" />
+                            <DataGridTemplateColumn Header="Estado" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate DataType="{x:Type models:QuoteListItem}">
+                                        <StackPanel Margin="4,2">
+                                            <Border CornerRadius="8" Padding="8,3" HorizontalAlignment="Left">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <!-- Vigente -->
+                                                        <Setter Property="Background" Value="#1A4A7C59" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Freshness}" Value="{x:Static models:QuoteFreshness.DueSoon}">
+                                                                <Setter Property="Background" Value="#26C4A574" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Freshness}" Value="{x:Static models:QuoteFreshness.Expired}">
+                                                                <Setter Property="Background" Value="#14000000" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsRejected}" Value="True">
+                                                                <Setter Property="Background" Value="#1AC45C26" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock FontSize="11" FontWeight="SemiBold">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="{Binding FreshnessLabel}" />
+                                                            <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Freshness}" Value="{x:Static models:QuoteFreshness.DueSoon}">
+                                                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrownBrush}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Freshness}" Value="{x:Static models:QuoteFreshness.Expired}">
+                                                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsRejected}" Value="True">
+                                                                    <Setter Property="Text" Value="Rechazado" />
+                                                                    <Setter Property="Foreground" Value="{StaticResource AlertBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Border>
+                                            <TextBlock Text="{Binding AgeDisplay}" FontSize="10"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Margin="2,3,0,0" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+
+                <!-- Detalle: el contenido scrollea, el precio final queda fijo abajo -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+
+                        <!-- Formulario de cabecera -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding IsFormOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding FormHeader}" FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,16" />
+                                <TextBlock Text="Trabajo" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding FormTitle, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="10,8" Margin="0,0,0,12" />
+                                <TextBlock Text="Cliente" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding FormClientName, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="10,8" Margin="0,0,0,12" />
+                                <TextBlock Text="Descripción (opcional)" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding FormDescription, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="10,8" Margin="0,0,0,12" MinHeight="56"
+                                         TextWrapping="Wrap" AcceptsReturn="True" />
+                                <TextBlock Text="Válido hasta" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <DatePicker SelectedDate="{Binding FormValidUntil}" Margin="0,0,0,16" Padding="6,6" />
+                                <WrapPanel>
+                                    <Button Content="Guardar" Style="{StaticResource PrimaryButtonStyle}"
+                                            Command="{Binding SaveQuoteCommand}" Margin="0,0,10,0" />
+                                    <Button Content="Cancelar" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding CancelFormCommand}" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Sin selección -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}">
+                            <StackPanel>
+                                <TextBlock Text="Ningún presupuesto seleccionado" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,6" />
+                                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap"
+                                           Text="Creá uno nuevo o elegí uno de la lista. La calculadora de abajo funciona igual para hacer una cuenta rápida." />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Cabecera del presupuesto -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Detail.Title}" FontSize="17" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap" />
+                                <TextBlock Margin="0,2,0,0">
+                                    <Run Text="Cliente: " Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <Run Text="{Binding Detail.ClientName, Mode=OneWay}" FontWeight="SemiBold"
+                                         Foreground="{StaticResource TextPrimaryBrush}" />
+                                </TextBlock>
+                                <TextBlock Text="{Binding DetailStatusLabel}" Style="{StaticResource SubtitleStyle}"
+                                           Margin="0,6,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding Detail.Description}" Style="{StaticResource SubtitleStyle}"
+                                           Margin="0,8,0,0" TextWrapping="Wrap"
+                                           Visibility="{Binding Detail.Description, Converter={StaticResource StringToVisibilityConverter}}" />
+
+                                <Border CornerRadius="8" Padding="10,8" Margin="0,12,0,0" Background="#26C4A574"
+                                        Visibility="{Binding ShowManualAdjustNotice, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="El precio final fue ajustado a mano y no coincide con el cálculo."
+                                               FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{StaticResource PrimaryBrownBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Materiales -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,4">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Background="{StaticResource PrimaryBrownBrush}" CornerRadius="11"
+                                                Width="22" Height="22" Margin="0,0,10,0">
+                                            <TextBlock Text="1" FontSize="12" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextOnDarkBrush}" />
+                                        </Border>
+                                        <TextBlock Text="MATERIALES" FontSize="15" FontWeight="Bold"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                    </StackPanel>
+                                    <Button Content="+ Agregar material" HorizontalAlignment="Right"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="12,6" FontSize="12"
+                                            Command="{Binding AddMaterialCommand}" />
+                                </Grid>
+
+                                <TextBlock Text="{Binding MaterialsStepSummary}" Margin="32,0,0,12"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource PrimaryBrownBrush}" />
+
+                                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                                           Text="Cargar materiales no descuenta stock. Los precios quedan congelados con el valor de hoy." />
+
+                                <ItemsControl ItemsSource="{Binding Lines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:QuoteLineItem}">
+                                            <Border Padding="0,8" BorderBrush="#1A3D2914" BorderThickness="0,0,0,1">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="{Binding Description}" FontWeight="SemiBold"
+                                                                   TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                                        <TextBlock Margin="0,2,0,0" FontSize="12">
+                                                            <Run Text="{Binding QuantityDisplay, Mode=OneWay}"
+                                                                 Foreground="{StaticResource TextPrimaryBrush}" />
+                                                            <Run Text=" × " Foreground="{StaticResource TextSecondaryBrush}" />
+                                                            <Run Text="{Binding UnitCostDisplay, Mode=OneWay}"
+                                                                 Foreground="{StaticResource TextSecondaryBrush}" />
+                                                            <Run Text="  ·  " Foreground="{StaticResource TextSecondaryBrush}" />
+                                                            <Run Text="{Binding OriginLabel, Mode=OneWay}"
+                                                                 Foreground="{StaticResource TextSecondaryBrush}" />
+                                                        </TextBlock>
+                                                        <TextBlock Text="{Binding StockDisplay}" FontSize="11" Margin="0,2,0,0"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   Visibility="{Binding IsFromInventory, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                        <TextBlock FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource AlertBrush}"
+                                                                   Text="⚠ No alcanza el stock. Se puede cotizar igual."
+                                                                   Visibility="{Binding HasStockWarning, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                    </StackPanel>
+
+                                                    <TextBlock Grid.Column="1" Text="{Binding LineTotalDisplay}"
+                                                               FontWeight="SemiBold" VerticalAlignment="Center"
+                                                               Margin="12,0,8,0"
+                                                               Foreground="{StaticResource TextPrimaryBrush}" />
+
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                                VerticalAlignment="Center">
+                                                        <Button Content="✎" Style="{StaticResource SecondaryButtonStyle}"
+                                                                Padding="8,4" FontSize="11" Margin="0,0,6,0"
+                                                                ToolTip="Corregir cantidad o precio"
+                                                                Command="{Binding DataContext.EditLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Content="✕" Style="{StaticResource SecondaryButtonStyle}"
+                                                                Padding="8,4" FontSize="11"
+                                                                ToolTip="Quitar del presupuesto"
+                                                                Command="{Binding DataContext.RemoveLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="Subtotal de materiales" Style="{StaticResource SubtitleStyle}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding MaterialsTotalDisplay}" HorizontalAlignment="Right"
+                                               FontSize="15" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Alta de material -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding IsMaterialFormOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MaterialFormTitle}" FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12" />
+
+                                <!-- El origen de una línea existente no se cambia: se corrigen cantidad y precio. -->
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14"
+                                            Visibility="{Binding IsEditingLine, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}">
+                                    <RadioButton Content="Del inventario" GroupName="MaterialOrigin" Margin="0,0,18,0"
+                                                 IsChecked="{Binding MaterialFromInventory, Mode=TwoWay}"
+                                                 Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <RadioButton Content="Suelto" GroupName="MaterialOrigin"
+                                                 IsChecked="{Binding MaterialFromInventory, Converter={StaticResource InverseBoolConverter}, Mode=TwoWay}"
+                                                 Foreground="{StaticResource TextPrimaryBrush}" />
+                                </StackPanel>
+
+                                <!-- Del inventario -->
+                                <StackPanel Visibility="{Binding MaterialFromInventory, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="Buscar material" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4"
+                                               Visibility="{Binding IsEditingLine, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+                                    <TextBox Text="{Binding ProductSearch, UpdateSourceTrigger=PropertyChanged}"
+                                             Padding="10,8" Margin="0,0,0,8"
+                                             ToolTip="Escribí parte del nombre para filtrar la lista"
+                                             Visibility="{Binding IsEditingLine, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+
+                                    <TextBlock Text="Producto" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                    <ComboBox ItemsSource="{Binding AvailableProducts}" SelectedItem="{Binding SelectedProduct}"
+                                              DisplayMemberPath="PickerDisplay" Padding="8,8" Margin="0,0,0,6"
+                                              IsEnabled="{Binding IsEditingLine, Converter={StaticResource InverseBoolConverter}}"
+                                              ToolTip="Elegí el material del inventario" />
+
+                                    <TextBlock Text="No hay materiales que coincidan con la búsqueda."
+                                               FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource AlertBrush}"
+                                               Visibility="{Binding HasNoProductMatches, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                    <TextBlock Margin="0,0,0,12" FontSize="12">
+                                        <Run Text="Disponible: " Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <Run Text="{Binding SelectedProductStockDisplay, Mode=OneWay}"
+                                             Foreground="{StaticResource TextPrimaryBrush}" />
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <!-- Suelto -->
+                                <StackPanel Visibility="{Binding MaterialIsLoose, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="Detalle" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                    <TextBox Text="{Binding LooseDescription, UpdateSourceTrigger=PropertyChanged}"
+                                             Padding="10,8" Margin="0,0,0,12"
+                                             IsEnabled="{Binding IsEditingLine, Converter={StaticResource InverseBoolConverter}}" />
+                                    <TextBlock Text="Unidad" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                    <ComboBox ItemsSource="{Binding AvailableUnits}" SelectedItem="{Binding LooseUnit}"
+                                              Padding="8,8" Margin="0,0,0,12"
+                                              IsEnabled="{Binding IsEditingLine, Converter={StaticResource InverseBoolConverter}}" />
+                                    <CheckBox Content="Guardar también en el inventario" Margin="0,0,0,12"
+                                              IsChecked="{Binding SaveToCatalog}"
+                                              Foreground="{StaticResource TextPrimaryBrush}"
+                                              ToolTip="Crea el producto en el catálogo con stock 0"
+                                              Visibility="{Binding IsEditingLine, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+                                </StackPanel>
+
+                                <!-- Editar una línea cambia cantidad y precio, no de qué material se trata. -->
+                                <TextBlock Text="Al editar solo se cambian la cantidad y el precio. Para cambiar el material, quitá la línea y cargala de nuevo."
+                                           FontSize="11" Margin="0,0,0,12" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Visibility="{Binding IsEditingLine, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Cantidad" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding MaterialQuantity, UpdateSourceTrigger=PropertyChanged}"
+                                                 Padding="10,8" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Precio unitario" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding MaterialUnitCost, UpdateSourceTrigger=PropertyChanged}"
+                                                 Padding="10,8" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Total de la línea antes de confirmar, para no cargar a ciegas. -->
+                                <Border Background="#14C4A574" CornerRadius="8" Padding="12,10" Margin="0,0,0,14">
+                                    <Grid>
+                                        <TextBlock Text="Total de esta línea" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" />
+                                        <TextBlock Text="{Binding MaterialLineTotalDisplay}" HorizontalAlignment="Right"
+                                                   FontSize="16" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource PrimaryBrownBrush}" />
+                                    </Grid>
+                                </Border>
+
+                                <WrapPanel>
+                                    <Button Content="{Binding MaterialConfirmLabel}" Style="{StaticResource PrimaryButtonStyle}"
+                                            Command="{Binding ConfirmMaterialCommand}" Margin="0,0,10,0" />
+                                    <Button Content="Cancelar" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding CancelMaterialCommand}" />
+                                </WrapPanel>
+
+                                <TextBlock Text="Elegí un material de la lista para poder agregarlo."
+                                           FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Visibility="{Binding CanConfirmMaterial, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Paso 2: precio -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <Border Background="{StaticResource PrimaryBrownBrush}" CornerRadius="11"
+                                            Width="22" Height="22" Margin="0,0,10,0">
+                                        <TextBlock Text="2" FontSize="12" FontWeight="Bold"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextOnDarkBrush}" />
+                                    </Border>
+                                    <TextBlock Text="PRECIO" FontSize="15" FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding PriceStepSummary}" Margin="32,0,0,12"
+                                           FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
+                                           Foreground="{StaticResource PrimaryBrownBrush}" />
+
+                                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                                           Text="El precio se actualiza solo a medida que cargás los datos." />
+
+                                <TextBlock Text="Costo de materiales" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Padding="10,8" Margin="0,0,0,4"
+                                         Text="{Binding CalcMaterials, UpdateSourceTrigger=LostFocus}"
+                                         ToolTip="Sale solo de los materiales cargados arriba. Se puede sobrescribir." />
+                                <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" Margin="0,0,0,12"
+                                           Text="Se toma solo de los materiales del paso 1." />
+
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Días estimados" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding CalcDays, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Valor del jornal" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding CalcDailyRate, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Expander Header="{Binding RatesSummary}" IsExpanded="{Binding IsAdvancedOpen}"
+                                          Foreground="{StaticResource PrimaryBrownBrush}" Margin="0,0,0,16">
+                                    <StackPanel Margin="0,12,0,0">
+                                        <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                                                   Text="Los porcentajes se aplican sobre materiales (desperdicio y desgaste) y sobre la mano de obra (gastos y ganancia)." />
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="12" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="% Desperdicio" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                                <TextBox Text="{Binding RateWaste, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="% Desgaste de herramientas" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                                <TextBox Text="{Binding RateToolWear, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,0,0,16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="12" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="% Gastos adicionales" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                                <TextBox Text="{Binding RateOverhead, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="% Ganancia" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                                <TextBox Text="{Binding RateProfit, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <WrapPanel>
+                                            <Button Content="Guardar como valores por defecto"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    Padding="12,6" FontSize="12" Margin="0,0,10,8"
+                                                    Command="{Binding SaveDefaultRatesCommand}" />
+                                            <Button Content="Restaurar valores recomendados"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    Padding="12,6" FontSize="12" Margin="0,0,0,8"
+                                                    Command="{Binding RestoreDefaultRatesCommand}"
+                                                    ToolTip="Desperdicio 16% · Desgaste 9% · Gastos 50% · Ganancia 30%" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Button Content="Recalcular" Style="{StaticResource SecondaryButtonStyle}"
+                                        HorizontalAlignment="Left" Command="{Binding CalculateCommand}"
+                                        ToolTip="El precio ya se actualiza solo. Esto lo fuerza a mano." />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Desglose -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="Desglose" FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12" />
+
+                                <ItemsControl ItemsSource="{Binding BreakdownLines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:BudgetBreakdownLine}">
+                                            <Grid Margin="0,5">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Label}"
+                                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                                    <TextBlock Text="{Binding Detail}" FontSize="11"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                                               Visibility="{Binding Detail, Converter={StaticResource StringToVisibilityConverter}}" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding AmountDisplay}" HorizontalAlignment="Right"
+                                                           VerticalAlignment="Center" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Faltantes -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                Visibility="{Binding Shortfalls.Count, Converter={StaticResource IntToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="Falta comprar" FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{StaticResource AlertBrush}" Margin="0,0,0,6" />
+                                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                           Text="Se descontó el stock disponible. Estos materiales quedaron pendientes." />
+                                <ItemsControl ItemsSource="{Binding Shortfalls}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:QuoteApprovalShortfall}">
+                                            <TextBlock Text="{Binding Display}" Margin="0,3" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Acciones -->
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8"
+                                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <Border Background="{StaticResource PrimaryBrownBrush}" CornerRadius="11"
+                                            Width="22" Height="22" Margin="0,0,10,0">
+                                        <TextBlock Text="3" FontSize="12" FontWeight="Bold"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextOnDarkBrush}" />
+                                    </Border>
+                                    <TextBlock Text="ENTREGAR" FontSize="15" FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding DeliverStepSummary}" Margin="32,0,0,12"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource PrimaryBrownBrush}" />
+
+                                <WrapPanel>
+                                    <Button Content="Imprimir para el cliente" Style="{StaticResource PrimaryButtonStyle}"
+                                            Command="{Binding PrintClientCommand}" Margin="0,0,10,8" />
+                                    <Button Content="Hoja de costos" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding PrintCostSheetCommand}" Margin="0,0,10,8"
+                                            ToolTip="Uso interno: incluye desperdicio, gastos y ganancia" />
+
+                                    <!-- Aprobar y rechazar solo mientras el presupuesto sigue abierto. -->
+                                    <Button Content="Aprobar" Style="{StaticResource PrimaryButtonStyle}"
+                                            Command="{Binding ApproveCommand}" Margin="0,0,10,8"
+                                            Visibility="{Binding CanEditSelected, Converter={StaticResource BoolToVisibilityConverter}}"
+                                            ToolTip="Pasa el presupuesto a proyecto y descuenta el stock disponible" />
+                                    <Button Content="Rechazar" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding RejectCommand}" Margin="0,0,10,8"
+                                            Visibility="{Binding CanEditSelected, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                    <!-- Reabrir es lo único que aplica a un rechazado. -->
+                                    <Button Content="Reabrir" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ReopenCommand}" Margin="0,0,10,8"
+                                            Visibility="{Binding IsRejectedSelected, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                    <Button Content="Descontar pendientes" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ApplyPendingCommand}" Margin="0,0,10,8"
+                                            Visibility="{Binding ShowPendingStockNotice, Converter={StaticResource BoolToVisibilityConverter}}"
+                                            ToolTip="Descuenta del inventario los materiales que faltaban al aprobar" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Precio final: fijo, para no tener que scrollear hasta el fondo -->
+                <Border Grid.Row="1" Background="{StaticResource PrimaryBrownBrush}" CornerRadius="12"
+                        Padding="18,14" Margin="0,12,0,0"
+                        Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Grid>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="PRECIO FINAL" FontSize="13" FontWeight="Bold"
+                                       Foreground="{StaticResource AccentGoldBrush}" />
+                            <TextBlock Text="{Binding MissingDataMessage}" FontSize="11" Margin="0,2,0,0"
+                                       TextWrapping="Wrap" Opacity="0.8"
+                                       Foreground="{StaticResource TextOnDarkBrush}"
+                                       Visibility="{Binding HasMissingData, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding FinalPriceOrPlaceholder}" HorizontalAlignment="Right"
+                                   VerticalAlignment="Center" FontSize="24" FontWeight="Bold"
+                                   Foreground="{StaticResource TextOnDarkBrush}" />
+                    </Grid>
+                </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+
+    <UserControl.Triggers>
+        <EventTrigger RoutedEvent="Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="PageRoot"
+                                     Storyboard.TargetProperty="Opacity"
+                                     From="0" To="1" Duration="0:0:0.35">
+                        <DoubleAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut" />
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </UserControl.Triggers>
+</UserControl>

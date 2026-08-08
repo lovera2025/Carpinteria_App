@@ -28,9 +28,7 @@ public class ReportsViewModel : ObservableObject
             Sections.Add(section);
         }
 
-        GeneratedAt = DateTime.Now.ToString(
-            "dd/MM/yyyy HH:mm",
-            new System.Globalization.CultureInfo("es-AR"));
+        GeneratedAt = AppCulture.DateTimeShort(DateTime.Now);
         OnPropertyChanged(nameof(GeneratedAt));
     }
 }

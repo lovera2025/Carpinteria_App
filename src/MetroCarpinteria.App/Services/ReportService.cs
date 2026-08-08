@@ -17,13 +17,23 @@ public sealed class ReportService
     public IReadOnlyList<ReportSection> BuildSummary()
     {
         using var context = _databaseService.CreateContext();
-        var culture = new System.Globalization.CultureInfo("es-AR");
+        var culture = Helpers.AppCulture.Current;
 
         var activeProducts = context.Products.Count(p => !p.IsArchived);
-        // Same rule as Home / DatabaseService.GetLowStockCount: stock at or below minimum (includes out of stock).
-        var lowStock = context.Products.Count(p => !p.IsArchived && p.CurrentStock <= p.MinimumStock);
-        var outOfStock = context.Products.Count(p => !p.IsArchived && p.CurrentStock <= 0);
         var archivedProducts = context.Products.Count(p => p.IsArchived);
+
+        // Mismo criterio que Inventario y el badge del menú (StockRules), y por la misma
+        // razón se evalúa en memoria: comparar decimales en SQL sobre columnas TEXT
+        // ordena alfabéticamente y devuelve cuentas equivocadas.
+        var activeStock = context.Products
+            .AsNoTracking()
+            .Where(p => !p.IsArchived)
+            .Select(p => new { p.CurrentStock, p.MinimumStock })
+            .AsEnumerable()
+            .ToList();
+
+        var lowStock = activeStock.Count(p => StockRules.IsLowOrOut(p.CurrentStock, p.MinimumStock));
+        var outOfStock = activeStock.Count(p => StockRules.IsOut(p.CurrentStock));
 
         var openCash = context.CashSessions.Any(s => s.ClosedAtUtc == null);
         var closedSessions = context.CashSessions.Count(s => s.ClosedAtUtc != null);

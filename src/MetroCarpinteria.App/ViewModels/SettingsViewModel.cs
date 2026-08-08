@@ -44,7 +44,7 @@ public class SettingsViewModel : ObservableObject
             }
 
             var local = lastBackup.Value.ToLocalTime();
-            return local.ToString("dd/MM/yyyy HH:mm", new System.Globalization.CultureInfo("es-AR"));
+            return AppCulture.DateTimeShort(local);
         }
     }
 

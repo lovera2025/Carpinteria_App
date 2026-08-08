@@ -13,6 +13,8 @@ public static class AppHost
     public static InventoryService InventoryService { get; private set; } = null!;
     public static CashRegisterService CashRegisterService { get; private set; } = null!;
     public static ProjectService ProjectService { get; private set; } = null!;
+    public static QuoteService QuoteService { get; private set; } = null!;
+    public static QuoteDocumentService QuoteDocumentService { get; private set; } = null!;
     public static EmployeeService EmployeeService { get; private set; } = null!;
     public static ReportService ReportService { get; private set; } = null!;
 
@@ -30,11 +32,16 @@ public static class AppHost
 
         SettingsService = new SettingsService(Paths);
         DatabaseService = new DatabaseService(Paths);
-        DatabaseService.Initialize();
         BackupService = new BackupService(Paths, SettingsService);
+
+        // El respaldo va antes de cualquier cambio de esquema sobre una base con datos.
+        DatabaseService.Initialize(beforeMigration: () => BackupService.CreateBackup());
+
         InventoryService = new InventoryService(DatabaseService);
         CashRegisterService = new CashRegisterService(DatabaseService);
         ProjectService = new ProjectService(DatabaseService);
+        QuoteService = new QuoteService(DatabaseService, SettingsService);
+        QuoteDocumentService = new QuoteDocumentService();
         EmployeeService = new EmployeeService(DatabaseService);
         ReportService = new ReportService(DatabaseService);
 

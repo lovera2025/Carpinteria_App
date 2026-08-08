@@ -37,6 +37,10 @@
                 <views:CashRegisterView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type vm:QuotesViewModel}">
+                <views:QuotesView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type vm:ProjectsViewModel}">
                 <views:ProjectsView />
             </DataTemplate>

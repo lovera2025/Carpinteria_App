@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<ProjectMaterial> ProjectMaterials => Set<ProjectMaterial>();
     public DbSet<ProjectAssignment> ProjectAssignments => Set<ProjectAssignment>();
+    public DbSet<ProjectBudgetLine> ProjectBudgetLines => Set<ProjectBudgetLine>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -36,6 +37,7 @@ public class AppDbContext : DbContext
             entity.Property(p => p.Unit).HasMaxLength(30).IsRequired();
             entity.Property(p => p.CurrentStock).HasPrecision(18, 3);
             entity.Property(p => p.MinimumStock).HasPrecision(18, 3);
+            entity.Property(p => p.CostPrice).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<StockMovement>(entity =>
@@ -83,6 +85,13 @@ public class AppDbContext : DbContext
             entity.Property(p => p.ClientName).HasMaxLength(200).IsRequired();
             entity.Property(p => p.Description).HasMaxLength(2000);
             entity.Property(p => p.Budget).HasPrecision(18, 2);
+            entity.Property(p => p.QuotedMaterialsCost).HasPrecision(18, 2);
+            entity.Property(p => p.EstimatedDays).HasPrecision(18, 2);
+            entity.Property(p => p.DailyRate).HasPrecision(18, 2);
+            entity.Property(p => p.WastePercent).HasPrecision(9, 4);
+            entity.Property(p => p.ToolWearPercent).HasPrecision(9, 4);
+            entity.Property(p => p.OverheadPercent).HasPrecision(9, 4);
+            entity.Property(p => p.ProfitPercent).HasPrecision(9, 4);
         });
 
         modelBuilder.Entity<Employee>(entity =>
@@ -111,6 +120,21 @@ public class AppDbContext : DbContext
             entity.Property(a => a.Notes).HasMaxLength(500);
             entity.HasOne(a => a.Project).WithMany(p => p.Assignments).HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(a => a.Employee).WithMany(e => e.Assignments).HasForeignKey(a => a.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProjectBudgetLine>(entity =>
+        {
+            entity.HasIndex(l => l.ProjectId);
+            entity.HasIndex(l => l.ProductId);
+            entity.Property(l => l.Description).HasMaxLength(200).IsRequired();
+            entity.Property(l => l.Unit).HasMaxLength(30).IsRequired();
+            entity.Property(l => l.Quantity).HasPrecision(18, 3);
+            entity.Property(l => l.AppliedQuantity).HasPrecision(18, 3);
+            entity.Property(l => l.UnitCost).HasPrecision(18, 2);
+            entity.Ignore(l => l.LineTotal);
+            entity.Ignore(l => l.PendingQuantity);
+            entity.HasOne(l => l.Project).WithMany(p => p.BudgetLines).HasForeignKey(l => l.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(l => l.Product).WithMany().HasForeignKey(l => l.ProductId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

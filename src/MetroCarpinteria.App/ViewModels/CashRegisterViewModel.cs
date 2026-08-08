@@ -145,7 +145,7 @@ public class CashRegisterViewModel : ObservableObject
     {
         try
         {
-            if (!TryParseDecimal(OpenAmount, out var amount))
+            if (!NumberInput.TryParseDecimal(OpenAmount, out var amount))
             {
                 throw new InvalidOperationException("Monto inicial inválido.");
             }
@@ -166,7 +166,7 @@ public class CashRegisterViewModel : ObservableObject
     {
         try
         {
-            if (!TryParseDecimal(MovementAmount, out var amount))
+            if (!NumberInput.TryParseDecimal(MovementAmount, out var amount))
             {
                 throw new InvalidOperationException("Monto inválido.");
             }
@@ -193,7 +193,7 @@ public class CashRegisterViewModel : ObservableObject
             return;
         }
 
-        if (!TryParseDecimal(CloseCountedAmount, out var counted))
+        if (!NumberInput.TryParseDecimal(CloseCountedAmount, out var counted))
         {
             SetStatus("Monto contado inválido.", isError: true);
             return;
@@ -201,7 +201,7 @@ public class CashRegisterViewModel : ObservableObject
 
         var expected = CurrentSession.ExpectedBalance;
         var difference = counted - expected;
-        var diffText = difference.ToString("C", CultureInfo.GetCultureInfo("es-AR"));
+        var diffText = AppCulture.Money(difference);
 
         var message = difference == 0
             ? $"¿Cerrar caja?\n\nContado: {counted:C} (cuadra exacto)"
@@ -230,12 +230,6 @@ public class CashRegisterViewModel : ObservableObject
         {
             SetStatus(ex.Message, isError: true);
         }
-    }
-
-    private static bool TryParseDecimal(string value, out decimal result)
-    {
-        return decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out result)
-            || decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
     }
 
     private void SetStatus(string message, bool isError)

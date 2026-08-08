@@ -1,5 +1,7 @@
 using System.IO;
 using MetroCarpinteria.App.Data.Entities;
+using MetroCarpinteria.App.Helpers;
+using MetroCarpinteria.App.Models;
 using MetroCarpinteria.App.Services;
 using Microsoft.Data.Sqlite;
 
@@ -20,6 +22,8 @@ internal static class Program
         });
 
         RunProductionHealthChecks();
+        RunMigrationTests();
+        RunNumberFormatTests();
         RunIsolatedIntegrationFlow();
         UiSmokeTests.Run(Run);
         PrintManualUiChecklist();
@@ -109,11 +113,13 @@ internal static class Program
             var database = new DatabaseService(paths);
             database.Initialize();
 
+            var settingsService = new SettingsService(paths);
             var inventory = new InventoryService(database);
             var cash = new CashRegisterService(database);
             var projects = new ProjectService(database);
             var employees = new EmployeeService(database);
             var reports = new ReportService(database);
+            var quotes = new QuoteService(database, settingsService);
 
             Run("Temp DB initialize", () =>
             {
@@ -348,10 +354,14 @@ internal static class Program
                 }
             });
 
+            RunBudgetCalculatorTests();
+            RunQuoteFreshnessTests();
+            RunStockCounterTests(inventory, database, reports);
+            RunQuoteTests(inventory, quotes, projects);
+
             Run("Backup: create and restore", () =>
             {
-                var settings = new SettingsService(paths);
-                var backupService = new BackupService(paths, settings);
+                var backupService = new BackupService(paths, settingsService);
                 var backup = backupService.CreateBackup();
                 if (!File.Exists(backup.FullPath) || backup.SizeBytes <= 0)
                 {
@@ -398,6 +408,662 @@ internal static class Program
         }
     }
 
+    // --- Calculadora de presupuestos -----------------------------------------
+
+    private static void RunBudgetCalculatorTests()
+    {
+        Run("Cálculo: ejemplo de referencia ($ 287.000)", () =>
+        {
+            var breakdown = Calculate(100000m, 3m, 30000m);
+
+            Expect(breakdown.MaterialsCost, 100000m, "materiales");
+            Expect(breakdown.Waste, 16000m, "desperdicio 16%");
+            Expect(breakdown.ToolWear, 9000m, "desgaste 9%");
+            Expect(breakdown.Labor, 90000m, "mano de obra");
+            Expect(breakdown.Overhead, 45000m, "gastos adicionales 50%");
+            Expect(breakdown.Profit, 27000m, "ganancia 30%");
+            Expect(breakdown.FinalPrice, 287000m, "precio final");
+        });
+
+        Run("Cálculo: el desglose suma exactamente el precio final", () =>
+        {
+            var breakdown = Calculate(33333.33m, 2.5m, 27777.77m);
+
+            var shown = breakdown.Lines.Where(l => !l.IsTotal).Sum(l => l.Amount);
+            Expect(shown, breakdown.FinalPrice, "suma de las líneas mostradas");
+
+            var client = breakdown.ClientLines.Where(l => !l.IsTotal).Sum(l => l.Amount);
+            Expect(client, breakdown.FinalPrice, "suma del resumen del cliente");
+        });
+
+        Run("Cálculo: caso de redondeo que la fórmula simplificada erra", () =>
+        {
+            var breakdown = Calculate(33333.33m, 2.5m, 27777.77m);
+            Expect(breakdown.FinalPrice, 166666.64m, "precio final");
+
+            // Si alguien "optimiza" usando (materiales × 1,25) + (mano de obra × 1,80),
+            // el total deja de cerrar con el desglose que ve el cliente.
+            var simplified = Math.Round(
+                (33333.33m * 1.25m) + (27777.77m * 2.5m * 1.80m), 2, MidpointRounding.AwayFromZero);
+
+            if (simplified == breakdown.FinalPrice)
+            {
+                throw new InvalidOperationException(
+                    "Este caso debía diferir de la fórmula simplificada; el test perdió sentido.");
+            }
+        });
+
+        Run("Cálculo: cambiar un porcentaje recalcula", () =>
+        {
+            var rates = BudgetRates.Defaults();
+            rates.ProfitPercent = 40m;
+
+            var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
+            {
+                MaterialsCost = 100000m,
+                Days = 3m,
+                DailyRate = 30000m,
+                Rates = rates
+            });
+
+            Expect(breakdown.Profit, 36000m, "ganancia al 40%");
+            Expect(breakdown.FinalPrice, 296000m, "precio final al 40%");
+        });
+
+        Run("Cálculo: acepta días con decimales", () =>
+        {
+            Expect(Calculate(0m, 2.5m, 10000m).Labor, 25000m, "mano de obra de 2,5 jornadas");
+        });
+
+        Run("Cálculo: validación (valores negativos)", () =>
+        {
+            ExpectThrows(() => Calculate(-1m, 1m, 1m), "materiales");
+            ExpectThrows(() => Calculate(1m, -1m, 1m), "días");
+            ExpectThrows(() => Calculate(1m, 1m, -1m), "jornal");
+
+            var rates = BudgetRates.Defaults();
+            rates.WastePercent = -5m;
+            ExpectThrows(
+                () => BudgetCalculatorService.Calculate(new BudgetInput { Rates = rates }),
+                "desperdicio");
+        });
+    }
+
+    private static BudgetBreakdown Calculate(decimal materials, decimal days, decimal dailyRate) =>
+        BudgetCalculatorService.Calculate(new BudgetInput
+        {
+            MaterialsCost = materials,
+            Days = days,
+            DailyRate = dailyRate,
+            Rates = BudgetRates.Defaults()
+        });
+
+    // --- Vigencia -------------------------------------------------------------
+
+    private static void RunQuoteFreshnessTests()
+    {
+        var today = new DateTime(2026, 8, 7);
+
+        Run("Vigencia: vigente, por vencer y vencido", () =>
+        {
+            ExpectFreshness(today.AddDays(15), today, QuoteFreshness.Current);
+            ExpectFreshness(today.AddDays(4), today, QuoteFreshness.Current);
+            ExpectFreshness(today.AddDays(3), today, QuoteFreshness.DueSoon);
+            ExpectFreshness(today, today, QuoteFreshness.DueSoon);
+            ExpectFreshness(today.AddDays(-1), today, QuoteFreshness.Expired);
+            ExpectFreshness(null, today, QuoteFreshness.NoExpiry);
+        });
+
+        Run("Vigencia: antigüedad en palabras", () =>
+        {
+            ExpectText(QuoteRules.DescribeAge(today, today), "hoy");
+            ExpectText(QuoteRules.DescribeAge(today.AddDays(-1), today), "ayer");
+            ExpectText(QuoteRules.DescribeAge(today.AddDays(-6), today), "hace 6 días");
+        });
+    }
+
+    // --- Contadores de stock --------------------------------------------------
+
+    private static void RunStockCounterTests(
+        InventoryService inventory,
+        DatabaseService database,
+        ReportService reports)
+    {
+        Run("Stock: 9 con mínimo 15 cuenta como stock bajo", () =>
+        {
+            var before = database.GetLowStockCount();
+            inventory.CreateProduct("Bisagra baja", 9m, 15m, "Unidad");
+            Expect(database.GetLowStockCount(), before + 1, "contador de stock bajo");
+        });
+
+        Run("Stock: 100 con mínimo 20 NO cuenta como stock bajo", () =>
+        {
+            // Comparado como texto, '100.0' < '20.0' y este producto se marcaba en falso.
+            var before = database.GetLowStockCount();
+            inventory.CreateProduct("Tabla sobrada", 100m, 20m, "Metro");
+            Expect(database.GetLowStockCount(), before, "contador de stock bajo");
+        });
+
+        Run("Stock: producto en cero cuenta como sin stock", () =>
+        {
+            // Comparado como texto, '0.0' <= 0 era falso y el contador daba siempre cero.
+            var before = ReadMetric(reports, "Inventario", "Sin stock");
+            inventory.CreateProduct("Cola agotada", 0m, 5m, "Litro");
+            Expect(ReadMetric(reports, "Inventario", "Sin stock"), before + 1, "contador de sin stock");
+        });
+
+        Run("Stock: el contador coincide con la lista de Inventario", () =>
+        {
+            var fromList = inventory.GetProducts(false, false, null)
+                .Count(p => p.Status != ProductStockStatus.Ok);
+
+            Expect(database.GetLowStockCount(), fromList, "contador contra la lista");
+        });
+    }
+
+    // --- Presupuestos ---------------------------------------------------------
+
+    private static void RunQuoteTests(
+        InventoryService inventory,
+        QuoteService quotes,
+        ProjectService projects)
+    {
+        var boardId = 0;
+        var quoteId = 0;
+        var approvedId = 0;
+
+        Run("Presupuesto: crear autocompleta la vigencia", () =>
+        {
+            boardId = inventory.CreateProduct("Tabla presupuesto", 10m, 2m, "Metro", 1200m).Id;
+            quoteId = quotes.CreateQuote("Mueble de cocina", "Cliente presupuesto", "A medida").Id;
+
+            var detail = RequireQuote(quotes, quoteId);
+
+            if (detail.Status != ProjectStatus.Quote)
+            {
+                throw new InvalidOperationException($"Estado esperado Presupuesto, actual {detail.Status}.");
+            }
+
+            if (detail.ValidUntilLocal is null)
+            {
+                throw new InvalidOperationException("Debía autocompletar la fecha de validez.");
+            }
+
+            if (detail.Freshness != QuoteFreshness.Current)
+            {
+                throw new InvalidOperationException($"Un presupuesto nuevo debía quedar vigente, quedó {detail.Freshness}.");
+            }
+        });
+
+        Run("Presupuesto: agregar materiales NO mueve el stock", () =>
+        {
+            quotes.AddInventoryLine(quoteId, boardId, 4m, 1500m);
+            quotes.AddLooseLine(quoteId, "Bisagra importada", "Unidad", 8m, 250m, saveToCatalog: false);
+
+            var stock = SingleProduct(inventory, "Tabla presupuesto").CurrentStock;
+            if (stock != 10m)
+            {
+                throw new InvalidOperationException($"El presupuesto no debía tocar el stock; quedó en {stock}.");
+            }
+
+            var detail = RequireQuote(quotes, quoteId);
+            if (detail.Lines.Count != 2)
+            {
+                throw new InvalidOperationException($"Se esperaban 2 líneas, hay {detail.Lines.Count}.");
+            }
+
+            Expect(detail.MaterialsTotal, 8000m, "total de materiales");
+        });
+
+        Run("Presupuesto: ítem suelto guardado en catálogo entra en cero", () =>
+        {
+            quotes.AddLooseLine(quoteId, "Cola vinílica premium", "Litro", 2m, 900m, saveToCatalog: true);
+
+            var created = SingleProduct(inventory, "Cola vinílica premium");
+            Expect(created.CurrentStock, 0m, "stock del producto creado");
+            Expect(created.CostPrice ?? 0m, 900m, "precio de costo del producto creado");
+
+            if (created.Status != ProductStockStatus.Out)
+            {
+                throw new InvalidOperationException("Debía quedar marcado como sin stock.");
+            }
+        });
+
+        Run("Presupuesto: guardar el cálculo congela las entradas", () =>
+        {
+            var detail = RequireQuote(quotes, quoteId);
+            var breakdown = quotes.SaveCalculation(quoteId, detail.MaterialsTotal, 3m, 30000m, BudgetRates.Defaults());
+
+            var reloaded = RequireQuote(quotes, quoteId);
+            if (reloaded.Breakdown is null)
+            {
+                throw new InvalidOperationException("El desglose debía reconstruirse desde lo guardado.");
+            }
+
+            Expect(reloaded.Breakdown.FinalPrice, breakdown.FinalPrice, "precio final reconstruido");
+            Expect(reloaded.Budget ?? 0m, breakdown.FinalPrice, "precio guardado en el proyecto");
+            Expect(reloaded.Breakdown.MaterialsCost, 9800m, "materiales congelados");
+
+            if (reloaded.Rates is null || reloaded.Rates.ProfitPercent != 30m)
+            {
+                throw new InvalidOperationException("No se congelaron los porcentajes.");
+            }
+        });
+
+        Run("Presupuesto: el precio del material queda congelado", () =>
+        {
+            // Sube el precio de catálogo: lo ya cotizado no se puede mover solo.
+            inventory.UpdateProduct(boardId, "Tabla presupuesto", 2m, "Metro", costPrice: 9999m);
+
+            var line = RequireQuote(quotes, quoteId).Lines.First(l => l.ProductId == boardId);
+            Expect(line.UnitCost, 1500m, "precio unitario congelado");
+        });
+
+        Run("Presupuesto: no se borra un producto usado en un presupuesto", () =>
+        {
+            var loose = SingleProduct(inventory, "Cola vinílica premium");
+            ExpectThrows(() => inventory.DeleteProduct(loose.Id), "presupuesto");
+        });
+
+        Run("Presupuesto: aprobar descuenta stock y genera los materiales", () =>
+        {
+            var productId = inventory.CreateProduct("Melamina aprobación", 20m, 2m, "Metro cuadrado", 800m).Id;
+            approvedId = quotes.CreateQuote("Placard", "Cliente aprobación", null).Id;
+            quotes.AddInventoryLine(approvedId, productId, 5m);
+
+            var result = quotes.ApproveQuote(approvedId);
+            if (result.HasShortfalls)
+            {
+                throw new InvalidOperationException("No debía faltar stock.");
+            }
+
+            Expect(SingleProduct(inventory, "Melamina aprobación").CurrentStock, 15m, "stock tras aprobar");
+
+            var detail = RequireQuote(quotes, approvedId);
+            if (detail.Status != ProjectStatus.InProgress)
+            {
+                throw new InvalidOperationException($"Debía pasar a En curso, quedó en {detail.Status}.");
+            }
+
+            var materials = projects.GetProjectMaterials(approvedId);
+            if (materials.Count != 1 || materials[0].Quantity != 5m)
+            {
+                throw new InvalidOperationException("Debía quedar un material entregado de 5 unidades.");
+            }
+        });
+
+        Run("Presupuesto: no se puede aprobar dos veces", () =>
+        {
+            ExpectThrows(() => quotes.ApproveQuote(approvedId), "ya fue aprobado");
+        });
+
+        Run("Presupuesto: no se editan líneas de un presupuesto aprobado", () =>
+        {
+            ExpectThrows(() => quotes.AddInventoryLine(approvedId, boardId, 1m), "aprobado");
+        });
+
+        Run("Presupuesto: aprobar sin stock descuenta lo que hay y avisa el faltante", () =>
+        {
+            var productId = inventory.CreateProduct("Herraje faltante", 3m, 0m, "Unidad", 500m).Id;
+            var id = quotes.CreateQuote("Vitrina", "Cliente faltante", null).Id;
+            quotes.AddInventoryLine(id, productId, 10m);
+
+            var result = quotes.ApproveQuote(id);
+            if (!result.HasShortfalls)
+            {
+                throw new InvalidOperationException("Debía reportar el faltante.");
+            }
+
+            Expect(result.Shortfalls.Single().Missing, 7m, "cantidad faltante");
+            Expect(SingleProduct(inventory, "Herraje faltante").CurrentStock, 0m, "stock tras aprobar");
+
+            // Reintentar sin reponer no puede descontar de más.
+            var retry = quotes.ApplyPendingStock(id);
+            Expect(retry.Shortfalls.Single().Missing, 7m, "faltante sin reponer");
+            Expect(SingleProduct(inventory, "Herraje faltante").CurrentStock, 0m, "stock sin reponer");
+
+            // Con el material comprado, el pendiente se salda.
+            inventory.RegisterMovement(productId, StockMovementType.In, 10m, "Compra de reposición");
+            var settled = quotes.ApplyPendingStock(id);
+
+            if (settled.HasShortfalls)
+            {
+                throw new InvalidOperationException("Ya no debía faltar nada.");
+            }
+
+            Expect(SingleProduct(inventory, "Herraje faltante").CurrentStock, 3m, "stock tras completar");
+        });
+
+        Run("Presupuesto: rechazar y reabrir", () =>
+        {
+            var id = quotes.CreateQuote("Mesa rechazada", "Cliente que dijo que no", null).Id;
+
+            quotes.RejectQuote(id);
+            var rejected = RequireQuote(quotes, id);
+
+            if (rejected.Status != ProjectStatus.Rejected)
+            {
+                throw new InvalidOperationException("Debía quedar rechazado.");
+            }
+
+            if (rejected.IsEditable)
+            {
+                throw new InvalidOperationException("Un presupuesto rechazado no debería ser editable.");
+            }
+
+            quotes.ReopenQuote(id);
+            if (RequireQuote(quotes, id).Status != ProjectStatus.Quote)
+            {
+                throw new InvalidOperationException("Debía volver a Presupuesto.");
+            }
+        });
+
+        Run("Presupuesto: vencido no cambia nada solo y todavía se puede aprobar", () =>
+        {
+            var productId = inventory.CreateProduct("Pino vencido", 5m, 0m, "Metro", 100m).Id;
+            var id = quotes.CreateQuote("Banco", "Cliente tardío", null, DateTime.Today.AddDays(-1)).Id;
+            quotes.AddInventoryLine(id, productId, 2m);
+
+            var detail = RequireQuote(quotes, id);
+
+            if (detail.Freshness != QuoteFreshness.Expired)
+            {
+                throw new InvalidOperationException("Debía figurar como vencido.");
+            }
+
+            if (detail.Status != ProjectStatus.Quote || detail.IsArchived)
+            {
+                throw new InvalidOperationException("Vencer no puede cambiar el estado ni archivar.");
+            }
+
+            // La app avisa, no decide: un vencido se sigue pudiendo aprobar.
+            quotes.ApproveQuote(id);
+            if (RequireQuote(quotes, id).Status != ProjectStatus.InProgress)
+            {
+                throw new InvalidOperationException("Un vencido debía poder aprobarse igual.");
+            }
+        });
+
+        Run("Presupuesto: duplicar recotiza con los precios de hoy", () =>
+        {
+            var productId = inventory.CreateProduct("Roble duplicado", 50m, 0m, "Metro", 1000m).Id;
+            var id = quotes.CreateQuote("Biblioteca", "Cliente repetido", null).Id;
+            quotes.AddInventoryLine(id, productId, 3m);
+            quotes.SaveCalculation(id, 3000m, 2m, 20000m, BudgetRates.Defaults());
+
+            inventory.UpdateProduct(productId, "Roble duplicado", 0m, "Metro", costPrice: 2000m);
+
+            var copyId = quotes.DuplicateQuote(id);
+            var copy = RequireQuote(quotes, copyId);
+
+            if (copy.Status != ProjectStatus.Quote)
+            {
+                throw new InvalidOperationException("La copia debía nacer como presupuesto.");
+            }
+
+            Expect(copy.Lines.Single().UnitCost, 2000m, "precio recotizado en la copia");
+            Expect(copy.MaterialsTotal, 6000m, "materiales de la copia");
+
+            // El original no se toca.
+            Expect(RequireQuote(quotes, id).Lines.Single().UnitCost, 1000m, "precio del original");
+        });
+
+        Run("Presupuesto: contador de pendientes", () =>
+        {
+            var summary = quotes.GetPendingSummary();
+            var listed = quotes.GetQuotes(QuoteFilter.All, null).Count(q => q.Status == ProjectStatus.Quote);
+
+            if (summary.Pending + summary.Expired != listed)
+            {
+                throw new InvalidOperationException(
+                    $"Pendientes {summary.Pending} + vencidos {summary.Expired} debía dar {listed}.");
+            }
+        });
+
+        Run("Presupuesto: el filtro de vencidos deja fuera a los rechazados", () =>
+        {
+            foreach (var item in quotes.GetQuotes(QuoteFilter.Expired, null))
+            {
+                if (item.Status == ProjectStatus.Rejected)
+                {
+                    throw new InvalidOperationException("Un rechazado no debía aparecer entre los vencidos.");
+                }
+            }
+        });
+    }
+
+    // --- Migraciones ----------------------------------------------------------
+
+    private static void RunMigrationTests()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "MetroCarpinteriaMigracion_" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var paths = new AppPaths(root);
+            paths.EnsureDirectories();
+
+            var database = new DatabaseService(paths);
+            database.Initialize();
+
+            Run("Migraciones: una base nueva queda en la última versión", () =>
+            {
+                Expect(ReadUserVersion(paths.DatabasePath), SchemaMigrator.LatestVersion, "user_version");
+            });
+
+            Run("Migraciones: inicializar dos veces es idempotente", () =>
+            {
+                database.Initialize();
+                database.Initialize();
+
+                Expect(ReadUserVersion(paths.DatabasePath), SchemaMigrator.LatestVersion, "user_version");
+                AssertIntegrity(paths.DatabasePath);
+            });
+
+            Run("Migraciones: una base en v0 con datos migra sin perder nada", () =>
+            {
+                var inventory = new InventoryService(database);
+                inventory.CreateProduct("Producto previo", 7m, 1m, "Unidad", 123m);
+
+                // Simula una instalación vieja: el esquema ya existe pero el marcador
+                // de versión nunca se escribió.
+                SetUserVersion(paths.DatabasePath, 0);
+
+                var migrator = new SchemaMigrator(paths.DatabasePath);
+                if (!migrator.HasPendingMigrations())
+                {
+                    throw new InvalidOperationException("Debía detectar migraciones pendientes.");
+                }
+
+                var result = migrator.MigrateToLatest();
+                if (!result.AnyApplied || result.ToVersion != SchemaMigrator.LatestVersion)
+                {
+                    throw new InvalidOperationException("La migración no llegó a la última versión.");
+                }
+
+                var kept = inventory.GetProducts(false, false, "Producto previo").SingleOrDefault()
+                    ?? throw new InvalidOperationException("Se perdió el producto al migrar.");
+
+                Expect(kept.CurrentStock, 7m, "stock preservado");
+                Expect(kept.CostPrice ?? 0m, 123m, "precio de costo preservado");
+                AssertIntegrity(paths.DatabasePath);
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    // --- Utilidades de test ---------------------------------------------------
+
+    private static QuoteDetail RequireQuote(QuoteService quotes, int id) =>
+        quotes.GetDetail(id) ?? throw new InvalidOperationException($"No se encontró el presupuesto {id}.");
+
+    private static ProductListItem SingleProduct(InventoryService inventory, string name) =>
+        inventory.GetProducts(true, false, name).SingleOrDefault()
+        ?? throw new InvalidOperationException($"No se encontró el producto «{name}».");
+
+    /// <summary>
+    /// Las cantidades se mostraban con "N2", que rellena decimales: 5 tornillos salían
+    /// como "5,00 Unidad". Acá se fija que los decimales aparezcan solo si existen.
+    /// </summary>
+    private static void RunNumberFormatTests()
+    {
+        Run("Cantidad entera sin decimales de relleno", () =>
+        {
+            ExpectText(AppCulture.Quantity(5m), "5");
+            ExpectText(AppCulture.Quantity(100m), "100");
+            ExpectText(AppCulture.Quantity(0m), "0");
+        });
+
+        Run("Cantidad fraccionaria conserva decimales", () =>
+        {
+            ExpectText(AppCulture.Quantity(2.5m), "2,5");
+            ExpectText(AppCulture.Quantity(0.25m), "0,25");
+            ExpectText(AppCulture.Quantity(1.75m), "1,75");
+        });
+
+        Run("Unidades abreviadas", () =>
+        {
+            ExpectText(ProductUnits.Abbreviate(ProductUnits.Unit), "u.");
+            ExpectText(ProductUnits.Abbreviate(ProductUnits.SquareMeter), "m²");
+            ExpectText(ProductUnits.Abbreviate(ProductUnits.Kilogram), "kg");
+
+            // Las abreviaturas viejas guardadas en la base se normalizan antes de acortar.
+            ExpectText(ProductUnits.Abbreviate("m2"), "m²");
+
+            // Una unidad tipeada a mano se respeta tal cual.
+            ExpectText(ProductUnits.Abbreviate("Chapa"), "Chapa");
+        });
+
+        Run("Cantidad con unidad, formato completo", () =>
+        {
+            ExpectText(AppCulture.QuantityWithUnit(5m, ProductUnits.Unit), "5 u.");
+            ExpectText(AppCulture.QuantityWithUnit(2.5m, ProductUnits.SquareMeter), "2,5 m²");
+            ExpectText(AppCulture.QuantityWithUnit(12m, ProductUnits.Meter), "12 m");
+        });
+
+        Run("Los modelos usan el formato corregido", () =>
+        {
+            var line = new QuoteLineItem
+            {
+                Description = "Tornillo",
+                Unit = ProductUnits.Unit,
+                Quantity = 5m,
+                UnitCost = 100m,
+                AvailableStock = 20m
+            };
+
+            ExpectText(line.QuantityDisplay, "5 u.");
+            ExpectText(line.StockDisplay, "Stock: 20 u.");
+
+            var product = new ProductListItem
+            {
+                Name = "Placa",
+                Unit = ProductUnits.SquareMeter,
+                CurrentStock = 2.5m,
+                MinimumStock = 1m
+            };
+
+            ExpectText(product.StockDisplay, "2,5 m²");
+            ExpectText(product.MinimumDisplay, "1 m²");
+        });
+    }
+
+    private static void Expect(decimal actual, decimal expected, string label)
+    {
+        if (actual != expected)
+        {
+            throw new InvalidOperationException($"{label}: esperado {expected}, actual {actual}.");
+        }
+    }
+
+    private static void Expect(int actual, int expected, string label)
+    {
+        if (actual != expected)
+        {
+            throw new InvalidOperationException($"{label}: esperado {expected}, actual {actual}.");
+        }
+    }
+
+    private static void ExpectText(string actual, string expected)
+    {
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Esperado «{expected}», actual «{actual}».");
+        }
+    }
+
+    private static void ExpectFreshness(DateTime? validUntil, DateTime today, QuoteFreshness expected)
+    {
+        var actual = QuoteRules.GetFreshness(validUntil, today);
+        if (actual != expected)
+        {
+            var label = validUntil?.ToString("dd/MM/yyyy") ?? "sin fecha";
+            throw new InvalidOperationException($"{label}: esperado {expected}, actual {actual}.");
+        }
+    }
+
+    private static void ExpectThrows(Action action, string expectedFragment)
+    {
+        try
+        {
+            action();
+        }
+        catch (InvalidOperationException ex)
+            when (ex.Message.Contains(expectedFragment, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Debía fallar con un mensaje sobre «{expectedFragment}».");
+    }
+
+    private static int ReadMetric(ReportService reports, string section, string metric)
+    {
+        var value = reports.BuildSummary()
+            .First(s => s.Title == section)
+            .Metrics.First(m => m.Label == metric)
+            .Value;
+
+        return int.Parse(value);
+    }
+
+    private static int ReadUserVersion(string databasePath)
+    {
+        using var connection = new SqliteConnection($"Data Source={databasePath}");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private static void SetUserVersion(string databasePath, int version)
+    {
+        using var connection = new SqliteConnection($"Data Source={databasePath}");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA user_version = {version};";
+        command.ExecuteNonQuery();
+    }
+
+    private static void AssertIntegrity(string databasePath)
+    {
+        using var connection = new SqliteConnection($"Data Source={databasePath}");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA integrity_check;";
+        var result = command.ExecuteScalar()?.ToString();
+
+        if (!string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"integrity_check devolvió: {result}");
+        }
+    }
+
     private static void Run(string name, Action action)
     {
         try
@@ -421,8 +1087,14 @@ internal static class Program
         string[] items =
         [
             "Abrir la app y verificar que el logo y colores se ven bien",
-            "Inventario: crear producto, movimiento, buscar y filtrar",
+            "Inventario: crear producto con precio de costo, movimiento, buscar y filtrar",
             "Caja: abrir sesión, registrar ingreso/egreso, cerrar",
+            "Presupuestos: armar uno con ítems del inventario y uno suelto",
+            "Presupuestos: verificar en Inventario que el stock NO se movió",
+            "Presupuestos: calcular con 100000 / 3 días / 30000 y ver $ 287.000,00",
+            "Presupuestos: imprimir para el cliente y revisar que NO diga ganancia",
+            "Presupuestos: imprimir la hoja de costos y revisar que SÍ traiga el desglose",
+            "Presupuestos: aprobar y confirmar que descuenta stock y aparece en Proyectos",
             "Proyectos: crear, asignar material y empleado",
             "Personal: alta de empleado y asignación",
             "Reportes: revisar que los números coinciden con los módulos",

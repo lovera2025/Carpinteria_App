@@ -1,4 +1,5 @@
 using MetroCarpinteria.App.Data.Entities;
+using MetroCarpinteria.App.Helpers;
 
 namespace MetroCarpinteria.App.Models;
 
@@ -16,9 +17,7 @@ public sealed class ProjectListItem
 
     public string StatusLabel => ProjectStatusHelper.GetLabel(Status);
 
-    public string BudgetDisplay => Budget.HasValue
-        ? Budget.Value.ToString("C", new System.Globalization.CultureInfo("es-AR"))
-        : "—";
+    public string BudgetDisplay => Helpers.AppCulture.Money(Budget);
 }
 
 public sealed class ProjectMaterialItem
@@ -29,7 +28,7 @@ public sealed class ProjectMaterialItem
     public string Unit { get; init; } = ProductUnits.Unit;
     public DateTime AssignedAtLocal { get; init; }
 
-    public string QuantityDisplay => $"{Quantity:N2} {Unit}";
+    public string QuantityDisplay => AppCulture.QuantityWithUnit(Quantity, Unit);
 }
 
 public sealed class ProjectAssignmentItem
@@ -66,6 +65,7 @@ public static class ProjectStatusHelper
         ProjectStatus.InProgress => "En curso",
         ProjectStatus.Completed => "Terminado",
         ProjectStatus.Delivered => "Entregado",
+        ProjectStatus.Rejected => "Rechazado",
         _ => status.ToString()
     };
 
@@ -75,7 +75,8 @@ public static class ProjectStatusHelper
         new ProjectStatusOption { Status = ProjectStatus.Quote, Label = "Presupuesto" },
         new ProjectStatusOption { Status = ProjectStatus.InProgress, Label = "En curso" },
         new ProjectStatusOption { Status = ProjectStatus.Completed, Label = "Terminado" },
-        new ProjectStatusOption { Status = ProjectStatus.Delivered, Label = "Entregado" }
+        new ProjectStatusOption { Status = ProjectStatus.Delivered, Label = "Entregado" },
+        new ProjectStatusOption { Status = ProjectStatus.Rejected, Label = "Rechazado" }
     ];
 
     public static IReadOnlyList<ProjectStatusOption> GetEditOptions() =>
@@ -83,6 +84,7 @@ public static class ProjectStatusHelper
         new ProjectStatusOption { Status = ProjectStatus.Quote, Label = "Presupuesto" },
         new ProjectStatusOption { Status = ProjectStatus.InProgress, Label = "En curso" },
         new ProjectStatusOption { Status = ProjectStatus.Completed, Label = "Terminado" },
-        new ProjectStatusOption { Status = ProjectStatus.Delivered, Label = "Entregado" }
+        new ProjectStatusOption { Status = ProjectStatus.Delivered, Label = "Entregado" },
+        new ProjectStatusOption { Status = ProjectStatus.Rejected, Label = "Rechazado" }
     ];
 }

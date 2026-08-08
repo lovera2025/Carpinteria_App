@@ -23,7 +23,7 @@ public sealed class CashSessionListItem
     public string DifferenceDisplay => Difference.HasValue ? FormatMoney(Difference.Value) : "—";
 
     private static string FormatMoney(decimal amount) =>
-        amount.ToString("C", new System.Globalization.CultureInfo("es-AR"));
+        Helpers.AppCulture.Money(amount);
 }
 
 public sealed class CashMovementListItem
@@ -36,7 +36,7 @@ public sealed class CashMovementListItem
     public bool IsIncome { get; init; }
 
     public string AmountDisplay => (IsIncome ? "+ " : "- ") +
-        Amount.ToString("C", new System.Globalization.CultureInfo("es-AR"));
+        Helpers.AppCulture.Money(Amount);
 }
 
 public sealed class OpenCashSessionState
@@ -49,8 +49,8 @@ public sealed class OpenCashSessionState
     public DateTime OpenedAtLocal { get; init; }
     public string? OpeningNotes { get; init; }
 
-    public string OpeningDisplay => OpeningAmount.ToString("C", new System.Globalization.CultureInfo("es-AR"));
-    public string IncomeDisplay => IncomeTotal.ToString("C", new System.Globalization.CultureInfo("es-AR"));
-    public string ExpenseDisplay => ExpenseTotal.ToString("C", new System.Globalization.CultureInfo("es-AR"));
-    public string ExpectedDisplay => ExpectedBalance.ToString("C", new System.Globalization.CultureInfo("es-AR"));
+    public string OpeningDisplay => Helpers.AppCulture.Money(OpeningAmount);
+    public string IncomeDisplay => Helpers.AppCulture.Money(IncomeTotal);
+    public string ExpenseDisplay => Helpers.AppCulture.Money(ExpenseTotal);
+    public string ExpectedDisplay => Helpers.AppCulture.Money(ExpectedBalance);
 }

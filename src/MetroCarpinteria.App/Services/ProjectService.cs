@@ -1,5 +1,6 @@
 using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
+using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -164,10 +165,11 @@ public sealed class ProjectService
             ?? throw new InvalidOperationException("Proyecto no encontrado.");
 
         if (context.ProjectMaterials.Any(m => m.ProjectId == id)
-            || context.ProjectAssignments.Any(a => a.ProjectId == id))
+            || context.ProjectAssignments.Any(a => a.ProjectId == id)
+            || context.ProjectBudgetLines.Any(l => l.ProjectId == id))
         {
             throw new InvalidOperationException(
-                "No se puede eliminar un proyecto con materiales o personal asignado. Archivalo.");
+                "No se puede eliminar un proyecto con materiales, personal o presupuesto cargado. Archivalo.");
         }
 
         context.Projects.Remove(project);
@@ -205,7 +207,8 @@ public sealed class ProjectService
             if (product.CurrentStock < quantity)
             {
                 throw new InvalidOperationException(
-                    $"Stock insuficiente. Disponible: {product.CurrentStock:N2} {product.Unit}");
+                    "Stock insuficiente. Disponible: " +
+                    AppCulture.QuantityWithUnit(product.CurrentStock, product.Unit));
             }
 
             var now = DateTime.UtcNow;
@@ -338,7 +341,8 @@ public sealed class ProjectService
     {
         using var context = _databaseService.CreateContext();
         return context.ProjectMaterials.Any(m => m.ProjectId == projectId)
-            || context.ProjectAssignments.Any(a => a.ProjectId == projectId);
+            || context.ProjectAssignments.Any(a => a.ProjectId == projectId)
+            || context.ProjectBudgetLines.Any(l => l.ProjectId == projectId);
     }
 
     private static void ValidateProject(string title, string clientName, decimal? budget)

@@ -136,6 +136,7 @@
                         <DataGridTextColumn Header="Producto" Binding="{Binding Name}" Width="*" MinWidth="140" />
                         <DataGridTextColumn Header="Stock" Binding="{Binding StockDisplay}" Width="100" />
                         <DataGridTextColumn Header="Mínimo" Binding="{Binding MinimumDisplay}" Width="90" />
+                        <DataGridTextColumn Header="Costo" Binding="{Binding CostPriceDisplay}" Width="100" />
                         <DataGridTemplateColumn Header="Estado" Width="110">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type models:ProductListItem}">
@@ -216,7 +217,15 @@
                             <ComboBox ItemsSource="{Binding AvailableUnits}"
                                       SelectedItem="{Binding FormUnit}"
                                       Padding="10,8"
-                                      Margin="0,0,0,16" />
+                                      Margin="0,0,0,12" />
+                            <TextBlock Text="Precio de costo (opcional)" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                            <TextBox Text="{Binding FormCostPrice, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="10,8" Margin="0,0,0,4"
+                                     ToolTip="Se usa para prellenar los presupuestos" />
+                            <TextBlock Text="Por unidad. Se usa al armar presupuestos."
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="0,0,0,16" />
                             <WrapPanel>
                                 <Button Content="Guardar"
                                         Style="{StaticResource PrimaryButtonStyle}"
