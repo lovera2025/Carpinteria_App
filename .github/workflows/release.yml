@@ -43,9 +43,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Publicando la versión $VERSION"
 
-      - name: Compilar y probar
-        run: |
-          dotnet build MetroCarpinteria.sln -c Release --nologo
+      # El paso hace lo que dice su nombre: si la suite está en rojo, la publicación
+      # se corta acá. Antes solo compilaba, así que una versión con las pruebas
+      # rotas se publicaba igual y llegaba al taller por el actualizador automático.
+      - name: Compilar
+        run: dotnet build MetroCarpinteria.sln -c Release --nologo -warnaserror
+
+      - name: Probar
+        run: dotnet run --project tests/MetroCarpinteria.SmokeTest -c Release --no-build
 
       - name: Publicar la aplicación
         shell: bash

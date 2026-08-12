@@ -21,6 +21,7 @@ public class MainViewModel : ObservableObject
     private readonly StaffViewModel _staffViewModel;
     private readonly ReportsViewModel _reportsViewModel;
     private readonly SettingsViewModel _settingsViewModel;
+    private bool _areShortcutsVisible;
     private bool _hasUpdateReady;
     private string _updateReadyVersion = string.Empty;
     private int _lowStockAlertCount;
@@ -67,7 +68,12 @@ public class MainViewModel : ObservableObject
 
         _currentViewModel = _viewModels[NavigationSection.Home];
         _selectedNavItem = NavItems[0];
+
         NavigateCommand = new RelayCommand(Navigate);
+        RefreshCommand = new RelayCommand(_ => RefreshSection(SelectedSection));
+        NewInSectionCommand = new RelayCommand(_ => StartNewInSection());
+        ToggleShortcutsCommand = new RelayCommand(_ => AreShortcutsVisible = !AreShortcutsVisible);
+        CloseOverlaysCommand = new RelayCommand(_ => AreShortcutsVisible = false);
 
         AppHost.ClockService.DayChanged += OnDayChanged;
     }
@@ -166,6 +172,57 @@ public class MainViewModel : ObservableObject
     }
 
     public ICommand NavigateCommand { get; }
+    public ICommand RefreshCommand { get; }
+    public ICommand NewInSectionCommand { get; }
+    public ICommand ToggleShortcutsCommand { get; }
+    public ICommand CloseOverlaysCommand { get; }
+
+    /// <summary>
+    /// La chuleta de atajos que abre Ctrl+/.
+    /// </summary>
+    /// <remarks>
+    /// Los atajos no van en las etiquetas de los botones: quien los usa los descubre por
+    /// el tooltip o por acá, y quien no, nunca los ve. Poner «Guardar (Ctrl+S)» en el
+    /// botón le cobra a todos el precio de una función que usan unos pocos.
+    /// </remarks>
+    public bool AreShortcutsVisible
+    {
+        get => _areShortcutsVisible;
+        private set => SetProperty(ref _areShortcutsVisible, value);
+    }
+
+    public sealed record ShortcutHint(string Keys, string Description);
+
+    public IReadOnlyList<ShortcutHint> Shortcuts { get; } =
+    [
+        new("Ctrl + 1…9", "Ir a una sección del menú"),
+        new("Ctrl + F", "Buscar en la sección actual"),
+        new("Ctrl + N", "Crear algo nuevo acá"),
+        new("F5", "Actualizar los datos de la pantalla"),
+        new("Ctrl + /", "Mostrar u ocultar esta lista"),
+        new("Esc", "Cerrar lo que esté abierto"),
+        new("Tab", "Pasar al campo siguiente"),
+        new("Enter", "Confirmar el diálogo abierto")
+    ];
+
+    /// <summary>Crea lo que corresponda según dónde esté parado el usuario.</summary>
+    private void StartNewInSection()
+    {
+        var command = SelectedSection switch
+        {
+            NavigationSection.Inventory => _inventoryViewModel.NewProductCommand,
+            NavigationSection.Quotes => _quotesViewModel.NewQuoteCommand,
+            NavigationSection.Clients => _clientsViewModel.NewClientCommand,
+            NavigationSection.Projects => _projectsViewModel.NewProjectCommand,
+            NavigationSection.Staff => _staffViewModel.NewEmployeeCommand,
+            _ => null
+        };
+
+        if (command?.CanExecute(null) == true)
+        {
+            command.Execute(null);
+        }
+    }
 
     /// <summary>
     /// Cambia de sección desde código (los accesos rápidos de Inicio, los atajos de teclado).

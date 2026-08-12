@@ -49,7 +49,11 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBox Grid.Column="0" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                             Padding="12,10" Margin="0,0,12,0" />
+                             Padding="12,10" Margin="0,0,12,0"
+                             ctl:Ui.IsSectionSearchBox="True"
+                             ctl:Ui.Placeholder="Buscar por trabajo o cliente…"
+                             AutomationProperties.Name="Buscar proyecto"
+                             ToolTip="Buscar por trabajo o cliente (Ctrl+F)" />
                     <ComboBox Grid.Column="1" ItemsSource="{Binding StatusFilterOptions}"
                               SelectedItem="{Binding SelectedStatusFilter}"
                               DisplayMemberPath="Label" Padding="8,8" Margin="0,0,12,0" />

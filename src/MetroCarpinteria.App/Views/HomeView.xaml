@@ -54,6 +54,58 @@
                     </Grid>
                 </Border>
 
+                <!-- Primeros pasos. Nunca modal, siempre salteable, y se puede volver a
+                     ver desde Configuración: quien ya sabe usar la app la cierra y no la
+                     vuelve a ver, y a quien recién empieza no se le esconde. -->
+                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,24"
+                        Visibility="{Binding ShowOnboarding, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,4">
+                            <TextBlock Text="Cómo se usa, en cuatro pasos" FontSize="16" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <Button Content="Ya lo sé" HorizontalAlignment="Right"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="12,6" FontSize="12"
+                                    Command="{Binding DismissOnboardingCommand}"
+                                    ToolTip="Se puede volver a ver desde Configuración" />
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,14"
+                                   Text="El recorrido de un trabajo, de punta a punta." />
+
+                        <ItemsControl ItemsSource="{Binding OnboardingSteps}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Background="{DynamicResource PrimaryBrownBrush}"
+                                                CornerRadius="12" Width="24" Height="24"
+                                                VerticalAlignment="Top" Margin="0,2,12,0">
+                                            <TextBlock Text="{Binding Number}" FontSize="12" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextOnDarkBrush}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
+                                                       Margin="0,2,0,0" FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" Margin="0,4,0,0"
+                                   Text="Ctrl + / muestra los atajos de teclado." />
+                    </StackPanel>
+                </Border>
+
                 <!-- Dashboard cards -->
                 <TextBlock Text="Resumen del día"
                            Style="{StaticResource PageTitleStyle}"

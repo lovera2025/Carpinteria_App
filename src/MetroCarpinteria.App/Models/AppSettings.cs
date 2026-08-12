@@ -33,6 +33,15 @@ public class AppSettings
     /// </remarks>
     public List<string> DismissedClientPairs { get; set; } = [];
 
+    /// <summary>
+    /// Versión de la guía de arranque que el usuario ya vio.
+    /// </summary>
+    /// <remarks>
+    /// Versionada y no un simple booleano: cuando la app cambie lo suficiente como para
+    /// que la guía valga la pena de nuevo, se sube el número y vuelve a aparecer una vez.
+    /// </remarks>
+    public int OnboardingCompletedVersion { get; set; }
+
     // --- Apariencia ---------------------------------------------------------
 
     /// <summary>

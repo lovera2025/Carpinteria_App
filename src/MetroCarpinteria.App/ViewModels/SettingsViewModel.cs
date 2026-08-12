@@ -17,6 +17,8 @@ public class SettingsViewModel : ViewModelBase
 {
     private bool _backupOnExit;
     private int _maxBackupFiles;
+    private string _quoteValidityDays = string.Empty;
+    private string _defaultDailyRate = string.Empty;
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
     private BackupInfo? _selectedBackup;
@@ -41,6 +43,7 @@ public class SettingsViewModel : ViewModelBase
         OpenDataFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.DataDirectory));
         OpenBackupsFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.BackupsDirectory));
         RefreshBackupsCommand = new RelayCommand(_ => RefreshBackups());
+        ReplayOnboardingCommand = new RelayCommand(_ => ReplayOnboarding());
 
         CheckUpdatesCommand = new AsyncRelayCommand(CheckUpdatesAsync, () => !IsCheckingUpdates);
         _updateStatus = AppHost.UpdateService.IsSupported
@@ -259,6 +262,32 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _maxBackupFiles, Math.Clamp(value, 5, 200));
     }
 
+    /// <summary>
+    /// Días de vigencia con los que se autocompleta un presupuesto nuevo.
+    /// </summary>
+    /// <remarks>
+    /// Hasta acá solo se podía cambiar editando <c>settings.json</c> a mano, que es tanto
+    /// como decir que no se podía cambiar.
+    /// </remarks>
+    public string QuoteValidityDays
+    {
+        get => _quoteValidityDays;
+        set => SetProperty(ref _quoteValidityDays, value);
+    }
+
+    /// <summary>Valor del jornal con el que se precarga la calculadora.</summary>
+    public string DefaultDailyRate
+    {
+        get => _defaultDailyRate;
+        set => SetProperty(ref _defaultDailyRate, value);
+    }
+
+    /// <summary>
+    /// La guía de arranque se vuelve a mostrar. Está acá porque quien la salteó de apurado
+    /// no tiene otra forma de recuperarla.
+    /// </summary>
+    public ICommand ReplayOnboardingCommand { get; private set; } = null!;
+
     public BackupInfo? SelectedBackup
     {
         get => _selectedBackup;
@@ -299,6 +328,10 @@ public class SettingsViewModel : ViewModelBase
         BackupOnExit = AppHost.Settings.BackupOnExit;
         MaxBackupFiles = AppHost.Settings.MaxBackupFiles;
 
+        // Campos editables: van con NumberInput.Format, no con AppCulture.
+        QuoteValidityDays = AppHost.Settings.DefaultQuoteValidityDays.ToString();
+        DefaultDailyRate = NumberInput.Format(AppHost.Settings.DefaultDailyRate);
+
         // Directo al campo: el setter público escribe en settings.json y esto es una lectura.
         _checkUpdatesOnStartup = AppHost.Settings.CheckUpdatesOnStartup;
         OnPropertyChanged(nameof(CheckUpdatesOnStartup));
@@ -306,14 +339,67 @@ public class SettingsViewModel : ViewModelBase
 
     private void SaveSettings()
     {
-        AppHost.SettingsService.Update(settings =>
+        try
         {
-            settings.BackupOnExit = BackupOnExit;
-            settings.MaxBackupFiles = MaxBackupFiles;
-        });
+            var validity = ReadValidityDays();
+            var dailyRate = ReadDailyRate();
 
-        SetStatus("Configuración guardada correctamente.", isError: false);
-        OnPropertyChanged(nameof(LastBackupDisplay));
+            AppHost.SettingsService.Update(settings =>
+            {
+                settings.BackupOnExit = BackupOnExit;
+                settings.MaxBackupFiles = MaxBackupFiles;
+                settings.DefaultQuoteValidityDays = validity;
+                settings.DefaultDailyRate = dailyRate;
+            });
+
+            SetStatus("Configuración guardada correctamente.", isError: false);
+            OnPropertyChanged(nameof(LastBackupDisplay));
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private void ReplayOnboarding()
+    {
+        AppHost.SettingsService.Update(s => s.OnboardingCompletedVersion = 0);
+        SetStatus("Los primeros pasos vuelven a aparecer en Inicio.", isError: false);
+    }
+
+    private int ReadValidityDays()
+    {
+        if (!NumberInput.TryParseInt(QuoteValidityDays, out var days) || days < 0)
+        {
+            throw new InvalidOperationException(
+                "Los días de vigencia tienen que ser un número entero de cero para arriba.");
+        }
+
+        // Un año es mucho más de lo que dura un precio en este país, pero el tope está
+        // para atajar un cero de más, no para discutir el criterio del taller.
+        if (days > 365)
+        {
+            throw new InvalidOperationException("Los días de vigencia no pueden pasar de 365.");
+        }
+
+        return days;
+    }
+
+    private decimal? ReadDailyRate()
+    {
+        if (string.IsNullOrWhiteSpace(DefaultDailyRate))
+        {
+            return null;
+        }
+
+        var rate = NumberInput.ParseMoneyOrThrow(DefaultDailyRate, "Valor del jornal");
+
+        if (rate < 0)
+        {
+            throw new InvalidOperationException("El valor del jornal no puede ser negativo.");
+        }
+
+        return rate;
     }
 
     /// <summary>

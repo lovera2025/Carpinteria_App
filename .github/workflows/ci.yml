@@ -1,0 +1,40 @@
+name: Compilar y probar
+
+# En cada push y en cada pull request. Es la red que evita que algo entre roto
+# a master sin que nadie se entere hasta abrir la app en el taller.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  probar:
+    # WPF solo compila en Windows.
+    runs-on: windows-latest
+
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+
+      - name: Instalar .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restaurar dependencias
+        run: dotnet restore MetroCarpinteria.sln
+
+      # -warnaserror: la suite ya corre sin advertencias, y dejarlas entrar es
+      # cómo se acumulan hasta que nadie las mira.
+      - name: Compilar
+        run: dotnet build MetroCarpinteria.sln -c Release --no-restore --nologo -warnaserror
+
+      # El modo aislado arma su propia base temporal. Sin él, el primer chequeo
+      # buscaba la base del taller en Documentos y fallaba siempre en un runner
+      # limpio: por eso este paso nunca llegó a correr las pruebas.
+      #
+      # Las pruebas de interfaz sí corren sin escritorio: dibujan el árbol visual
+      # con RenderTargetBitmap y nunca llaman a Window.Show().
+      - name: Probar
+        run: dotnet run --project tests/MetroCarpinteria.SmokeTest -c Release --no-build

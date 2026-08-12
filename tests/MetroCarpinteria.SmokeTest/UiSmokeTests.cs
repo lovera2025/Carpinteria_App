@@ -596,6 +596,108 @@ internal static class UiSmokeTests
             }
         });
 
+        run("UI: cada sección con lista tiene marcado su buscador para Ctrl+F", () =>
+        {
+            // El atajo es global pero el buscador es de cada pantalla: sin la marca, el
+            // shell no tiene forma de saber dónde poner el foco y Ctrl+F no hace nada.
+            (Func<FrameworkElement> Create, object Model, string Name)[] sections =
+            [
+                (() => new InventoryView(), new InventoryViewModel(() => { }), "Inventario"),
+                (() => new QuotesView(), new QuotesViewModel(() => { }), "Presupuestos"),
+                (() => new ClientsView(), new ClientsViewModel(() => { }), "Clientes"),
+                (() => new ProjectsView(), new ProjectsViewModel(() => { }), "Proyectos"),
+                (() => new StaffView(), new StaffViewModel(() => { }), "Personal")
+            ];
+
+            foreach (var (create, model, name) in sections)
+            {
+                var view = create();
+                view.DataContext = model;
+                view.Measure(new Size(1100, 700));
+                view.Arrange(new Rect(0, 0, 1100, 700));
+                view.UpdateLayout();
+
+                Assert.NotNull(
+                    MetroCarpinteria.App.Controls.Ui.FindSectionSearchBox(view),
+                    $"{name} no tiene marcado su buscador con Ui.IsSectionSearchBox");
+            }
+        });
+
+        run("UI: la chuleta de atajos se abre y se cierra", () =>
+        {
+            var window = new MetroCarpinteria.App.MainWindow();
+            var main = (MainViewModel)window.DataContext!;
+
+            Assert.False(main.AreShortcutsVisible, "arranca cerrada.");
+            Assert.True(main.Shortcuts.Count > 0, "tendría que listar algún atajo.");
+
+            main.ToggleShortcutsCommand.Execute(null);
+            Assert.True(main.AreShortcutsVisible, "Ctrl+/ tendría que abrirla.");
+
+            main.CloseOverlaysCommand.Execute(null);
+            Assert.False(main.AreShortcutsVisible, "Esc tendría que cerrarla.");
+        });
+
+        run("UI: Ctrl+N crea lo que corresponde según la sección", () =>
+        {
+            // El mismo atajo hace cosas distintas según dónde esté parado el usuario, que
+            // es justamente lo que lo hace fácil de recordar.
+            var window = new MetroCarpinteria.App.MainWindow();
+            var main = (MainViewModel)window.DataContext!;
+
+            main.NavigateCommand.Execute(NavigationSection.Clients);
+            main.NewInSectionCommand.Execute(null);
+            Assert.True(((ClientsViewModel)main.CurrentViewModel).IsFormOpen, "en Clientes abre el alta de cliente.");
+
+            main.NavigateCommand.Execute(NavigationSection.Quotes);
+            main.NewInSectionCommand.Execute(null);
+            Assert.True(((QuotesViewModel)main.CurrentViewModel).IsFormOpen, "en Presupuestos abre el alta de presupuesto.");
+
+            // En Inicio no hay nada que crear, y no tiene que romper nada.
+            main.NavigateCommand.Execute(NavigationSection.Home);
+            main.NewInSectionCommand.Execute(null);
+        });
+
+        run("UI: los primeros pasos se descartan y se pueden volver a ver", () =>
+        {
+            var home = new HomeViewModel();
+            Assert.True(home.ShowOnboarding, "en una instalación nueva tendría que aparecer.");
+            Assert.Equal(home.OnboardingSteps.Count, 4, "pasos de la guía");
+
+            home.DismissOnboardingCommand.Execute(null);
+            Assert.False(home.ShowOnboarding, "descartada, no vuelve.");
+
+            // Ni en un arranque posterior.
+            Assert.False(new HomeViewModel().ShowOnboarding, "el descarte tendría que quedar guardado.");
+
+            // Pero se recupera desde Configuración: quien la salteó de apurado no tiene
+            // otra forma de volver a verla.
+            new SettingsViewModel().ReplayOnboardingCommand.Execute(null);
+            Assert.True(new HomeViewModel().ShowOnboarding, "tendría que volver a aparecer.");
+        });
+
+        run("UI: las preferencias del presupuesto se guardan desde la pantalla", () =>
+        {
+            // Hasta acá solo se cambiaban editando settings.json a mano.
+            var settings = new SettingsViewModel
+            {
+                QuoteValidityDays = "30",
+                DefaultDailyRate = "45000"
+            };
+
+            settings.SaveSettingsCommand.Execute(null);
+
+            Assert.Equal(AppHost.Settings.DefaultQuoteValidityDays, 30, "días de vigencia guardados");
+            Assert.Equal(AppHost.Settings.DefaultDailyRate ?? 0m, 45000m, "jornal guardado");
+
+            // Y un valor imposible se rechaza con un mensaje, no se guarda callado.
+            settings.QuoteValidityDays = "mil";
+            settings.SaveSettingsCommand.Execute(null);
+
+            Assert.True(settings.IsStatusError, "un valor inválido tendría que avisar.");
+            Assert.Equal(AppHost.Settings.DefaultQuoteValidityDays, 30, "no se pisa lo que estaba bien");
+        });
+
         run("UI: los desplegables muestran la etiqueta, no el nombre del tipo", () =>
         {
             // Todos los ComboBox de la app usan DisplayMemberPath. Si el ControlTemplate

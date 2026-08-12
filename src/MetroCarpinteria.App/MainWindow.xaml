@@ -14,6 +14,35 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource ContentBackgroundBrush}"
         FontFamily="{StaticResource AppFont}">
+
+    <!-- Atajos globales. Van en la ventana y no en cada vista para que funcionen
+         esté donde esté el foco. Ctrl+F es el único que necesita código: hay que
+         encontrar el buscador de la sección activa en el árbol visual. -->
+    <Window.InputBindings>
+        <KeyBinding Key="D1" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Home}" />
+        <KeyBinding Key="D2" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Inventory}" />
+        <KeyBinding Key="D3" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.CashRegister}" />
+        <KeyBinding Key="D4" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Quotes}" />
+        <KeyBinding Key="D5" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Clients}" />
+        <KeyBinding Key="D6" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Projects}" />
+        <KeyBinding Key="D7" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Staff}" />
+        <KeyBinding Key="D8" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Reports}" />
+        <KeyBinding Key="D9" Modifiers="Control" Command="{Binding NavigateCommand}"
+                    CommandParameter="{x:Static models:NavigationSection.Settings}" />
+
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}" />
+        <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewInSectionCommand}" />
+        <KeyBinding Key="OemQuestion" Modifiers="Control" Command="{Binding ToggleShortcutsCommand}" />
+    </Window.InputBindings>
+
     <Grid>
         <Grid.ColumnDefinitions>
             <!-- Auto + MinWidth en el panel: con un ancho fijo, en tamaño de letra
@@ -246,6 +275,46 @@
 
         <!-- La capa de diálogo cubre la ventana entera, menú incluido: mientras hay una
              pregunta abierta no se puede navegar a otra parte y dejarla sin responder. -->
+        <!-- Chuleta de atajos (Ctrl+/). Los que la buscan la encuentran; a los demás
+             no les ocupa un centímetro de pantalla. -->
+        <Border Grid.ColumnSpan="2" Style="{StaticResource BusyOverlayStyle}"
+                Visibility="{Binding AreShortcutsVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Border Style="{StaticResource DialogSurfaceStyle}">
+                <StackPanel>
+                    <TextBlock Text="Atajos de teclado" FontSize="{DynamicResource FontSizeTitle}"
+                               FontWeight="Bold" Margin="0,0,0,4"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="No hace falta usarlos: todo se puede hacer con el mouse."
+                               Style="{StaticResource SubtitleStyle}" Margin="0,0,0,16" />
+
+                    <ItemsControl ItemsSource="{Binding Shortcuts}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Background="{DynamicResource SurfaceSunkenBrush}"
+                                            CornerRadius="6" Padding="8,3" HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding Keys}" FontSize="12" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="{Binding Description}"
+                                               VerticalAlignment="Center" Margin="12,0,0,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Button Content="Cerrar" Style="{StaticResource SecondaryButtonStyle}"
+                            HorizontalAlignment="Right" Margin="0,18,0,0" IsCancel="True"
+                            Command="{Binding CloseOverlaysCommand}" />
+                </StackPanel>
+            </Border>
+        </Border>
+
         <ctl:DialogHost x:Name="Dialogs" Grid.ColumnSpan="2" />
     </Grid>
 </Window>

@@ -217,6 +217,32 @@
                             <Run Text="Último respaldo: " Foreground="{DynamicResource TextSecondaryBrush}" />
                             <Run Text="{Binding LastBackupDisplay, Mode=OneWay}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
                         </TextBlock>
+
+                        <!-- Estas dos hasta acá solo se cambiaban editando settings.json a
+                             mano, que es tanto como decir que no se podían cambiar. -->
+                        <Border BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,1,0,0"
+                                Padding="0,16,0,0" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Valores por defecto de los presupuestos"
+                                           FontWeight="SemiBold" Margin="0,0,0,12"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                                <TextBlock Text="Días de vigencia de un presupuesto nuevo"
+                                           Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding QuoteValidityDays, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="120" HorizontalAlignment="Left" Padding="10,8"
+                                         Margin="0,0,0,12"
+                                         AutomationProperties.Name="Días de vigencia"
+                                         ToolTip="Con cuántos días de validez se autocompleta un presupuesto nuevo" />
+
+                                <TextBlock Text="Valor del jornal" Style="{StaticResource SubtitleStyle}"
+                                           Margin="0,0,0,4" />
+                                <TextBox Text="{Binding DefaultDailyRate, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="180" HorizontalAlignment="Left" Padding="10,8"
+                                         AutomationProperties.Name="Valor del jornal por defecto"
+                                         ToolTip="Con este número viene precargada la calculadora" />
+                            </StackPanel>
+                        </Border>
                         <WrapPanel>
                             <Button Content="Guardar configuración"
                                     Style="{StaticResource PrimaryButtonStyle}"
@@ -224,7 +250,12 @@
                                     Margin="0,0,12,0" />
                             <Button Content="Respaldar ahora"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Command="{Binding BackupNowCommand}" />
+                                    Command="{Binding BackupNowCommand}"
+                                    Margin="0,0,12,0" />
+                            <Button Content="Ver los primeros pasos de nuevo"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Command="{Binding ReplayOnboardingCommand}"
+                                    ToolTip="Vuelve a mostrar la guía de arranque en Inicio" />
                         </WrapPanel>
                     </StackPanel>
                 </Border>

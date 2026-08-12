@@ -47,7 +47,10 @@
                     </Grid.ColumnDefinitions>
                     <TextBox Grid.Column="0" Padding="12,10" Margin="0,0,12,0"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="Buscar por nombre. Encuentra igual sin acentos." />
+                             ctl:Ui.IsSectionSearchBox="True"
+                             ctl:Ui.Placeholder="Buscar por nombre…"
+                             AutomationProperties.Name="Buscar cliente"
+                             ToolTip="Buscar por nombre, con o sin acentos (Ctrl+F)" />
                     <CheckBox Grid.Column="1" Content="Ver archivados" IsChecked="{Binding ShowArchived}"
                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}" />
                 </Grid>
