@@ -875,6 +875,44 @@ internal static class UiSmokeTests
             AssertNoInternalNumbers(text);
         });
 
+        run("PDF: un presupuesto normal entra en una sola hoja A4", () =>
+        {
+            // La hoja de costos completa se pasaba de A4 por seis píxeles, y esos seis
+            // píxeles costaban una hoja entera impresa con nada más que el pie de página.
+            // Solo se ve imprimiendo, así que se mide acá.
+            var full = BuildSampleQuote(
+                new CommercialTerms
+                {
+                    DiscountMode = DiscountMode.Percentage,
+                    DiscountValue = 15m,
+                    VatPercent = 21m
+                },
+                payments:
+                [
+                    new ProjectPaymentItem
+                    {
+                        Id = 1,
+                        Kind = PaymentKind.Deposit,
+                        Amount = 100000m,
+                        Method = PaymentMethod.Cash,
+                        CreatedAtLocal = DateTime.Today
+                    }
+                ]);
+
+            (FlowDocument Document, string Name)[] documents =
+            [
+                (service.BuildClientQuote(full, includeMaterialDetail: true), "presupuesto del cliente"),
+                (service.BuildCostSheet(full), "hoja de costos")
+            ];
+
+            foreach (var (document, name) in documents)
+            {
+                var pages = CountA4Pages(document);
+
+                Assert.Equal(pages, 1, $"el {name} con todo cargado tendría que entrar en una hoja");
+            }
+        });
+
         run("PDF: la hoja de costos muestra el margen efectivo", () =>
         {
             // Un descuento del 15% sobre este presupuesto deja el margen en negativo, y eso
@@ -1038,6 +1076,16 @@ internal static class UiSmokeTests
                 yield return nested;
             }
         }
+    }
+
+    /// <summary>En cuántas hojas A4 sale el documento. A4 a 96 ppp: 794 × 1123.</summary>
+    private static int CountA4Pages(FlowDocument document)
+    {
+        QuoteDocumentService.LayOut(document, 794, 1123);
+
+        var paginator = ((IDocumentPaginatorSource)document).DocumentPaginator;
+        paginator.ComputePageCount();
+        return paginator.PageCount;
     }
 
     private static string ToText(FlowDocument document) =>

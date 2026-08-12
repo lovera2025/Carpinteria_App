@@ -31,6 +31,17 @@ internal static class Program
             return ScreenshotRunner.Run(args[shotsIndex + 1]);
         }
 
+        // Y los papeles que salen impresos, hoja por hoja: es lo único de la app que
+        // termina en la mano de otra persona.
+        var docsIndex = Array.FindIndex(
+            args, a => string.Equals(a, "--documents", StringComparison.OrdinalIgnoreCase));
+
+        if (docsIndex >= 0 && docsIndex + 1 < args.Length)
+        {
+            Debouncer.DefaultDelay = TimeSpan.Zero;
+            return DocumentRunner.Run(args[docsIndex + 1]);
+        }
+
         // Las búsquedas corren en el acto: la suite no bombea el bucle de mensajes, así que
         // un temporizador de WPF no llegaría a disparar y toda aserción sobre una lista
         // filtrada quedaría mirando la lista sin filtrar.

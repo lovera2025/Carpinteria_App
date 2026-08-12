@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -97,6 +97,10 @@ public sealed class QuoteDocumentService
         document.Blocks.Add(BuildSignature());
         document.Blocks.Add(BuildFooter());
 
+        // Total, saldo, vigencia, firma y pie viajan juntos: partirlos deja al cliente
+        // firmando una hoja sin el número que está firmando.
+        KeepClosingParagraphsTogether(document, quote.HasPayments ? 5 : 4);
+
         return document;
     }
 
@@ -156,6 +160,8 @@ public sealed class QuoteDocumentService
         document.Blocks.Add(BuildEffectiveMarginBlock(quote));
         document.Blocks.Add(BuildFooter());
 
+        KeepClosingParagraphsTogether(document, quote.HasPayments ? 4 : 3);
+
         return document;
     }
 
@@ -184,8 +190,8 @@ public sealed class QuoteDocumentService
         var paragraph = new Paragraph
         {
             Background = margin.Value < 0 ? BandBrush : CreamBrush,
-            Padding = new Thickness(14, 11, 14, 11),
-            Margin = new Thickness(0, 14, 0, 0)
+            Padding = new Thickness(14, 10, 14, 10),
+            Margin = new Thickness(0, 10, 0, 0)
         };
 
         paragraph.Inlines.Add(new Run("Margen efectivo:  ")
@@ -578,7 +584,7 @@ public sealed class QuoteDocumentService
         group.Rows.Add(BalanceRow("SALDO A PAGAR", quote.BalanceDisplay, emphasis: true));
 
         table.RowGroups.Add(group);
-        table.Margin = new Thickness(0, 10, 0, 16);
+        table.Margin = new Thickness(0, 8, 0, 10);
         return table;
     }
 
@@ -701,17 +707,54 @@ public sealed class QuoteDocumentService
             Padding = new Thickness(0, 4, 0, 0)
         };
 
+    /// <remarks>
+    /// El margen superior es contenido: cada píxel de aire acá empuja el pie hacia la hoja
+    /// siguiente. La hoja de costos completa —con materiales, desglose, condiciones, saldo
+    /// y margen— se pasaba de A4 <b>por seis píxeles</b>, y esos seis píxeles costaban una
+    /// hoja entera con nada más que esta línea impresa. La raya dorada ya separa lo
+    /// suficiente como para no necesitar tanto espacio.
+    /// </remarks>
     private static Block BuildFooter() =>
         new Paragraph(new Run($"{BrandName} · {BrandTagline}"))
         {
             FontSize = 10,
             Foreground = MutedBrush,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 26, 0, 0),
+            Margin = new Thickness(0, 14, 0, 0),
             BorderBrush = GoldBrush,
             BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(0, 8, 0, 0)
         };
+
+    /// <summary>
+    /// Ata los párrafos del cierre para que un salto de página no los separe.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Sin esto, un documento apenas más largo que la hoja imprimía una segunda con nada
+    /// más que el pie de página. Encadenados, si no entran pasan juntos: una hoja con el
+    /// margen y el pie se entiende; una con una sola línea de marca, no.
+    /// </para>
+    /// <para>
+    /// Solo alcanza a los <see cref="Paragraph"/>: <c>KeepWithNext</c> está definido ahí y
+    /// no en <see cref="Block"/>, así que las tablas —el TOTAL, el saldo, la firma— no
+    /// pueden encadenarse y cortan la cadena. Es lo máximo que permite el formato.
+    /// </para>
+    /// </remarks>
+    private static void KeepClosingParagraphsTogether(FlowDocument document, int closingBlockCount)
+    {
+        var blocks = document.Blocks.ToList();
+        var first = Math.Max(0, blocks.Count - closingBlockCount);
+
+        // Hasta el anteúltimo: cada uno se ata con el que le sigue.
+        for (var i = first; i < blocks.Count - 1; i++)
+        {
+            if (blocks[i] is Paragraph paragraph)
+            {
+                paragraph.KeepWithNext = true;
+            }
+        }
+    }
 
     // --- Ayudas de formato ---------------------------------------------------
 
