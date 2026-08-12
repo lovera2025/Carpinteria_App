@@ -21,6 +21,8 @@ public class AppDbContext : DbContext
     public DbSet<ProjectMaterial> ProjectMaterials => Set<ProjectMaterial>();
     public DbSet<ProjectAssignment> ProjectAssignments => Set<ProjectAssignment>();
     public DbSet<ProjectBudgetLine> ProjectBudgetLines => Set<ProjectBudgetLine>();
+    public DbSet<Client> Clients => Set<Client>();
+    public DbSet<ProjectPayment> ProjectPayments => Set<ProjectPayment>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -92,6 +94,42 @@ public class AppDbContext : DbContext
             entity.Property(p => p.ToolWearPercent).HasPrecision(9, 4);
             entity.Property(p => p.OverheadPercent).HasPrecision(9, 4);
             entity.Property(p => p.ProfitPercent).HasPrecision(9, 4);
+            entity.Property(p => p.VatPercent).HasPrecision(9, 4);
+            entity.Property(p => p.DiscountValue).HasPrecision(18, 2);
+            entity.HasIndex(p => p.ClientId);
+
+            // SetNull y no Cascade: archivar o borrar una ficha de cliente no puede
+            // llevarse puestos los presupuestos que se le entregaron. El nombre queda
+            // igual en ClientName.
+            entity.HasOne(p => p.Client)
+                .WithMany(c => c.Projects)
+                .HasForeignKey(p => p.ClientId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ProjectPayment>(entity =>
+        {
+            entity.HasIndex(p => p.ProjectId);
+            entity.HasIndex(p => p.CreatedAtUtc);
+            entity.Property(p => p.Amount).HasPrecision(18, 2);
+            entity.Property(p => p.Notes).HasMaxLength(500);
+            entity.HasOne(p => p.Project)
+                .WithMany(p => p.Payments)
+                .HasForeignKey(p => p.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Client>(entity =>
+        {
+            entity.HasIndex(c => c.NormalizedName).IsUnique();
+            entity.HasIndex(c => c.IsArchived);
+            entity.Property(c => c.Name).HasMaxLength(200).IsRequired();
+            entity.Property(c => c.NormalizedName).HasMaxLength(200).IsRequired();
+            entity.Property(c => c.Phone).HasMaxLength(50);
+            entity.Property(c => c.Email).HasMaxLength(200);
+            entity.Property(c => c.TaxId).HasMaxLength(20);
+            entity.Property(c => c.Address).HasMaxLength(300);
+            entity.Property(c => c.Notes).HasMaxLength(2000);
         });
 
         modelBuilder.Entity<Employee>(entity =>

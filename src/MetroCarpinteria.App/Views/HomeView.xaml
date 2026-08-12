@@ -1,9 +1,10 @@
-<UserControl x:Class="MetroCarpinteria.App.Views.HomeView"
+﻿<UserControl x:Class="MetroCarpinteria.App.Views.HomeView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:controls="clr-namespace:MetroCarpinteria.App.Controls"
+             xmlns:models="clr-namespace:MetroCarpinteria.App.Models"
              mc:Ignorable="d"
              d:DesignHeight="600"
              d:DesignWidth="900">
@@ -21,7 +22,7 @@
                         ClipToBounds="True"
                         Height="200">
                     <Grid>
-                        <Image Source="/Assets/banner.jpeg"
+                        <Image Source="pack://application:,,,/MetroCarpinteria;component/Assets/banner.jpeg"
                                Stretch="UniformToFill"
                                Opacity="0.85" />
                         <Rectangle>
@@ -36,17 +37,17 @@
                         <StackPanel VerticalAlignment="Center"
                                     Margin="36,0"
                                     MaxWidth="520">
-                            <Image Source="/Assets/logo-horizontal.jpeg"
+                            <Image Source="pack://application:,,,/MetroCarpinteria;component/Assets/logo-horizontal.jpeg"
                                    Height="56"
                                    HorizontalAlignment="Left"
                                    Stretch="Uniform" />
                             <TextBlock Text="{Binding WelcomeMessage}"
-                                       Foreground="{StaticResource TextOnDarkBrush}"
+                                       Foreground="{DynamicResource TextOnDarkBrush}"
                                        FontSize="18"
                                        Margin="0,16,0,4"
                                        Opacity="0.95" />
                             <TextBlock Text="{Binding ContactInfo}"
-                                       Foreground="{StaticResource AccentGoldLightBrush}"
+                                       Foreground="{DynamicResource AccentGoldLightBrush}"
                                        FontSize="13"
                                        Opacity="0.9" />
                         </StackPanel>
@@ -107,12 +108,12 @@
                                         </Ellipse>
                                         <TextBlock Text="{Binding Title}"
                                                    FontSize="14"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
                                     </StackPanel>
                                     <TextBlock Text="{Binding Value}"
                                                FontSize="32"
                                                FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
                                                Margin="0,0,0,6" />
                                     <TextBlock Text="{Binding Description}"
                                                Style="{StaticResource SubtitleStyle}" />
@@ -128,22 +129,33 @@
                            FontSize="22"
                            Margin="0,12,0,16" />
 
+                <!-- Los tres estaban deshabilitados con tooltips de un plan por partes
+                     que hace rato se terminó. Ahora navegan a la sección que prometían. -->
                 <WrapPanel>
-                    <Button Content="Nuevo proyecto"
+                    <Button Content="Armar un presupuesto"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Margin="0,0,12,12"
-                            IsEnabled="False"
-                            ToolTip="Disponible en Parte 5" />
+                            ToolTip="Ir a Presupuestos para cotizar un trabajo"
+                            Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{x:Static models:NavigationSection.Quotes}" />
                     <Button Content="Registrar stock"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Margin="0,0,12,12"
-                            IsEnabled="False"
-                            ToolTip="Disponible en Parte 3" />
+                            ToolTip="Ir a Inventario para cargar entradas o salidas"
+                            Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{x:Static models:NavigationSection.Inventory}" />
                     <Button Content="Abrir caja"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Margin="0,0,12,12"
-                            IsEnabled="False"
-                            ToolTip="Disponible en Parte 4" />
+                            ToolTip="Ir a Caja para abrir o cerrar la sesión del día"
+                            Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{x:Static models:NavigationSection.CashRegister}" />
+                    <Button Content="Nuevo proyecto"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="0,0,12,12"
+                            ToolTip="Ir a Proyectos"
+                            Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{x:Static models:NavigationSection.Projects}" />
                 </WrapPanel>
             </StackPanel>
         </ScrollViewer>

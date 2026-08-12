@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
@@ -8,7 +8,12 @@ using MetroCarpinteria.App.Services;
 
 namespace MetroCarpinteria.App.ViewModels;
 
-public class SettingsViewModel : ObservableObject
+/// <remarks>
+/// Hereda de <see cref="ViewModelBase"/> por el estado de "ocupado": respaldar y restaurar
+/// copian la base entera, que es lo único de esta pantalla que tarda lo suficiente como
+/// para que valga la pena avisarlo.
+/// </remarks>
+public class SettingsViewModel : ViewModelBase
 {
     private bool _backupOnExit;
     private int _maxBackupFiles;
@@ -26,11 +31,13 @@ public class SettingsViewModel : ObservableObject
     public SettingsViewModel()
     {
         LoadFromSettings();
+        InitializeAppearanceCommands();
         RecentBackups = new ObservableCollection<BackupInfo>(AppHost.BackupService.GetRecentBackups());
 
         SaveSettingsCommand = new RelayCommand(SaveSettings);
-        BackupNowCommand = new RelayCommand(BackupNow);
-        RestoreBackupCommand = new RelayCommand(_ => RestoreSelectedBackup(), _ => SelectedBackup is not null);
+        BackupNowCommand = new AsyncRelayCommand(BackupNowAsync, () => !IsBusy);
+        RestoreBackupCommand = new AsyncRelayCommand(
+            RestoreSelectedBackupAsync, () => SelectedBackup is not null && !IsBusy);
         OpenDataFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.DataDirectory));
         OpenBackupsFolderCommand = new RelayCommand(_ => OpenFolder(AppHost.Paths.BackupsDirectory));
         RefreshBackupsCommand = new RelayCommand(_ => RefreshBackups());
@@ -39,6 +46,64 @@ public class SettingsViewModel : ObservableObject
         _updateStatus = AppHost.UpdateService.IsSupported
             ? "Presioná «Buscar actualizaciones» para consultar."
             : "Estás usando una copia portable: las actualizaciones automáticas no aplican.";
+    }
+
+    // --- Apariencia -----------------------------------------------------------
+
+    /// <summary>
+    /// Opción de tema con su etiqueta. Se expone como lista para que la vista sea un
+    /// grupo de botones y no un desplegable: son tres opciones y conviene verlas todas.
+    /// </summary>
+    public sealed record ThemeOption(AppTheme Value, string Label, string Description);
+
+    public IReadOnlyList<ThemeOption> ThemeOptions { get; } =
+    [
+        new(AppTheme.System, "Automático", "Sigue lo que tenga configurado Windows"),
+        new(AppTheme.Light, "Claro", "El de siempre, para el taller de día"),
+        new(AppTheme.Dark, "Oscuro", "Menos brillo para trabajar de noche")
+    ];
+
+    public sealed record ScaleOption(FontScale Value, string Label);
+
+    public IReadOnlyList<ScaleOption> ScaleOptions { get; } =
+    [
+        new(FontScale.Small, "Chica"),
+        new(FontScale.Normal, "Normal"),
+        new(FontScale.Large, "Grande")
+    ];
+
+    public ThemeOption SelectedTheme => ThemeOptions.First(o => o.Value == AppHost.ThemeService.Theme);
+
+    public ScaleOption SelectedScale => ScaleOptions.First(o => o.Value == AppHost.ThemeService.Scale);
+
+    public ICommand SelectThemeCommand { get; private set; } = null!;
+    public ICommand SelectScaleCommand { get; private set; } = null!;
+
+    private void InitializeAppearanceCommands()
+    {
+        // Se aplica en el momento y no con un botón de guardar: un tema que hay que
+        // confirmar sin verlo obliga a adivinar cómo va a quedar antes de elegirlo.
+        SelectThemeCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is not ThemeOption option || option.Value == AppHost.ThemeService.Theme)
+            {
+                return;
+            }
+
+            AppHost.ThemeService.SetTheme(option.Value);
+            OnPropertyChanged(nameof(SelectedTheme));
+        });
+
+        SelectScaleCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is not ScaleOption option || option.Value == AppHost.ThemeService.Scale)
+            {
+                return;
+            }
+
+            AppHost.ThemeService.SetScale(option.Value);
+            OnPropertyChanged(nameof(SelectedScale));
+        });
     }
 
     // --- Actualizaciones ------------------------------------------------------
@@ -251,11 +316,19 @@ public class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(LastBackupDisplay));
     }
 
-    private void BackupNow()
+    /// <summary>
+    /// Copiar la base es lo que más tarda de toda la app: con años de movimientos son
+    /// varios megas más el checkpoint del WAL. En el hilo de la interfaz eso congela la
+    /// ventana y Windows la pinta de gris como si se hubiera colgado.
+    /// </summary>
+    private async Task BackupNowAsync()
     {
         try
         {
-            var backup = AppHost.BackupService.CreateBackup();
+            var backup = await RunBusyAsync(
+                () => AppHost.BackupService.CreateBackup(),
+                "Copiando la base de datos…");
+
             RefreshBackups();
             OnPropertyChanged(nameof(LastBackupDisplay));
             SetStatus($"Respaldo creado: {backup.FileName}", isError: false);
@@ -266,38 +339,71 @@ public class SettingsViewModel : ObservableObject
         }
     }
 
-    private void RestoreSelectedBackup()
+    private async Task RestoreSelectedBackupAsync()
     {
         if (SelectedBackup is null)
         {
             return;
         }
 
-        var result = MessageBox.Show(
-            $"¿Restaurar el respaldo «{SelectedBackup.FileName}»?\n\n" +
-            "Se reemplazará la base de datos actual. Antes se creará una copia de seguridad automática.\n" +
-            "Reiniciá la app después de restaurar para ver los datos recuperados.",
-            "Confirmar restauración",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+        var fileName = SelectedBackup.FileName;
 
-        if (result != MessageBoxResult.Yes)
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Restaurar un respaldo",
+            $"Los datos actuales se reemplazan por los del {SelectedBackup.CreatedAtDisplay}.\n\n" +
+            "Antes de tocar nada se guarda una copia de lo que hay ahora, así que se puede volver atrás.\n\n" +
+            "La aplicación se cierra al terminar, para volver a abrir con los datos restaurados.",
+            confirmText: "Restaurar",
+            isDestructive: true);
+
+        if (!confirmed)
         {
             return;
         }
 
+        var backupPath = SelectedBackup.FullPath;
+
         try
         {
-            AppHost.BackupService.RestoreBackup(SelectedBackup.FullPath);
+            await RunBusyAsync(
+                () => AppHost.BackupService.RestoreBackup(backupPath),
+                "Restaurando el respaldo…");
+
             RefreshBackups();
-            SetStatus(
-                $"Respaldo restaurado: {SelectedBackup.FileName}. Reiniciá la aplicación para aplicar los cambios.",
-                isError: false);
+
+            await AppHost.DialogService.AlertAsync(
+                "Respaldo restaurado",
+                $"Se restauró «{fileName}».\n\n" +
+                "La aplicación se va a cerrar. Volvela a abrir para ver los datos recuperados.",
+                DialogKind.Info);
+
+            // Reinicio en vez de recargar en caliente: hay ocho pantallas con datos ya
+            // leídos en memoria, y dejarlas mostrando información de la base anterior es
+            // peor que pedir que se vuelva a abrir.
+            RestartApplication();
         }
         catch (Exception ex)
         {
-            SetStatus($"Error al restaurar: {ex.Message}", isError: true);
+            AppHost.NotificationService.Error($"No se pudo restaurar el respaldo: {ex.Message}", ex);
         }
+    }
+
+    private static void RestartApplication()
+    {
+        try
+        {
+            var path = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+        }
+        catch (Exception ex)
+        {
+            LogService.Warning("SettingsViewModel", $"No se pudo reabrir la app: {ex.Message}");
+        }
+
+        Application.Current?.Shutdown();
     }
 
     private void RefreshBackups()
@@ -324,10 +430,37 @@ public class SettingsViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// Publica el resultado de una acción.
+    /// <para>
+    /// Antes esto llenaba una barra fija arriba de la pantalla que <b>nunca se borraba</b>:
+    /// un "Producto creado." quedaba ahí para siempre, y al rato no se sabía si
+    /// correspondía a lo de recién o a algo de veinte minutos antes. Ahora va al aviso
+    /// flotante, que se descarta solo.
+    /// </para>
+    /// <para>
+    /// StatusMessage se sigue actualizando porque los tests lo leen para verificar qué
+    /// pasó tras una acción.
+    /// </para>
+    /// </summary>
     private void SetStatus(string message, bool isError)
     {
         StatusMessage = message;
         IsStatusError = isError;
+
+        if (string.IsNullOrWhiteSpace(message) || !AppHost.IsReady)
+        {
+            return;
+        }
+
+        if (isError)
+        {
+            AppHost.NotificationService.Warning(message);
+        }
+        else
+        {
+            AppHost.NotificationService.Success(message);
+        }
     }
 
     private void ClearStatus()

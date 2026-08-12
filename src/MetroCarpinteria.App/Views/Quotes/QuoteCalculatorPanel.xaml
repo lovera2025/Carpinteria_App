@@ -1,0 +1,174 @@
+<UserControl x:Class="MetroCarpinteria.App.Views.Quotes.QuoteCalculatorPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:MetroCarpinteria.App.Models"
+             mc:Ignorable="d"
+             d:DesignHeight="800"
+             d:DesignWidth="520">
+
+    <!-- Paso 2 del presupuesto: qué sale el trabajo. Entradas, porcentajes, desglose y el
+         ajuste manual del precio final. El DataContext se hereda del contenedor, así que
+         las rutas de binding son las mismas que cuando esto vivía dentro de QuotesView. -->
+    <StackPanel>
+        <!-- Paso 2: precio -->
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <Border Background="{DynamicResource PrimaryBrownBrush}" CornerRadius="11"
+                            Width="22" Height="22" Margin="0,0,10,0">
+                        <TextBlock Text="2" FontSize="12" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextOnDarkBrush}" />
+                    </Border>
+                    <TextBlock Text="PRECIO" FontSize="15" FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding PriceStepSummary}" Margin="32,0,0,12"
+                           FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
+                           Foreground="{DynamicResource PrimaryBrownBrush}" />
+
+                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Text="El precio se actualiza solo a medida que cargás los datos." />
+
+                <TextBlock Text="Costo de materiales" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                <TextBox Padding="10,8" Margin="0,0,0,4"
+                         Text="{Binding CalcMaterials, UpdateSourceTrigger=LostFocus}"
+                         ToolTip="Sale solo de los materiales cargados arriba. Se puede sobrescribir." />
+                <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" Margin="0,0,0,12"
+                           Text="Se toma solo de los materiales del paso 1." />
+
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Días estimados" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding CalcDays, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Valor del jornal" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding CalcDailyRate, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                    </StackPanel>
+                </Grid>
+
+                <Expander Header="{Binding RatesSummary}" IsExpanded="{Binding IsAdvancedOpen}"
+                          Foreground="{DynamicResource PrimaryBrownBrush}" Margin="0,0,0,16">
+                    <StackPanel Margin="0,12,0,0">
+                        <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                                   Text="Los porcentajes se aplican sobre materiales (desperdicio y desgaste) y sobre la mano de obra (gastos y ganancia)." />
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="% Desperdicio" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding RateWaste, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="% Desgaste de herramientas" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding RateToolWear, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="% Gastos adicionales" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding RateOverhead, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="% Ganancia" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding RateProfit, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                            </StackPanel>
+                        </Grid>
+                        <WrapPanel>
+                            <Button Content="Guardar como valores por defecto"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="12,6" FontSize="12" Margin="0,0,10,8"
+                                    Command="{Binding SaveDefaultRatesCommand}" />
+                            <Button Content="Restaurar valores recomendados"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="12,6" FontSize="12" Margin="0,0,0,8"
+                                    Command="{Binding RestoreDefaultRatesCommand}"
+                                    ToolTip="{Binding RestoreRatesTooltip}" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Expander>
+
+                <Button Content="Recalcular" Style="{StaticResource SecondaryButtonStyle}"
+                        HorizontalAlignment="Left" Command="{Binding CalculateCommand}"
+                        ToolTip="El precio ya se actualiza solo. Esto lo fuerza a mano." />
+            </StackPanel>
+        </Border>
+
+        <!-- Desglose -->
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel>
+                <TextBlock Text="Desglose" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12" />
+
+                <ItemsControl ItemsSource="{Binding BreakdownLines}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:BudgetBreakdownLine}">
+                            <Grid Margin="0,5">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Label}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding Detail}" FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               Visibility="{Binding Detail, Converter={StaticResource StringToVisibilityConverter}}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding AmountDisplay}" HorizontalAlignment="Right"
+                                           VerticalAlignment="Center" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Redondear para cerrar la venta sin tocar el cálculo. -->
+                <Border BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,1,0,0"
+                        Margin="0,14,0,0" Padding="0,14,0,0"
+                        Visibility="{Binding CanAdjustPrice, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <TextBlock Text="Precio final ajustado" Style="{StaticResource SubtitleStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" TextWrapping="Wrap"
+                                   Margin="0,0,0,8"
+                                   Text="Es el número que se le cobra al cliente y el que sale impreso. El desglose no cambia." />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Padding="10,8"
+                                     Text="{Binding AdjustedPrice, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Grid.Column="2" Content="Fijar"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="14,8"
+                                    Command="{Binding ApplyAdjustedPriceCommand}" />
+                        </Grid>
+                        <Button Content="Volver al calculado" Style="{StaticResource SecondaryButtonStyle}"
+                                HorizontalAlignment="Left" Padding="12,6" FontSize="12" Margin="0,10,0,0"
+                                Command="{Binding RestoreCalculatedPriceCommand}"
+                                Visibility="{Binding ShowManualAdjustNotice, Converter={StaticResource BoolToVisibilityConverter}}"
+                                ToolTip="{Binding FinalPriceDisplay, StringFormat=Vuelve a {0}}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

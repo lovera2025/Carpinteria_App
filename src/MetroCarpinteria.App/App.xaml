@@ -3,15 +3,47 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:helpers="clr-namespace:MetroCarpinteria.App.Helpers"
              xmlns:vm="clr-namespace:MetroCarpinteria.App.ViewModels"
-             xmlns:views="clr-namespace:MetroCarpinteria.App.Views"
-             StartupUri="MainWindow.xaml">
+             xmlns:views="clr-namespace:MetroCarpinteria.App.Views">
     <Application.Resources>
         <ResourceDictionary>
+            <!--
+                EL ORDEN DE ESTA LISTA ES PARTE DEL CONTRATO.
+
+                ThemeService intercambia los dos primeros diccionarios por índice para
+                cambiar de tema y de tamaño de letra en caliente:
+
+                    [0] paleta      → Palette.Light.xaml / Palette.Dark.xaml
+                    [1] tipografía  → Type.Small|Normal|Large.xaml
+
+                Se reemplaza el elemento por índice y no se hace Clear()+Add(): un Clear
+                invalida todos los recursos de una vez, lo que hace parpadear la ventana
+                entera y puede fallar si algún binding se resuelve en el medio.
+
+                Del [2] en adelante son fijos. Solo pueden contener Style y ControlTemplate,
+                nunca colores: un estilo implícito se resuelve una única vez, cuando el
+                elemento entra al árbol visual, así que si estuviera en un diccionario que
+                se intercambia, los elementos ya dibujados se quedarían con el anterior.
+                Por eso los estilos consumen todo por DynamicResource.
+
+                Hay un test que verifica que [0] contiene SurfaceBrush y [1] FontSizeBody.
+            -->
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Resources/Colors.xaml" />
-                <ResourceDictionary Source="Resources/Brushes.xaml" />
-                <ResourceDictionary Source="Resources/Styles.xaml" />
-                <ResourceDictionary Source="Resources/Animations.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Theme/Palette.Light.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Theme/Type.Normal.xaml" />
+
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Tokens.xaml" />
+
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Text.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Buttons.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Inputs.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Selection.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Surfaces.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Lists.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/DataGrid.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Scrolling.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Controls/Overlays.xaml" />
+
+                <ResourceDictionary Source="pack://application:,,,/MetroCarpinteria;component/Resources/Animations.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <helpers:SectionEqualsConverter x:Key="SectionEqualsConverter" />
@@ -20,6 +52,7 @@
             <helpers:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
             <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
             <helpers:InverseBoolConverter x:Key="InverseBoolConverter" />
+            <helpers:SelectedOptionConverter x:Key="SelectedOptionConverter" />
 
             <DataTemplate DataType="{x:Type vm:HomeViewModel}">
                 <views:HomeView />
@@ -55,10 +88,6 @@
 
             <DataTemplate DataType="{x:Type vm:AboutViewModel}">
                 <views:AboutView />
-            </DataTemplate>
-
-            <DataTemplate DataType="{x:Type vm:SectionPlaceholderViewModel}">
-                <views:SectionPlaceholderView />
             </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>

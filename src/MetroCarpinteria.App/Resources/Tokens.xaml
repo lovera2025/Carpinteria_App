@@ -1,0 +1,47 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        Constantes que no cambian ni con el tema ni con el tamaño de letra: radios,
+        duraciones y grosores. Este diccionario es fijo, nunca se intercambia.
+    -->
+
+    <FontFamily x:Key="AppFont">Segoe UI</FontFamily>
+    <FontFamily x:Key="MonoFont">Consolas</FontFamily>
+
+    <!-- Radios: cuanto más chico el elemento, menos redondeo, para que no parezca una píldora -->
+    <CornerRadius x:Key="RadiusSm">6</CornerRadius>
+    <CornerRadius x:Key="RadiusMd">10</CornerRadius>
+    <CornerRadius x:Key="RadiusLg">14</CornerRadius>
+    <CornerRadius x:Key="RadiusXl">18</CornerRadius>
+    <CornerRadius x:Key="RadiusPill">999</CornerRadius>
+
+    <Thickness x:Key="BorderThin">1</Thickness>
+    <Thickness x:Key="BorderMedium">2</Thickness>
+    <Thickness x:Key="NoThickness">0</Thickness>
+
+    <!--
+        Duraciones. Todo lo que responde a un clic va en Fast: por encima de unos 200 ms
+        una transición deja de leerse como respuesta y empieza a leerse como demora.
+    -->
+    <Duration x:Key="DurationFast">0:0:0.12</Duration>
+    <Duration x:Key="DurationNormal">0:0:0.22</Duration>
+    <Duration x:Key="DurationSlow">0:0:0.35</Duration>
+
+    <sys:Double x:Key="DisabledOpacity">0.45</sys:Double>
+    <sys:Double x:Key="ScrollBarThickness">10</sys:Double>
+
+    <!-- Iconos del menú y de los estados, en un solo lugar -->
+    <sys:String x:Key="IconHome">🏠</sys:String>
+    <sys:String x:Key="IconInventory">📦</sys:String>
+    <sys:String x:Key="IconCash">💰</sys:String>
+    <sys:String x:Key="IconQuotes">🧮</sys:String>
+    <sys:String x:Key="IconProjects">🪚</sys:String>
+    <sys:String x:Key="IconStaff">👷</sys:String>
+    <sys:String x:Key="IconReports">📊</sys:String>
+    <sys:String x:Key="IconSettings">⚙️</sys:String>
+    <sys:String x:Key="IconAbout">ℹ️</sys:String>
+    <sys:String x:Key="IconClients">👤</sys:String>
+
+</ResourceDictionary>

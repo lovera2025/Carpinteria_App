@@ -40,4 +40,9 @@
     <Resource Include="Assets\**\*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Los smoke tests necesitan reiniciar AppHost entre fixtures. -->
+    <InternalsVisibleTo Include="MetroCarpinteria.SmokeTest" />
+  </ItemGroup>
+
 </Project>

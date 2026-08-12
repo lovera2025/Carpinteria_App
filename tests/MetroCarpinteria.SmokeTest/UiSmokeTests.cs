@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Threading;
 using MetroCarpinteria.App.Data.Entities;
+using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
 using MetroCarpinteria.App.Services;
 using MetroCarpinteria.App.ViewModels;
@@ -47,7 +48,19 @@ internal static class UiSmokeTests
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         }
 
-        AppHost.Initialize();
+        // Carpeta temporal con datos conocidos. Antes acá iba AppHost.Initialize() sin
+        // argumentos, que apuntaba a la base real: instanciar QuotesViewModel llegaba a
+        // grabar en ella vía AutoCalculate.
+        using var fixture = TestFixture.CreateSeeded();
+
+        run("UI: los tests no tocan la base de producción", () =>
+        {
+            var production = new AppPaths();
+            Assert.False(
+                string.Equals(AppHost.Paths.RootDirectory, production.RootDirectory, StringComparison.OrdinalIgnoreCase),
+                $"AppHost quedó apuntando a la carpeta real ({AppHost.Paths.RootDirectory}).");
+            Assert.True(AppHost.IsReady, "AppHost debía quedar listo tras inicializar la fixture.");
+        });
 
         run("UI: MainWindow loads", () =>
         {
@@ -150,6 +163,51 @@ internal static class UiSmokeTests
                     "Sin material elegido no se tendría que poder confirmar.");
             }
         });
+        run("UI: editar una línea sin tocarla no cambia la cantidad", () =>
+        {
+            // Dos defectos distintos se cruzaban acá, y la cantidad de tres decimales
+            // los expone a los dos:
+            //
+            // 1. AppCulture.Quantity formatea con "0.##" — dos decimales — pero las
+            //    cantidades se guardan como decimal(18,3). Abrir el lápiz de una línea
+            //    de 2,125 m y confirmar sin tocar nada la dejaba en 2,12.
+            // 2. Ese texto se releía con la cultura del sistema, así que en una PC en
+            //    inglés "2,125" volvía como 2125. De ahí el en-US forzado: en es-AR el
+            //    segundo defecto no se manifiesta y el test no probaría esa mitad.
+            var quantity = 2.125m;
+            var unitCost = 1234.56m;
+            AppHost.QuoteService.AddLooseLine(
+                fixture.QuoteId, "Varilla fraccionada", "Metro", quantity, unitCost, saveToCatalog: false);
+
+            var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+            try
+            {
+                System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("en-US");
+
+                var viewModel = new QuotesViewModel(() => { });
+                viewModel.Load();
+                viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+                var line = viewModel.Lines.FirstOrDefault(l => l.Description == "Varilla fraccionada")
+                    ?? throw new InvalidOperationException("No se encontró la línea recién agregada.");
+
+                viewModel.EditLineCommand.Execute(line);
+                Assert.Equal(viewModel.MaterialQuantity, "2,125", "cantidad escrita en el campo editable");
+                Assert.Equal(viewModel.MaterialUnitCost, "1234,56", "precio escrito en el campo editable");
+
+                viewModel.ConfirmMaterialCommand.Execute(null);
+            }
+            finally
+            {
+                System.Globalization.CultureInfo.CurrentCulture = originalCulture;
+            }
+
+            var saved = AppHost.QuoteService.GetDetail(fixture.QuoteId)!
+                .Lines.First(l => l.Description == "Varilla fraccionada");
+
+            Assert.Equal(saved.Quantity, quantity, "cantidad tras confirmar sin editar");
+            Assert.Equal(saved.UnitCost, unitCost, "precio unitario tras confirmar sin editar");
+        });
         run("UI: el buscador filtra los materiales", () =>
         {
             var viewModel = new QuotesViewModel(() => { });
@@ -181,6 +239,71 @@ internal static class UiSmokeTests
                     $"Al limpiar la búsqueda esperaba {total} productos, hay {viewModel.AvailableProducts.Count}.");
             }
         });
+        run("UI: «Recalcular» valida igual que el cálculo automático", () =>
+        {
+            // Los dos caminos tenían reglas distintas: el automático exigía días y jornal
+            // mayores a cero, y el botón solo que no fueran negativos. Apretándolo se
+            // guardaba como precio final el costo de los materiales, sin una hora cotizada.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            var priceBefore = AppHost.QuoteService.GetDetail(fixture.QuoteId)!.Budget;
+
+            viewModel.CalcDays = "0";
+            viewModel.CalculateCommand.Execute(null);
+
+            Assert.True(
+                viewModel.StatusMessage.Contains("días", StringComparison.OrdinalIgnoreCase),
+                $"tendría que avisar que faltan los días, dijo «{viewModel.StatusMessage}».");
+            Assert.True(viewModel.IsStatusError, "un cálculo incompleto no es un éxito.");
+            Assert.True(viewModel.Breakdown is null, "sin días no tendría que quedar un desglose.");
+
+            Assert.Equal(
+                AppHost.QuoteService.GetDetail(fixture.QuoteId)!.Budget,
+                priceBefore,
+                "precio guardado tras un recálculo inválido");
+        });
+
+        run("UI: no se imprime para el cliente un presupuesto sin precio", () =>
+        {
+            // El documento salía con el TOTAL en un guión, y eso ya llegó al cliente.
+            var emptyId = AppHost.QuoteService.CreateQuote("Sin calcular", "Cliente sin precio", null).Id;
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == emptyId);
+
+            Assert.False(viewModel.CanPrintForClient, "sin precio ni desglose no se puede entregar.");
+            Assert.False(
+                viewModel.PrintClientCommand.CanExecute(null),
+                "el botón de imprimir tendría que estar deshabilitado.");
+
+            // Con el cálculo hecho sí se habilita.
+            AppHost.QuoteService.AddLooseLine(emptyId, "Tapa de pino", "Metro", 2m, 800m, saveToCatalog: false);
+            AppHost.QuoteService.SaveCalculation(emptyId, 1600m, 1m, 20000m, BudgetRates.Defaults());
+
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == emptyId);
+            Assert.True(viewModel.CanPrintForClient, "con precio y desglose tendría que poder imprimirse.");
+        });
+
+        run("UI: los estados que ofrece Proyectos dependen del actual", () =>
+        {
+            // El desplegable ofrecía los cinco siempre: de ahí salía el salteo del ciclo.
+            var viewModel = new ProjectsViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedProject = viewModel.Projects.First(p => p.Id == fixture.ActiveProjectId);
+
+            viewModel.EditProjectCommand.Execute(null);
+
+            var offered = viewModel.FormStatusOptions.Select(o => o.Status).ToList();
+            Assert.True(offered.Contains(ProjectStatus.InProgress), "tendría que poder quedarse como está.");
+            Assert.True(offered.Contains(ProjectStatus.Completed), "terminar el trabajo es el avance normal.");
+            Assert.False(offered.Contains(ProjectStatus.Quote), "volver a presupuesto va por «Cancelar trabajo».");
+            Assert.False(offered.Contains(ProjectStatus.Rejected), "un trabajo aprobado no se rechaza.");
+        });
+
         run("UI: StaffView + ViewModel", () =>
         {
             var viewModel = new StaffViewModel(() => { });
@@ -201,6 +324,228 @@ internal static class UiSmokeTests
             viewModel.RefreshDashboardMetrics();
             _ = viewModel.LowStockAlertCount;
             _ = viewModel.CurrentDate;
+        });
+
+        run("UI: buscar en la lista no pisa lo tipeado en la calculadora", () =>
+        {
+            // El ciclo era: buscar → recargar la lista → la grilla reemite la selección →
+            // se relee el detalle → los campos vuelven a los valores guardados. Con un
+            // presupuesto abierto, tipear en el buscador borraba lo que se estaba cargando.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            // Un valor todavía sin confirmar: en la vista los campos guardan al perder el
+            // foco, así que esto es exactamente lo que hay tipeado a mitad de una carga.
+            viewModel.CalcDailyRate = "44444";
+
+            viewModel.SearchText = "Mesada";
+            Assert.Equal(viewModel.CalcDailyRate, "44444", "jornal tras buscar");
+
+            viewModel.SearchText = string.Empty;
+            Assert.Equal(viewModel.CalcDailyRate, "44444", "jornal tras limpiar la búsqueda");
+
+            // Y el presupuesto abierto sigue siendo el mismo.
+            Assert.Equal(viewModel.Detail!.Id, fixture.QuoteId, "presupuesto abierto");
+        });
+
+        run("UI: reelegir el mismo presupuesto no recarga el formulario", () =>
+        {
+            // La grilla entrega instancias nuevas del mismo presupuesto cada vez que se
+            // refresca la lista. Comparadas por referencia, cada una parecía un cambio de
+            // selección y disparaba la recarga.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            viewModel.CalcDays = "9";
+
+            var otherInstance = AppHost.QuoteService.GetListItem(fixture.QuoteId)!;
+            Assert.False(
+                ReferenceEquals(otherInstance, viewModel.SelectedQuote),
+                "la prueba necesita una instancia distinta para tener sentido.");
+
+            viewModel.SelectedQuote = otherInstance;
+
+            Assert.Equal(viewModel.CalcDays, "9", "días tras reelegir el mismo presupuesto");
+        });
+
+        run("UI: cambiar de presupuesto sí recarga el formulario", () =>
+        {
+            // La contracara: el atajo no puede dejar el detalle pegado al anterior.
+            var otherId = AppHost.QuoteService.CreateQuote("Otro trabajo", "Otro cliente", null).Id;
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == otherId);
+
+            Assert.Equal(viewModel.Detail!.Id, otherId, "presupuesto abierto tras cambiar");
+            Assert.Equal(viewModel.Detail.Title, "Otro trabajo", "título del detalle");
+        });
+
+        run("UI: el motivo por el que no se puede borrar se calcula sin consultar en cada tecla", () =>
+        {
+            // El predicado del comando estaba enganchado al barrido global de WPF, que
+            // dispara con cada tecla y cada clic: eran dos consultas a SQLite sincrónicas
+            // sobre el hilo de la interfaz, decenas de veces por segundo mientras se tipea.
+            var viewModel = new InventoryViewModel(() => { });
+            viewModel.LoadProducts();
+            viewModel.SelectedProduct = viewModel.Products.First(p => p.Id == fixture.BoardProductId);
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            for (var i = 0; i < 1000; i++)
+            {
+                _ = viewModel.CanDeleteSelected;
+            }
+
+            watch.Stop();
+
+            Assert.True(
+                watch.ElapsedMilliseconds < 50,
+                $"1000 lecturas tardaron {watch.ElapsedMilliseconds} ms: el predicado sigue consultando la base.");
+
+            // La tabla de roble está en el presupuesto sembrado, así que no se puede borrar
+            // y el tooltip tiene que decir por qué.
+            Assert.False(viewModel.CanDeleteSelected, "el producto está en un presupuesto.");
+            Assert.True(
+                viewModel.DeleteBlockTooltip.Contains("presupuesto", StringComparison.OrdinalIgnoreCase),
+                $"el tooltip no explica el motivo: «{viewModel.DeleteBlockTooltip}»");
+        });
+
+        run("UI: una ráfaga de tecleo dispara una sola búsqueda", () =>
+        {
+            // El Debouncer se prueba solo, con retardo real: en la suite el default está
+            // en cero para que las aserciones sobre listas filtradas no dependan del reloj.
+            var runs = 0;
+            var debouncer = new Debouncer(TimeSpan.FromMilliseconds(40));
+
+            foreach (var _ in "mesada")
+            {
+                debouncer.Run(() => runs++);
+            }
+
+            Assert.Equal(runs, 0, "ejecuciones antes de que se calme la ráfaga");
+
+            // Se bombea el bucle de mensajes hasta que el temporizador llegue a disparar.
+            var deadline = DateTime.UtcNow.AddSeconds(2);
+            while (runs == 0 && DateTime.UtcNow < deadline)
+            {
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+                Thread.Sleep(10);
+            }
+
+            Assert.Equal(runs, 1, "seis teclas tendrían que dejar una sola búsqueda");
+        });
+
+        run("UI: con un presupuesto listo, los botones de entrega quedan habilitados", () =>
+        {
+            // Protege el endurecimiento de PrintClientCommand: pasarse de estricto deja al
+            // taller sin poder imprimir un presupuesto que está perfecto, y eso se nota
+            // recién con el cliente enfrente.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            var view = new QuotesView { DataContext = viewModel };
+            view.Measure(new Size(1200, 800));
+            view.Arrange(new Rect(0, 0, 1200, 800));
+            view.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+            foreach (var label in new[] { "Imprimir para el cliente", "Hoja de costos", "Aprobar", "Rechazar" })
+            {
+                var button = FindButton(view, label)
+                    ?? throw new InvalidOperationException($"No se encontró el botón «{label}».");
+
+                Assert.True(button.IsEnabled, $"«{label}» tendría que estar habilitado.");
+            }
+        });
+
+        run("UI: los desplegables muestran la etiqueta, no el nombre del tipo", () =>
+        {
+            // Todos los ComboBox de la app usan DisplayMemberPath. Si el ControlTemplate
+            // no reenvía el template del ítem seleccionado, la caja cerrada cae al
+            // ToString() del objeto y muestra «MetroCarpinteria.App.Models.…».
+            var combo = new System.Windows.Controls.ComboBox
+            {
+                ItemsSource = ProjectStatusHelper.GetEditOptions(),
+                DisplayMemberPath = "Label",
+                SelectedIndex = 0
+            };
+
+            var host = new System.Windows.Controls.Border { Child = combo, Width = 240, Height = 48 };
+            host.Measure(new Size(240, 48));
+            host.Arrange(new Rect(0, 0, 240, 48));
+            host.UpdateLayout();
+
+            var shown = FindTexts(combo).ToList();
+
+            Assert.True(
+                shown.Any(t => t == "Presupuesto"),
+                $"la caja cerrada tendría que decir «Presupuesto», dice: {string.Join(" | ", shown)}");
+        });
+
+        ThemeTests.Run(run);
+        ThemeTests.RunRepaintCheck(run);
+
+        run("UI: las 10 vistas se dibujan en los 6 combos de tema y escala", () =>
+        {
+            // Es la red que protege el sistema de temas. Un color declarado en claro y
+            // olvidado en oscuro, o un Height fijo que recorta con letra grande, no falla
+            // al compilar: aparece como un panel vacío recién cuando alguien cambia el tema.
+            var theme = AppHost.ThemeService;
+            var originalTheme = theme.Theme;
+            var originalScale = theme.Scale;
+
+            Func<FrameworkElement>[] views =
+            [
+                () => new HomeView(),
+                () => new InventoryView(),
+                () => new CashRegisterView(),
+                () => new QuotesView(),
+                () => new ProjectsView(),
+                () => new StaffView(),
+                () => new ReportsView(),
+                () => new SettingsView(),
+                () => new AboutView()
+            ];
+
+            try
+            {
+                foreach (var mode in new[] { AppTheme.Light, AppTheme.Dark })
+                {
+                    foreach (var scale in new[] { FontScale.Small, FontScale.Normal, FontScale.Large })
+                    {
+                        theme.Apply(mode, scale, persist: false);
+
+                        // La ventana no reporta tamaño sin Show(), que necesitaría sesión
+                        // interactiva y no la hay en CI. Alcanza con que dibujar el shell
+                        // completo no tire: ahí es donde saltaría una clave de tema faltante.
+                        var window = new MetroCarpinteria.App.MainWindow();
+                        window.Measure(new Size(1280, 800));
+                        window.Arrange(new Rect(0, 0, 1280, 800));
+                        window.UpdateLayout();
+
+                        foreach (var create in views)
+                        {
+                            var view = create();
+                            view.DataContext = ((MainViewModel)window.DataContext!).CurrentViewModel;
+                            view.Measure(new Size(1000, 700));
+                            view.Arrange(new Rect(0, 0, 1000, 700));
+                            view.UpdateLayout();
+
+                            Assert.True(
+                                view.ActualHeight > 0,
+                                $"{view.GetType().Name} no midió nada en {mode}/{scale}.");
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                theme.Apply(originalTheme, originalScale, persist: false);
+            }
         });
 
         RunDocumentTests(run);
@@ -300,6 +645,53 @@ internal static class UiSmokeTests
                 }
             ]
         };
+    }
+
+    private static System.Windows.Controls.Button? FindButton(
+        System.Windows.DependencyObject root,
+        string content)
+    {
+        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+
+        for (var i = 0; i < count; i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+
+            if (child is System.Windows.Controls.Button button
+                && button.Content is string text
+                && text == content)
+            {
+                return button;
+            }
+
+            if (FindButton(child, content) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Textos visibles dentro de un control ya dibujado.</summary>
+    private static IEnumerable<string> FindTexts(System.Windows.DependencyObject root)
+    {
+        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+
+        for (var i = 0; i < count; i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+
+            if (child is System.Windows.Controls.TextBlock { Text.Length: > 0 } text)
+            {
+                yield return text.Text;
+            }
+
+            foreach (var nested in FindTexts(child))
+            {
+                yield return nested;
+            }
+        }
     }
 
     private static string ToText(FlowDocument document) =>

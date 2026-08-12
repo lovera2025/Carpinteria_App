@@ -18,10 +18,16 @@ public sealed class DatabaseService
     public SchemaMigrationResult? LastMigration { get; private set; }
 
     /// <param name="beforeMigration">
-    /// Se invoca solo si hay migraciones pendientes sobre una base preexistente, para
-    /// dejar un respaldo antes de tocar el esquema. No corre en una instalación nueva.
+    /// Deja un respaldo antes de tocar el esquema y devuelve dónde quedó. Se invoca solo
+    /// si hay migraciones pendientes sobre una base preexistente: no corre en una
+    /// instalación nueva. Devolver la ruta permite volver atrás sola si la migración
+    /// termina dejando la base inconsistente.
     /// </param>
-    public void Initialize(Action? beforeMigration = null)
+    /// <exception cref="InvalidOperationException">
+    /// Si no se pudo respaldar antes de una migración que reescribe datos, o si la base
+    /// quedó dañada después de migrar.
+    /// </exception>
+    public void Initialize(Func<string?>? beforeMigration = null)
     {
         var existedBefore = File.Exists(_paths.DatabasePath);
 
@@ -36,21 +42,41 @@ public sealed class DatabaseService
         }
 
         var migrator = new SchemaMigrator(_paths.DatabasePath);
+        string? backupPath = null;
 
         if (existedBefore && beforeMigration is not null && migrator.HasPendingMigrations())
         {
+            var reescribeDatos = migrator.HasPendingDataTransform();
+
             try
             {
-                beforeMigration();
+                backupPath = beforeMigration();
             }
-            catch
+            catch (Exception ex)
             {
-                // Un respaldo que falla no puede impedir que la app abra; la migración
-                // en sí es transaccional y se revierte sola si algo sale mal.
+                // Agregar una columna es reversible en la práctica: queda en null y nadie
+                // la lee, así que un respaldo fallido no justifica dejar al taller sin app.
+                if (!reescribeDatos)
+                {
+                    LogService.Warning(
+                        "DatabaseService",
+                        $"No se pudo respaldar antes de migrar, pero el cambio no toca datos: {ex.Message}");
+                }
+                else
+                {
+                    // Reescribir filas sin copia previa sí es un camino de ida.
+                    throw new InvalidOperationException(
+                        "Esta actualización reescribe datos de la base y no se pudo hacer la copia de " +
+                        "seguridad previa, así que no se aplicó nada.\n\n" +
+                        "Revisá que haya espacio en disco y que la carpeta de datos no esté bloqueada " +
+                        "por otro programa (un antivirus o una carpeta sincronizada).",
+                        ex);
+                }
             }
         }
 
         LastMigration = migrator.MigrateToLatest();
+        VerifyIntegrityAfterMigration(backupPath);
 
         // Recién ahora el esquema coincide con el modelo y se puede usar EF.
         using (var context = CreateContext())
@@ -61,6 +87,83 @@ public sealed class DatabaseService
         EnableWalMode();
     }
 
+    /// <summary>
+    /// Comprueba que la base haya quedado sana después de migrar y, si no, la deja como
+    /// estaba antes.
+    /// </summary>
+    /// <remarks>
+    /// Cada paso es transaccional, así que un error <em>durante</em> la migración se
+    /// revierte solo. Esto cubre lo otro: que haya terminado bien y aun así el archivo
+    /// quede inconsistente, que es el riesgo real de reconstruir tablas.
+    /// </remarks>
+    private void VerifyIntegrityAfterMigration(string? backupPath)
+    {
+        if (LastMigration is not { AnyApplied: true })
+        {
+            return;
+        }
+
+        if (ReadIntegrity() is not { } problem)
+        {
+            return;
+        }
+
+        LogService.Error(
+            "DatabaseService",
+            $"La base quedó inconsistente tras migrar (integrity_check: {problem})");
+
+        var restored = TryRestore(backupPath);
+
+        throw new InvalidOperationException(
+            "La actualización de la base de datos no terminó bien y el archivo quedó dañado.\n\n" +
+            (restored
+                ? "Se restauró automáticamente la copia previa, así que no se perdió nada. " +
+                  "Volvé a abrir la aplicación."
+                : "No se pudo restaurar la copia previa automáticamente. " +
+                  "Buscá el respaldo más reciente en la carpeta «backups» antes de seguir."));
+    }
+
+    /// <summary>Devuelve el problema que reporta SQLite, o <c>null</c> si la base está sana.</summary>
+    private string? ReadIntegrity()
+    {
+        SqliteConnection.ClearAllPools();
+
+        using var connection = new SqliteConnection($"Data Source={_paths.DatabasePath}");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA integrity_check;";
+        var result = command.ExecuteScalar()?.ToString();
+
+        return string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase) ? null : result ?? "sin respuesta";
+    }
+
+    private bool TryRestore(string? backupPath)
+    {
+        if (backupPath is null || !File.Exists(backupPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            SqliteConnection.ClearAllPools();
+            File.Copy(backupPath, _paths.DatabasePath, overwrite: true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogService.Error("DatabaseService", "No se pudo restaurar el respaldo previo a la migración", ex);
+            return false;
+        }
+    }
+
+    /// <remarks>
+    /// Las cantidades y los importes van <c>TEXT</c>, igual que los declara EF. Con
+    /// afinidad <c>REAL</c>, SQLite convierte cada valor a punto flotante al guardarlo y
+    /// los centavos se corren; este DDL los declaraba así, y por eso qué afinidad tiene
+    /// cada instalación dependía de si la tabla la creó EF o este bloque. La migración v7
+    /// endereza las bases que ya existen: esto evita que nazcan torcidas.
+    /// </remarks>
     private static void EnsureStockMovementsTable(AppDbContext context)
     {
         context.Database.ExecuteSqlRaw("""
@@ -68,7 +171,7 @@ public sealed class DatabaseService
                 Id INTEGER NOT NULL CONSTRAINT PK_StockMovements PRIMARY KEY AUTOINCREMENT,
                 ProductId INTEGER NOT NULL,
                 Type INTEGER NOT NULL,
-                Quantity REAL NOT NULL,
+                Quantity TEXT NOT NULL,
                 Reason TEXT NOT NULL,
                 CreatedAtUtc TEXT NOT NULL,
                 CONSTRAINT FK_StockMovements_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE RESTRICT
@@ -86,10 +189,10 @@ public sealed class DatabaseService
         context.Database.ExecuteSqlRaw("""
             CREATE TABLE IF NOT EXISTS CashSessions (
                 Id INTEGER NOT NULL CONSTRAINT PK_CashSessions PRIMARY KEY AUTOINCREMENT,
-                OpeningAmount REAL NOT NULL,
-                ClosingExpectedAmount REAL NULL,
-                ClosingCountedAmount REAL NULL,
-                Difference REAL NULL,
+                OpeningAmount TEXT NOT NULL,
+                ClosingExpectedAmount TEXT NULL,
+                ClosingCountedAmount TEXT NULL,
+                Difference TEXT NULL,
                 OpeningNotes TEXT NULL,
                 ClosingNotes TEXT NULL,
                 OpenedAtUtc TEXT NOT NULL,
@@ -102,7 +205,7 @@ public sealed class DatabaseService
                 Id INTEGER NOT NULL CONSTRAINT PK_CashMovements PRIMARY KEY AUTOINCREMENT,
                 CashSessionId INTEGER NOT NULL,
                 Type INTEGER NOT NULL,
-                Amount REAL NOT NULL,
+                Amount TEXT NOT NULL,
                 Reason TEXT NOT NULL,
                 CreatedAtUtc TEXT NOT NULL,
                 CONSTRAINT FK_CashMovements_CashSessions_CashSessionId FOREIGN KEY (CashSessionId) REFERENCES CashSessions (Id) ON DELETE CASCADE
@@ -127,7 +230,7 @@ public sealed class DatabaseService
                 Title TEXT NOT NULL,
                 ClientName TEXT NOT NULL,
                 Description TEXT NULL,
-                Budget REAL NULL,
+                Budget TEXT NULL,
                 Status INTEGER NOT NULL,
                 IsArchived INTEGER NOT NULL,
                 CreatedAtUtc TEXT NOT NULL,
@@ -152,7 +255,7 @@ public sealed class DatabaseService
                 Id INTEGER NOT NULL CONSTRAINT PK_ProjectMaterials PRIMARY KEY AUTOINCREMENT,
                 ProjectId INTEGER NOT NULL,
                 ProductId INTEGER NOT NULL,
-                Quantity REAL NOT NULL,
+                Quantity TEXT NOT NULL,
                 AssignedAtUtc TEXT NOT NULL,
                 CONSTRAINT FK_ProjectMaterials_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE,
                 CONSTRAINT FK_ProjectMaterials_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE RESTRICT

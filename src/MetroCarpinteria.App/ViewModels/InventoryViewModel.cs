@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
@@ -9,9 +9,13 @@ using MetroCarpinteria.App.Services;
 
 namespace MetroCarpinteria.App.ViewModels;
 
-public class InventoryViewModel : ObservableObject
+public class InventoryViewModel : ViewModelBase
 {
     private readonly Action _onDataChanged;
+
+    /// <summary>Agrupa el tecleo del buscador para no consultar la base letra por letra.</summary>
+    private readonly Debouncer _searchDebouncer = new();
+
     private ProductListItem? _selectedProduct;
     private string _searchText = string.Empty;
     private bool _showArchived;
@@ -30,6 +34,17 @@ public class InventoryViewModel : ObservableObject
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
 
+    /// <summary>
+    /// Por qué no se puede borrar el producto elegido, o null si se puede.
+    /// <para>
+    /// Se calcula una vez por selección y no dentro del predicado del comando. Enganchado
+    /// al requery global, ese predicado corría con cada tecla y cada clic: eran dos
+    /// consultas a SQLite, sincrónicas sobre el hilo de la interfaz, decenas de veces por
+    /// segundo mientras alguien tipeaba en el buscador.
+    /// </para>
+    /// </summary>
+    private string? _deleteBlockReason;
+
     public InventoryViewModel(Action onDataChanged)
     {
         _onDataChanged = onDataChanged;
@@ -40,11 +55,12 @@ public class InventoryViewModel : ObservableObject
         LoadCommand = new RelayCommand(_ => LoadProducts());
         NewProductCommand = new RelayCommand(_ => StartNewProduct());
         EditProductCommand = new RelayCommand(_ => StartEditProduct(), _ => SelectedProduct is not null);
-        SaveProductCommand = new RelayCommand(_ => SaveProduct());
+        SaveProductCommand = new RelayCommand(_ => SaveProduct(), _ => CanSaveProduct);
         CancelFormCommand = new RelayCommand(_ => CloseForm());
-        ArchiveProductCommand = new RelayCommand(_ => ArchiveSelected(), _ => CanArchiveSelected);
+        ArchiveProductCommand = new AsyncRelayCommand(ArchiveSelectedAsync, () => CanArchiveSelected);
         RestoreProductCommand = new RelayCommand(_ => RestoreSelected(), _ => CanRestoreSelected);
-        DeleteProductCommand = new RelayCommand(_ => DeleteSelected(), _ => CanDeleteSelected);
+        DeleteProductCommand = new AsyncRelayCommand(
+            DeleteSelectedAsync, () => CanDeleteSelected, observeRequery: false);
         RegisterMovementCommand = new RelayCommand(_ => RegisterMovement(), _ => SelectedProduct is not null && !SelectedProduct.IsArchived);
     }
 
@@ -62,12 +78,23 @@ public class InventoryViewModel : ObservableObject
                 return;
             }
 
+            RefreshDeleteBlockReason();
             LoadMovementsForSelection();
             OnPropertyChanged(nameof(CanArchiveSelected));
             OnPropertyChanged(nameof(CanRestoreSelected));
-            OnPropertyChanged(nameof(CanDeleteSelected));
             OnPropertyChanged(nameof(SelectedProductStockDisplay));
         }
+    }
+
+    private void RefreshDeleteBlockReason()
+    {
+        _deleteBlockReason = SelectedProduct is null
+            ? "Elegí un producto de la lista."
+            : AppHost.InventoryService.DescribeDeleteBlock(SelectedProduct.Id);
+
+        OnPropertyChanged(nameof(CanDeleteSelected));
+        OnPropertyChanged(nameof(DeleteBlockTooltip));
+        (DeleteProductCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public string SearchText
@@ -77,7 +104,7 @@ public class InventoryViewModel : ObservableObject
         {
             if (SetProperty(ref _searchText, value))
             {
-                LoadProducts();
+                _searchDebouncer.Run(LoadProducts);
             }
         }
     }
@@ -130,23 +157,56 @@ public class InventoryViewModel : ObservableObject
     public bool ShowInitialStockField => IsCreating;
     public string FormTitle => IsCreating ? "Nuevo producto" : "Editar producto";
 
+    /// <summary>
+    /// Los campos del formulario se validan al tipear, no al guardar. El error aparece
+    /// debajo del campo que lo causó y el botón Guardar queda deshabilitado hasta que
+    /// no quede ninguno: antes había que apretar Guardar para enterarse de qué faltaba.
+    /// </summary>
     public string FormName
     {
         get => _formName;
-        set => SetProperty(ref _formName, value);
+        set
+        {
+            if (SetProperty(ref _formName, value))
+            {
+                Validate(nameof(FormName),
+                    () => Validators.Required(value, "El nombre del producto"),
+                    () => Validators.MaxLength(value, 200, "El nombre"));
+                OnPropertyChanged(nameof(CanSaveProduct));
+            }
+        }
     }
 
     public string FormInitialStock
     {
         get => _formInitialStock;
-        set => SetProperty(ref _formInitialStock, value);
+        set
+        {
+            if (SetProperty(ref _formInitialStock, value))
+            {
+                Validate(nameof(FormInitialStock),
+                    () => Validators.NonNegativeQuantity(value, "El stock inicial"));
+                OnPropertyChanged(nameof(CanSaveProduct));
+            }
+        }
     }
 
     public string FormMinimumStock
     {
         get => _formMinimumStock;
-        set => SetProperty(ref _formMinimumStock, value);
+        set
+        {
+            if (SetProperty(ref _formMinimumStock, value))
+            {
+                Validate(nameof(FormMinimumStock),
+                    () => Validators.NonNegativeQuantity(value, "El stock mínimo"));
+                OnPropertyChanged(nameof(CanSaveProduct));
+            }
+        }
     }
+
+    /// <summary>El formulario está completo y sin errores.</summary>
+    public bool CanSaveProduct => !HasErrors && !string.IsNullOrWhiteSpace(FormName);
 
     public string FormUnit
     {
@@ -202,8 +262,14 @@ public class InventoryViewModel : ObservableObject
 
     public bool CanArchiveSelected => SelectedProduct is { IsArchived: false };
     public bool CanRestoreSelected => SelectedProduct is { IsArchived: true };
-    public bool CanDeleteSelected => SelectedProduct is not null
-        && !AppHost.InventoryService.HasMovements(SelectedProduct.Id);
+    public bool CanDeleteSelected => SelectedProduct is not null && _deleteBlockReason is null;
+
+    /// <summary>
+    /// Lo que dice el botón «Eliminar» al pasarle el mouse. Antes se deshabilitaba sin
+    /// explicar nada y no había forma de saber qué lo estaba bloqueando.
+    /// </summary>
+    public string DeleteBlockTooltip =>
+        _deleteBlockReason ?? "Elimina el producto definitivamente.";
 
     public ICommand LoadCommand { get; }
     public ICommand NewProductCommand { get; }
@@ -215,7 +281,9 @@ public class InventoryViewModel : ObservableObject
     public ICommand DeleteProductCommand { get; }
     public ICommand RegisterMovementCommand { get; }
 
-    public void LoadProducts()
+    public void LoadProducts() => SafeLoad(LoadProductsCore, "Inventario");
+
+    private void LoadProductsCore()
     {
         var items = AppHost.InventoryService.GetProducts(ShowArchived, LowStockOnly, SearchText);
         var selectedId = SelectedProduct?.Id;
@@ -230,6 +298,9 @@ public class InventoryViewModel : ObservableObject
             ? Products.FirstOrDefault(p => p.Id == selectedId.Value)
             : Products.FirstOrDefault();
 
+        // Explícito: si la selección quedó igual, el setter no corre y el motivo del
+        // bloqueo quedaría con lo que valía antes de recargar.
+        RefreshDeleteBlockReason();
         LoadMovementsForSelection();
         _onDataChanged();
         CommandManager.InvalidateRequerySuggested();
@@ -246,7 +317,6 @@ public class InventoryViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CanArchiveSelected));
         OnPropertyChanged(nameof(CanRestoreSelected));
-        OnPropertyChanged(nameof(CanDeleteSelected));
         OnPropertyChanged(nameof(SelectedProductStockDisplay));
     }
 
@@ -260,6 +330,11 @@ public class InventoryViewModel : ObservableObject
         FormCurrentStockDisplay = string.Empty;
         IsCreating = true;
         IsFormOpen = true;
+
+        // Un formulario recién abierto no muestra errores: marcar en rojo un campo que
+        // todavía no se tocó es regañar a alguien por no haber empezado.
+        ClearAllErrors();
+        OnPropertyChanged(nameof(CanSaveProduct));
         ClearStatus();
     }
 
@@ -271,11 +346,9 @@ public class InventoryViewModel : ObservableObject
         }
 
         FormName = SelectedProduct.Name;
-        FormMinimumStock = SelectedProduct.MinimumStock.ToString(CultureInfo.CurrentCulture);
+        FormMinimumStock = NumberInput.Format(SelectedProduct.MinimumStock);
         FormUnit = SelectedProduct.Unit;
-        FormCostPrice = SelectedProduct.CostPrice.HasValue
-            ? SelectedProduct.CostPrice.Value.ToString("0.##", CultureInfo.CurrentCulture)
-            : string.Empty;
+        FormCostPrice = NumberInput.Format(SelectedProduct.CostPrice);
         FormCurrentStockDisplay = SelectedProduct.StockDisplay;
         IsCreating = false;
         IsFormOpen = true;
@@ -286,7 +359,7 @@ public class InventoryViewModel : ObservableObject
     {
         try
         {
-            if (!NumberInput.TryParseDecimal(FormMinimumStock, out var minimumStock))
+            if (!NumberInput.TryParseQuantity(FormMinimumStock, out var minimumStock))
             {
                 throw new InvalidOperationException("Stock mínimo inválido.");
             }
@@ -294,7 +367,7 @@ public class InventoryViewModel : ObservableObject
             decimal? costPrice = null;
             if (!string.IsNullOrWhiteSpace(FormCostPrice))
             {
-                if (!NumberInput.TryParseDecimal(FormCostPrice, out var parsedCost))
+                if (!NumberInput.TryParseMoney(FormCostPrice, out var parsedCost))
                 {
                     throw new InvalidOperationException("Precio de costo inválido.");
                 }
@@ -304,7 +377,7 @@ public class InventoryViewModel : ObservableObject
 
             if (IsCreating)
             {
-                if (!NumberInput.TryParseDecimal(FormInitialStock, out var initialStock))
+                if (!NumberInput.TryParseQuantity(FormInitialStock, out var initialStock))
                 {
                     throw new InvalidOperationException("Stock inicial inválido.");
                 }
@@ -335,20 +408,22 @@ public class InventoryViewModel : ObservableObject
         IsCreating = false;
     }
 
-    private void ArchiveSelected()
+    private async Task ArchiveSelectedAsync()
     {
         if (SelectedProduct is null)
         {
             return;
         }
 
-        var result = MessageBox.Show(
-            $"¿Archivar «{SelectedProduct.Name}»?\n\nSeguirá en el historial pero no aparecerá en la lista activa.",
-            "Confirmar archivo",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
+        var name = SelectedProduct.Name;
 
-        if (result != MessageBoxResult.Yes)
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Archivar producto",
+            $"«{name}» va a dejar de aparecer en la lista.\n\n" +
+            "Sus movimientos quedan guardados y lo podés volver a activar cuando quieras.",
+            confirmText: "Archivar");
+
+        if (!confirmed)
         {
             return;
         }
@@ -356,12 +431,12 @@ public class InventoryViewModel : ObservableObject
         try
         {
             AppHost.InventoryService.ArchiveProduct(SelectedProduct.Id);
-            SetStatus($"Producto «{SelectedProduct.Name}» archivado.", isError: false);
+            AppHost.NotificationService.Success($"«{name}» quedó archivado.");
             LoadProducts();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, isError: true);
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
@@ -384,35 +459,37 @@ public class InventoryViewModel : ObservableObject
         }
     }
 
-    private void DeleteSelected()
+    private async Task DeleteSelectedAsync()
     {
         if (SelectedProduct is null)
         {
             return;
         }
 
-        var result = MessageBox.Show(
-            $"¿Eliminar permanentemente «{SelectedProduct.Name}»?\n\nEsta acción no se puede deshacer.",
-            "Confirmar eliminación",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+        var name = SelectedProduct.Name;
 
-        if (result != MessageBoxResult.Yes)
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Eliminar producto",
+            $"Se va a borrar «{name}» del catálogo.\n\nEsto no se puede deshacer. " +
+            "Si solo querés sacarlo de la lista, conviene archivarlo.",
+            confirmText: "Eliminar",
+            isDestructive: true);
+
+        if (!confirmed)
         {
             return;
         }
 
         try
         {
-            var name = SelectedProduct.Name;
             AppHost.InventoryService.DeleteProduct(SelectedProduct.Id);
             SelectedProduct = null;
-            SetStatus($"Producto «{name}» eliminado.", isError: false);
+            AppHost.NotificationService.Success($"«{name}» se eliminó del catálogo.");
             LoadProducts();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, isError: true);
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
@@ -425,7 +502,7 @@ public class InventoryViewModel : ObservableObject
 
         try
         {
-            if (!NumberInput.TryParseDecimal(MovementQuantity, out var quantity))
+            if (!NumberInput.TryParseQuantity(MovementQuantity, out var quantity))
             {
                 throw new InvalidOperationException("Cantidad inválida.");
             }
@@ -446,10 +523,37 @@ public class InventoryViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Publica el resultado de una acción.
+    /// <para>
+    /// Antes esto llenaba una barra fija arriba de la pantalla que <b>nunca se borraba</b>:
+    /// un "Producto creado." quedaba ahí para siempre, y al rato no se sabía si
+    /// correspondía a lo de recién o a algo de veinte minutos antes. Ahora va al aviso
+    /// flotante, que se descarta solo.
+    /// </para>
+    /// <para>
+    /// StatusMessage se sigue actualizando porque los tests lo leen para verificar qué
+    /// pasó tras una acción.
+    /// </para>
+    /// </summary>
     private void SetStatus(string message, bool isError)
     {
         StatusMessage = message;
         IsStatusError = isError;
+
+        if (string.IsNullOrWhiteSpace(message) || !AppHost.IsReady)
+        {
+            return;
+        }
+
+        if (isError)
+        {
+            AppHost.NotificationService.Warning(message);
+        }
+        else
+        {
+            AppHost.NotificationService.Success(message);
+        }
     }
 
     private void ClearStatus()

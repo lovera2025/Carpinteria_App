@@ -99,7 +99,14 @@ public sealed class QuoteListItem
     public int LineCount { get; init; }
     public DateTime? QuotedAtLocal { get; init; }
     public DateTime? ValidUntilLocal { get; init; }
-    public QuoteFreshness Freshness { get; init; }
+
+    /// <summary>
+    /// Se deriva de la fecha cada vez que se lee. Guardada al armar la lista quedaba
+    /// congelada: con la app abierta de un día para el otro, un presupuesto que vencía
+    /// ayer seguía figurando como vigente. Quien avisa que hay que releerla es
+    /// <see cref="Services.ClockService"/>.
+    /// </summary>
+    public QuoteFreshness Freshness => QuoteRules.GetFreshness(ValidUntilLocal, DateTime.Today);
 
     public string StatusLabel => ProjectStatusHelper.GetLabel(Status);
     public string BudgetDisplay => AppCulture.Money(Budget);
@@ -139,9 +146,13 @@ public sealed class QuoteLineItem
     /// Falta stock para cubrir la línea. Es solo un aviso: un presupuesto puede cotizar
     /// material que todavía no se compró.
     /// </summary>
-    public bool HasStockWarning => IsFromInventory
-        && AvailableStock.HasValue
-        && AvailableStock.Value < Quantity;
+    /// <remarks>
+    /// Lo calcula <see cref="Services.QuoteService.GetDetail"/> sumando lo pedido en
+    /// todas las líneas del mismo producto. Derivarlo acá solo con
+    /// <see cref="Quantity"/> haría que dos líneas de 6 sobre un stock de 10 se vieran
+    /// las dos cubiertas, aunque juntas no lleguen.
+    /// </remarks>
+    public bool HasStockWarning { get; init; }
 
     public string StockDisplay => AvailableStock.HasValue
         ? $"Stock: {AppCulture.QuantityWithUnit(AvailableStock.Value, Unit)}"

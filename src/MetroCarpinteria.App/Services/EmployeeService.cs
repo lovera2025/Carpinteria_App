@@ -1,5 +1,6 @@
 using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
+using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -139,10 +140,18 @@ public sealed class EmployeeService
         context.SaveChanges();
     }
 
-    public bool HasAssignments(int id)
+    public bool HasAssignments(int id) => DescribeDeleteBlock(id) is not null;
+
+    /// <summary>Por qué no se puede borrar el empleado, o <c>null</c> si se puede.</summary>
+    public string? DescribeDeleteBlock(int id)
     {
         using var context = _databaseService.CreateContext();
-        return context.ProjectAssignments.Any(a => a.EmployeeId == id);
+        var assignments = context.ProjectAssignments.Count(a => a.EmployeeId == id);
+
+        return assignments == 0
+            ? null
+            : $"No se puede eliminar: está en {Phrases.Count(assignments, "proyecto", "proyectos")}. " +
+              "Archivalo en su lugar.";
     }
 
     private static void ValidateEmployee(string fullName)

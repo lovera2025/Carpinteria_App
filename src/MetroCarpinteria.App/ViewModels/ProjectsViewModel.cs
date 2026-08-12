@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
@@ -9,9 +9,13 @@ using MetroCarpinteria.App.Services;
 
 namespace MetroCarpinteria.App.ViewModels;
 
-public class ProjectsViewModel : ObservableObject
+public class ProjectsViewModel : ViewModelBase
 {
     private readonly Action _onDataChanged;
+
+    /// <summary>Agrupa el tecleo del buscador para no consultar la base letra por letra.</summary>
+    private readonly Debouncer _searchDebouncer = new();
+
     private ProjectListItem? _selectedProject;
     private string _searchText = string.Empty;
     private bool _showArchived;
@@ -30,6 +34,14 @@ public class ProjectsViewModel : ObservableObject
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
     private QuoteDetail? _quote;
+    private IReadOnlyList<ProjectStatusOption> _formStatusOptions;
+
+    /// <summary>
+    /// Por qué no se puede borrar el proyecto elegido, o null si se puede. Se calcula una
+    /// vez por selección: dentro del predicado del comando eran tres consultas a SQLite
+    /// por cada tecla tipeada en el buscador.
+    /// </summary>
+    private string? _deleteBlockReason;
 
     public ProjectsViewModel(Action onDataChanged)
     {
@@ -41,23 +53,25 @@ public class ProjectsViewModel : ObservableObject
         AvailableProducts = new ObservableCollection<ProductListItem>();
         AvailableEmployees = new ObservableCollection<EmployeeListItem>();
         StatusFilterOptions = ProjectStatusHelper.GetFilterOptions();
-        FormStatusOptions = ProjectStatusHelper.GetEditOptions();
+        _formStatusOptions = ProjectStatusHelper.GetEditOptions();
         _selectedStatusFilter = StatusFilterOptions[0];
-        _formStatus = FormStatusOptions[0];
+        _formStatus = _formStatusOptions[0];
 
         LoadCommand = new RelayCommand(_ => Load());
         NewProjectCommand = new RelayCommand(_ => StartNew());
         EditProjectCommand = new RelayCommand(_ => StartEdit(), _ => SelectedProject is not null);
         SaveProjectCommand = new RelayCommand(_ => SaveProject());
         CancelFormCommand = new RelayCommand(_ => CloseForm());
-        ArchiveProjectCommand = new RelayCommand(_ => ArchiveSelected(), _ => CanArchiveSelected);
+        ArchiveProjectCommand = new AsyncRelayCommand(ArchiveSelectedAsync, () => CanArchiveSelected);
         RestoreProjectCommand = new RelayCommand(_ => RestoreSelected(), _ => CanRestoreSelected);
-        DeleteProjectCommand = new RelayCommand(_ => DeleteSelected(), _ => CanDeleteSelected);
+        DeleteProjectCommand = new AsyncRelayCommand(
+            DeleteSelectedAsync, () => CanDeleteSelected, observeRequery: false);
         AssignMaterialCommand = new RelayCommand(_ => AssignMaterial(), _ => CanAssignToProject);
         AssignEmployeeCommand = new RelayCommand(_ => AssignEmployee(), _ => CanAssignToProject);
-        RemoveMaterialCommand = new RelayCommand(p => RemoveMaterial(p), _ => CanAssignToProject);
-        RemoveAssignmentCommand = new RelayCommand(p => RemoveAssignment(p), _ => SelectedProject is not null);
-        PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => HasQuote);
+        RemoveMaterialCommand = new AsyncRelayCommand(RemoveMaterialAsync, () => CanAssignToProject);
+        RemoveAssignmentCommand = new AsyncRelayCommand(RemoveAssignmentAsync, () => SelectedProject is not null);
+        PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => CanPrintQuote);
+        CancelProjectCommand = new AsyncRelayCommand(CancelSelectedAsync, () => CanCancelSelected);
     }
 
     public ObservableCollection<ProjectListItem> Projects { get; }
@@ -67,7 +81,16 @@ public class ProjectsViewModel : ObservableObject
     public ObservableCollection<ProductListItem> AvailableProducts { get; }
     public ObservableCollection<EmployeeListItem> AvailableEmployees { get; }
     public IReadOnlyList<ProjectStatusOption> StatusFilterOptions { get; }
-    public IReadOnlyList<ProjectStatusOption> FormStatusOptions { get; }
+
+    /// <summary>
+    /// Los estados que se pueden elegir en el formulario. Cambia según en cuál esté el
+    /// proyecto: ofrecer los cinco siempre era lo que permitía saltearse el ciclo.
+    /// </summary>
+    public IReadOnlyList<ProjectStatusOption> FormStatusOptions
+    {
+        get => _formStatusOptions;
+        private set => SetProperty(ref _formStatusOptions, value);
+    }
 
     public ProjectListItem? SelectedProject
     {
@@ -79,12 +102,24 @@ public class ProjectsViewModel : ObservableObject
                 return;
             }
 
+            RefreshDeleteBlockReason();
             LoadProjectDetails();
             OnPropertyChanged(nameof(CanArchiveSelected));
             OnPropertyChanged(nameof(CanRestoreSelected));
-            OnPropertyChanged(nameof(CanDeleteSelected));
             OnPropertyChanged(nameof(CanAssignToProject));
+            OnPropertyChanged(nameof(CanCancelSelected));
         }
+    }
+
+    private void RefreshDeleteBlockReason()
+    {
+        _deleteBlockReason = SelectedProject is null
+            ? "Elegí un proyecto de la lista."
+            : AppHost.ProjectService.DescribeDeleteBlock(SelectedProject.Id);
+
+        OnPropertyChanged(nameof(CanDeleteSelected));
+        OnPropertyChanged(nameof(DeleteBlockTooltip));
+        (DeleteProjectCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public string SearchText
@@ -94,7 +129,7 @@ public class ProjectsViewModel : ObservableObject
         {
             if (SetProperty(ref _searchText, value))
             {
-                LoadProjects();
+                _searchDebouncer.Run(LoadProjects);
             }
         }
     }
@@ -211,9 +246,19 @@ public class ProjectsViewModel : ObservableObject
 
     public bool CanArchiveSelected => SelectedProject is { IsArchived: false };
     public bool CanRestoreSelected => SelectedProject is { IsArchived: true };
-    public bool CanDeleteSelected => SelectedProject is not null
-        && !AppHost.ProjectService.HasDependencies(SelectedProject.Id);
+    public bool CanDeleteSelected => SelectedProject is not null && _deleteBlockReason is null;
+
+    /// <summary>Lo que dice «Eliminar» al pasarle el mouse, sobre todo cuando está gris.</summary>
+    public string DeleteBlockTooltip =>
+        _deleteBlockReason ?? "Borra el proyecto junto con su presupuesto.";
     public bool CanAssignToProject => SelectedProject is { IsArchived: false };
+
+    /// <summary>
+    /// Solo un trabajo en curso se puede cancelar. Terminado o entregado significa que
+    /// el material ya se usó, y devolverlo al inventario inventaría existencias.
+    /// </summary>
+    public bool CanCancelSelected =>
+        SelectedProject is { IsArchived: false, Status: ProjectStatus.InProgress };
 
     public ICommand LoadCommand { get; }
     public ICommand NewProjectCommand { get; }
@@ -228,6 +273,7 @@ public class ProjectsViewModel : ObservableObject
     public ICommand RemoveMaterialCommand { get; }
     public ICommand RemoveAssignmentCommand { get; }
     public ICommand PrintQuoteCommand { get; }
+    public ICommand CancelProjectCommand { get; }
 
     /// <summary>Presupuesto que originó el proyecto. Solo lectura: acá ya no se edita.</summary>
     public QuoteDetail? Quote
@@ -238,6 +284,7 @@ public class ProjectsViewModel : ObservableObject
             if (SetProperty(ref _quote, value))
             {
                 OnPropertyChanged(nameof(HasQuote));
+                OnPropertyChanged(nameof(CanPrintQuote));
                 OnPropertyChanged(nameof(QuoteMaterialsDisplay));
                 OnPropertyChanged(nameof(QuoteFinalPriceDisplay));
                 OnPropertyChanged(nameof(QuoteIssuedDisplay));
@@ -246,6 +293,12 @@ public class ProjectsViewModel : ObservableObject
     }
 
     public bool HasQuote => Quote is not null && (Quote.Lines.Count > 0 || Quote.Breakdown is not null);
+
+    /// <summary>
+    /// La tarjeta del presupuesto se muestra apenas haya materiales cargados, pero
+    /// imprimirlo exige precio y desglose: si no, el documento sale con el TOTAL en guión.
+    /// </summary>
+    public bool CanPrintQuote => Quote is { Budget: > 0, Breakdown: not null };
     public string QuoteMaterialsDisplay => Quote?.MaterialsTotalDisplay ?? "—";
     public string QuoteFinalPriceDisplay => Quote?.BudgetDisplay ?? "—";
 
@@ -253,11 +306,13 @@ public class ProjectsViewModel : ObservableObject
         ? string.Empty
         : $"Cotizado el {AppCulture.ShortDate(Quote.QuotedAtLocal.Value)}";
 
-    public void Load()
-    {
-        LoadPickers();
-        LoadProjects();
-    }
+    public void Load() => SafeLoad(
+        () =>
+        {
+            LoadPickers();
+            LoadProjects();
+        },
+        "Proyectos");
 
     private void LoadPickers()
     {
@@ -295,6 +350,9 @@ public class ProjectsViewModel : ObservableObject
             ? Projects.FirstOrDefault(p => p.Id == selectedId.Value)
             : Projects.FirstOrDefault();
 
+        // Explícito: si la selección quedó igual, el setter no corre y el motivo del
+        // bloqueo quedaría con lo que valía antes de recargar.
+        RefreshDeleteBlockReason();
         _onDataChanged();
         CommandManager.InvalidateRequerySuggested();
     }
@@ -338,7 +396,12 @@ public class ProjectsViewModel : ObservableObject
         FormClientName = string.Empty;
         FormDescription = string.Empty;
         FormBudget = string.Empty;
+
+        // Un alta no es una transición: se puede anotar un trabajo que ya está en curso
+        // o incluso entregado, para cargar historial.
+        FormStatusOptions = ProjectStatusHelper.GetEditOptions();
         FormStatus = FormStatusOptions.First(o => o.Status == ProjectStatus.Quote);
+
         IsCreating = true;
         IsFormOpen = true;
         ClearStatus();
@@ -354,8 +417,11 @@ public class ProjectsViewModel : ObservableObject
         FormTitle = SelectedProject.Title;
         FormClientName = SelectedProject.ClientName;
         FormDescription = SelectedProject.Description ?? string.Empty;
-        FormBudget = SelectedProject.Budget?.ToString(CultureInfo.CurrentCulture) ?? string.Empty;
+        FormBudget = NumberInput.Format(SelectedProject.Budget);
+
+        FormStatusOptions = ProjectStatusPolicy.GetManualOptions(SelectedProject.Status);
         FormStatus = FormStatusOptions.First(o => o.Status == SelectedProject.Status);
+
         IsCreating = false;
         IsFormOpen = true;
         ClearStatus();
@@ -368,7 +434,7 @@ public class ProjectsViewModel : ObservableObject
             decimal? budget = null;
             if (!string.IsNullOrWhiteSpace(FormBudget))
             {
-                if (!NumberInput.TryParseDecimal(FormBudget, out var parsedBudget))
+                if (!NumberInput.TryParseMoney(FormBudget, out var parsedBudget))
                 {
                     throw new InvalidOperationException("Presupuesto inválido.");
                 }
@@ -407,18 +473,22 @@ public class ProjectsViewModel : ObservableObject
 
     private void CloseForm() => IsFormOpen = false;
 
-    private void ArchiveSelected()
+    private async Task ArchiveSelectedAsync()
     {
         if (SelectedProject is null)
         {
             return;
         }
 
-        if (MessageBox.Show(
-                $"¿Archivar «{SelectedProject.Title}»?",
-                "Confirmar",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question) != MessageBoxResult.Yes)
+        var title = SelectedProject.Title;
+
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Archivar proyecto",
+            $"«{title}» va a dejar de aparecer en la lista.\n\n" +
+            "Los materiales y el personal asignados se conservan.",
+            confirmText: "Archivar");
+
+        if (!confirmed)
         {
             return;
         }
@@ -426,12 +496,12 @@ public class ProjectsViewModel : ObservableObject
         try
         {
             AppHost.ProjectService.Archive(SelectedProject.Id);
-            SetStatus("Proyecto archivado.", isError: false);
+            AppHost.NotificationService.Success($"«{title}» quedó archivado.");
             Load();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, isError: true);
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
@@ -454,18 +524,23 @@ public class ProjectsViewModel : ObservableObject
         }
     }
 
-    private void DeleteSelected()
+    private async Task DeleteSelectedAsync()
     {
         if (SelectedProject is null)
         {
             return;
         }
 
-        if (MessageBox.Show(
-                $"¿Eliminar «{SelectedProject.Title}» permanentemente?",
-                "Confirmar",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        var title = SelectedProject.Title;
+
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Eliminar proyecto",
+            $"Se va a borrar «{title}» junto con su presupuesto.\n\n" +
+            "Esto no se puede deshacer. Si el trabajo ya terminó, conviene archivarlo.",
+            confirmText: "Eliminar",
+            isDestructive: true);
+
+        if (!confirmed)
         {
             return;
         }
@@ -474,12 +549,59 @@ public class ProjectsViewModel : ObservableObject
         {
             AppHost.ProjectService.Delete(SelectedProject.Id);
             SelectedProject = null;
-            SetStatus("Proyecto eliminado.", isError: false);
+            AppHost.NotificationService.Success($"«{title}» se eliminó.");
             Load();
         }
         catch (Exception ex)
         {
             SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    /// <summary>
+    /// Vuelve el trabajo a presupuesto devolviendo el material al inventario. Es el único
+    /// camino de vuelta desde «En curso»: cambiar el estado a mano quedaría con el stock
+    /// descontado y nada que lo reponga.
+    /// </summary>
+    private async Task CancelSelectedAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        var title = SelectedProject.Title;
+        var materialCount = Materials.Count;
+
+        var detail = materialCount == 0
+            ? "No hay materiales entregados que devolver."
+            : materialCount == 1
+                ? "El material entregado vuelve al inventario."
+                : $"Los {materialCount} materiales entregados vuelven al inventario.";
+
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Cancelar el trabajo",
+            $"«{title}» vuelve a ser un presupuesto editable.\n\n" +
+            $"{detail}\n\n" +
+            "El personal asignado se conserva.",
+            confirmText: "Cancelar el trabajo",
+            isDestructive: true);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            AppHost.QuoteService.CancelApproval(SelectedProject.Id);
+            AppHost.NotificationService.Success(
+                $"«{title}» volvió a presupuesto y el material se devolvió al inventario.");
+            Load();
+        }
+        catch (Exception ex)
+        {
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
@@ -492,7 +614,7 @@ public class ProjectsViewModel : ObservableObject
 
         try
         {
-            if (!NumberInput.TryParseDecimal(MaterialQuantity, out var quantity))
+            if (!NumberInput.TryParseQuantity(MaterialQuantity, out var quantity))
             {
                 throw new InvalidOperationException("Cantidad inválida.");
             }
@@ -529,18 +651,19 @@ public class ProjectsViewModel : ObservableObject
         }
     }
 
-    private void RemoveMaterial(object? parameter)
+    private async Task RemoveMaterialAsync(object? parameter)
     {
         if (parameter is not ProjectMaterialItem material)
         {
             return;
         }
 
-        if (MessageBox.Show(
-                $"¿Quitar «{material.ProductName}» ({material.QuantityDisplay}) del proyecto?\n\nSe devolverá al inventario.",
-                "Confirmar",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question) != MessageBoxResult.Yes)
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Quitar material del proyecto",
+            $"«{material.ProductName}» ({material.QuantityDisplay}) vuelve al inventario.",
+            confirmText: "Quitar y devolver");
+
+        if (!confirmed)
         {
             return;
         }
@@ -548,27 +671,29 @@ public class ProjectsViewModel : ObservableObject
         try
         {
             AppHost.ProjectService.RemoveMaterial(material.Id);
-            SetStatus("Material quitado y stock devuelto al inventario.", isError: false);
+            AppHost.NotificationService.Success(
+                $"«{material.ProductName}» volvió al inventario ({material.QuantityDisplay}).");
             Load();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, isError: true);
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
-    private void RemoveAssignment(object? parameter)
+    private async Task RemoveAssignmentAsync(object? parameter)
     {
         if (parameter is not ProjectAssignmentItem assignment)
         {
             return;
         }
 
-        if (MessageBox.Show(
-                $"¿Quitar a {assignment.EmployeeName} del proyecto?",
-                "Confirmar",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question) != MessageBoxResult.Yes)
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Quitar del proyecto",
+            $"{assignment.EmployeeName} deja de estar asignado a este trabajo.",
+            confirmText: "Quitar");
+
+        if (!confirmed)
         {
             return;
         }
@@ -576,12 +701,12 @@ public class ProjectsViewModel : ObservableObject
         try
         {
             AppHost.ProjectService.RemoveAssignment(assignment.Id);
-            SetStatus("Asignación eliminada.", isError: false);
+            AppHost.NotificationService.Success($"{assignment.EmployeeName} ya no está asignado.");
             Load();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, isError: true);
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
@@ -607,10 +732,37 @@ public class ProjectsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Publica el resultado de una acción.
+    /// <para>
+    /// Antes esto llenaba una barra fija arriba de la pantalla que <b>nunca se borraba</b>:
+    /// un "Producto creado." quedaba ahí para siempre, y al rato no se sabía si
+    /// correspondía a lo de recién o a algo de veinte minutos antes. Ahora va al aviso
+    /// flotante, que se descarta solo.
+    /// </para>
+    /// <para>
+    /// StatusMessage se sigue actualizando porque los tests lo leen para verificar qué
+    /// pasó tras una acción.
+    /// </para>
+    /// </summary>
     private void SetStatus(string message, bool isError)
     {
         StatusMessage = message;
         IsStatusError = isError;
+
+        if (string.IsNullOrWhiteSpace(message) || !AppHost.IsReady)
+        {
+            return;
+        }
+
+        if (isError)
+        {
+            AppHost.NotificationService.Warning(message);
+        }
+        else
+        {
+            AppHost.NotificationService.Success(message);
+        }
     }
 
     private void ClearStatus()

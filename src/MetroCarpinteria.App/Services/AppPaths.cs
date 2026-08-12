@@ -13,6 +13,7 @@ public sealed class AppPaths
 
     public string DataDirectory => Path.Combine(RootDirectory, "data");
     public string BackupsDirectory => Path.Combine(RootDirectory, "backups");
+    public string LogsDirectory => Path.Combine(RootDirectory, "logs");
     public string DatabasePath => Path.Combine(DataDirectory, "carpinteria.db");
     public string SettingsPath => Path.Combine(RootDirectory, "settings.json");
 
@@ -20,5 +21,6 @@ public sealed class AppPaths
     {
         Directory.CreateDirectory(DataDirectory);
         Directory.CreateDirectory(BackupsDirectory);
+        Directory.CreateDirectory(LogsDirectory);
     }
 }

@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:models="clr-namespace:MetroCarpinteria.App.Models"
+        xmlns:ctl="clr-namespace:MetroCarpinteria.App.Controls"
         mc:Ignorable="d"
         Title="METRO CARPINTERÍA"
         MinWidth="1100"
@@ -11,17 +12,20 @@
         Width="1280"
         Height="800"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource ContentBackgroundBrush}"
+        Background="{DynamicResource ContentBackgroundBrush}"
         FontFamily="{StaticResource AppFont}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="260" />
+            <!-- Auto + MinWidth en el panel: con un ancho fijo, en tamaño de letra
+                 grande los títulos del menú quedaban cortados. -->
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
         <!-- Sidebar -->
         <Border Grid.Column="0"
-                Background="{StaticResource SidebarDarkBrush}">
+                MinWidth="{DynamicResource SidebarWidth}"
+                Background="{DynamicResource SidebarDarkBrush}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -31,13 +35,13 @@
 
                 <!-- Brand -->
                 <StackPanel Grid.Row="0" Margin="20,28,20,24">
-                    <Image Source="/Assets/logo-circle.jpeg"
+                    <Image Source="pack://application:,,,/MetroCarpinteria;component/Assets/logo-circle.jpeg"
                            Height="72"
                            Stretch="Uniform"
                            HorizontalAlignment="Center"
                            Margin="0,0,0,12" />
                     <TextBlock Text="METRO CARPINTERÍA"
-                               Foreground="{StaticResource AccentGoldBrush}"
+                               Foreground="{DynamicResource AccentGoldBrush}"
                                FontSize="11"
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"
@@ -71,10 +75,10 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="itemBorder" Property="Background" Value="{StaticResource SidebarHoverBrush}" />
+                                                <Setter TargetName="itemBorder" Property="Background" Value="{DynamicResource SidebarHoverBrush}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="itemBorder" Property="Background" Value="{StaticResource PrimaryBrownBrush}" />
+                                                <Setter TargetName="itemBorder" Property="Background" Value="{DynamicResource PrimaryBrownBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -97,17 +101,20 @@
                                            Margin="0,0,12,0" />
                                 <TextBlock Grid.Column="1"
                                            Text="{Binding Title}"
-                                           Foreground="{StaticResource TextOnDarkBrush}"
+                                           Foreground="{DynamicResource TextOnDarkBrush}"
                                            FontSize="14"
                                            VerticalAlignment="Center" />
+                                <!-- Sin Visibility como atributo: en WPF un valor local le gana
+                                     al Setter del DataTrigger, así que el badge se dibujaba al
+                                     lado de las nueve secciones en vez de solo en Inventario. -->
                                 <Border Grid.Column="2"
-                                        Background="{StaticResource AlertBrush}"
+                                        Background="{DynamicResource AlertBrush}"
                                         CornerRadius="10"
                                         MinWidth="20"
-                                        Height="20"
+                                        MinHeight="20"
                                         Padding="6,0"
                                         VerticalAlignment="Center"
-                                        Visibility="{Binding DataContext.LowStockAlertCount, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IntToVisibilityConverter}}">
+                                        ToolTip="Productos por debajo del stock mínimo">
                                     <Border.Style>
                                         <Style TargetType="Border">
                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -119,7 +126,7 @@
                                         </Style>
                                     </Border.Style>
                                     <TextBlock Text="{Binding DataContext.LowStockAlertCount, RelativeSource={RelativeSource AncestorType=Window}}"
-                                               Foreground="White"
+                                               Foreground="{DynamicResource ContentOnBrandBrush}"
                                                FontSize="11"
                                                FontWeight="Bold"
                                                HorizontalAlignment="Center"
@@ -128,10 +135,10 @@
 
                                 <!-- Aviso de actualización lista, sobre Configuración -->
                                 <Border Grid.Column="2"
-                                        Background="{StaticResource SuccessBrush}"
+                                        Background="{DynamicResource SuccessBrush}"
                                         CornerRadius="10"
                                         MinWidth="20"
-                                        Height="20"
+                                        MinHeight="20"
                                         Padding="6,0"
                                         VerticalAlignment="Center"
                                         ToolTip="Hay una actualización lista. Se instala al cerrar la app.">
@@ -146,7 +153,7 @@
                                         </Style>
                                     </Border.Style>
                                     <TextBlock Text="↑"
-                                               Foreground="White"
+                                               Foreground="{DynamicResource ContentOnBrandBrush}"
                                                FontSize="11"
                                                FontWeight="Bold"
                                                HorizontalAlignment="Center"
@@ -159,14 +166,14 @@
 
                 <!-- Footer -->
                 <StackPanel Grid.Row="2" Margin="20,16,20,24">
-                    <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,0,0,16" />
+                    <Rectangle Height="1" Fill="{DynamicResource BorderStrongBrush}" Margin="0,0,0,16" />
                     <TextBlock Text="Gestión local"
-                               Foreground="{StaticResource TextOnDarkBrush}"
+                               Foreground="{DynamicResource TextOnDarkBrush}"
                                Opacity="0.5"
                                FontSize="11"
                                HorizontalAlignment="Center" />
                     <TextBlock Text="{Binding AppVersionDisplay}"
-                               Foreground="{StaticResource AccentGoldBrush}"
+                               Foreground="{DynamicResource AccentGoldBrush}"
                                Opacity="0.7"
                                FontSize="11"
                                HorizontalAlignment="Center"
@@ -178,22 +185,24 @@
         <!-- Main content -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
-                <RowDefinition Height="64" />
+                <!-- Igual que el sidebar: la barra crece con la letra en vez de recortarla -->
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <!-- Top bar -->
             <Border Grid.Row="0"
-                    Background="{StaticResource CardBackgroundBrush}"
-                    BorderBrush="#1A3D2914"
+                    MinHeight="{DynamicResource TopBarHeight}"
+                    Background="{DynamicResource CardBackgroundBrush}"
+                    BorderBrush="{DynamicResource BorderBrushToken}"
                     BorderThickness="0,0,0,1"
-                    Padding="32,0">
+                    Padding="32,8">
                 <Grid>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="{Binding SelectedNavItem.Title}"
                                    FontSize="20"
                                    FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
                         <TextBlock Text="{Binding CurrentDate}"
                                    Style="{StaticResource SubtitleStyle}"
                                    FontSize="12"
@@ -202,12 +211,12 @@
                     <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center">
-                        <Border Background="#1AC45C26"
+                        <Border Background="{DynamicResource StateWarningSurfaceBrush}"
                                 CornerRadius="8"
                                 Padding="12,6"
                                 Margin="0,0,12,0"
                                 Visibility="{Binding LowStockAlertCount, Converter={StaticResource IntToVisibilityConverter}}">
-                            <TextBlock Foreground="{StaticResource AlertBrush}"
+                            <TextBlock Foreground="{DynamicResource AlertBrush}"
                                        FontSize="12"
                                        FontWeight="SemiBold">
                                 <Run Text="⚠ " />
@@ -215,7 +224,7 @@
                                 <Run Text=" stock bajo" />
                             </TextBlock>
                         </Border>
-                        <Image Source="/Assets/logo-horizontal.jpeg"
+                        <Image Source="pack://application:,,,/MetroCarpinteria;component/Assets/logo-horizontal.jpeg"
                                Height="36"
                                Stretch="Uniform"
                                Opacity="0.9" />
@@ -224,9 +233,19 @@
             </Border>
 
             <!-- Page content -->
-            <ContentControl Grid.Row="1"
-                            Content="{Binding CurrentViewModel}"
-                            x:Name="PageContent" />
+            <Grid Grid.Row="1">
+                <ContentControl Content="{Binding CurrentViewModel}"
+                                x:Name="PageContent" />
+
+                <!-- Los avisos flotantes van sobre el contenido de página, pero dentro del
+                     área de contenido: así no tapan el menú lateral. Instanciados una sola
+                     vez acá para que un aviso sobreviva al cambio de sección. -->
+                <ctl:ToastHost x:Name="Toasts" />
+            </Grid>
         </Grid>
+
+        <!-- La capa de diálogo cubre la ventana entera, menú incluido: mientras hay una
+             pregunta abierta no se puede navegar a otra parte y dejarla sin responder. -->
+        <ctl:DialogHost x:Name="Dialogs" Grid.ColumnSpan="2" />
     </Grid>
 </Window>

@@ -1,0 +1,52 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        ESCALA TIPOGRÁFICA — Chica
+
+        Este diccionario se intercambia en caliente junto con la paleta, así que solo
+        contiene valores: sys:Double y Thickness. Ningún estilo.
+
+        El espaciado escala junto con la letra a propósito. Si solo creciera el texto y los
+        márgenes quedaran fijos, en tamaño grande los controles se tocarían entre sí y la
+        pantalla se vería peor que antes de agrandar.
+
+        Por el mismo motivo, en los XAML las alturas con texto adentro van con MinHeight
+        atado a estos valores y no con Height fijo: un Height="20" recorta la letra grande.
+    -->
+
+    <!-- Tamaños de letra -->
+    <sys:Double x:Key="FontSizeDisplay">24</sys:Double>
+    <sys:Double x:Key="FontSizeTitle">17</sys:Double>
+    <sys:Double x:Key="FontSizeSection">14</sys:Double>
+    <sys:Double x:Key="FontSizeSubtitle">13</sys:Double>
+    <sys:Double x:Key="FontSizeBody">12</sys:Double>
+    <sys:Double x:Key="FontSizeCaption">11</sys:Double>
+    <sys:Double x:Key="FontSizeMicro">10</sys:Double>
+
+    <!-- Espaciado -->
+    <Thickness x:Key="SpaceXs">2</Thickness>
+    <sys:Double x:Key="SpaceXsValue">2</sys:Double>
+    <Thickness x:Key="SpaceSm">5</Thickness>
+    <sys:Double x:Key="SpaceSmValue">5</sys:Double>
+    <Thickness x:Key="SpaceMd">9</Thickness>
+    <sys:Double x:Key="SpaceMdValue">9</sys:Double>
+    <Thickness x:Key="SpaceLg">13</Thickness>
+    <sys:Double x:Key="SpaceLgValue">13</sys:Double>
+    <Thickness x:Key="SpaceXl">19</Thickness>
+    <sys:Double x:Key="SpaceXlValue">19</sys:Double>
+
+    <!-- Alturas y anchos que dependen del tamaño de letra -->
+    <sys:Double x:Key="ControlHeight">30</sys:Double>
+    <sys:Double x:Key="RowHeight">30</sys:Double>
+    <sys:Double x:Key="TopBarHeight">54</sys:Double>
+    <sys:Double x:Key="SidebarWidth">232</sys:Double>
+
+    <!-- Padding interno -->
+    <Thickness x:Key="InputPadding">9,6</Thickness>
+    <Thickness x:Key="ButtonPadding">15,8</Thickness>
+    <Thickness x:Key="SmallButtonPadding">10,5</Thickness>
+    <Thickness x:Key="CardPadding">17,15</Thickness>
+
+</ResourceDictionary>

@@ -289,11 +289,41 @@ public sealed class InventoryService
     }
 
     /// <summary>Cualquier referencia que impida borrar el producto.</summary>
-    public bool HasMovements(int productId)
+    public bool HasMovements(int productId) => DescribeDeleteBlock(productId) is not null;
+
+    /// <summary>
+    /// Por qué no se puede borrar el producto, o <c>null</c> si se puede.
+    /// </summary>
+    /// <remarks>
+    /// Devuelve el motivo y no un booleano porque es lo que el botón deshabilitado tiene
+    /// que poder explicar. Un botón gris sin explicación deja al usuario probando cosas
+    /// hasta que se rinde.
+    /// </remarks>
+    public string? DescribeDeleteBlock(int productId)
     {
         using var context = _databaseService.CreateContext();
-        return context.StockMovements.Any(m => m.ProductId == productId)
-            || context.ProjectBudgetLines.Any(l => l.ProductId == productId);
+
+        var movements = context.StockMovements.Count(m => m.ProductId == productId);
+        var quoteLines = context.ProjectBudgetLines.Count(l => l.ProductId == productId);
+
+        if (movements == 0 && quoteLines == 0)
+        {
+            return null;
+        }
+
+        var reasons = new List<string>();
+
+        if (movements > 0)
+        {
+            reasons.Add(Phrases.Count(movements, "movimiento de stock", "movimientos de stock"));
+        }
+
+        if (quoteLines > 0)
+        {
+            reasons.Add(Phrases.Count(quoteLines, "presupuesto", "presupuestos"));
+        }
+
+        return $"No se puede eliminar: tiene {Phrases.JoinWithAnd(reasons)}. Archivalo en su lugar.";
     }
 
     private static void ValidateProductInput(string name, decimal minimumStock, string unit, decimal? costPrice)

@@ -1,0 +1,147 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        TEMA CLARO — Metro Carpintería
+
+        Los nombres son semánticos, no literales ("Surface", no "Beige"). Ésa es la única
+        razón por la que un tema oscuro es posible: un estilo que pide SurfaceBrush sigue
+        teniendo sentido cuando esa superficie pasa a ser casi negra, mientras que uno que
+        pidiera "BeigeBrush" no.
+
+        Este diccionario se intercambia en caliente, así que solo puede contener hojas:
+        Color, Brush y Effect. Nada de Style ni ControlTemplate — los estilos implícitos se
+        resuelven una sola vez, cuando el elemento entra al árbol visual, y no reaccionarían
+        al cambio. Los estilos viven en Resources/Controls y consumen esto por DynamicResource.
+
+        Palette.Dark.xaml tiene que declarar exactamente las mismas claves; hay un test que
+        compara los dos conjuntos, porque a ojo una clave faltante no se ve hasta que
+        alguien cambia de tema y una pantalla aparece en blanco.
+    -->
+
+    <!-- Superficies -->
+    <Color x:Key="SurfaceColor">#F5F0E8</Color>
+    <Color x:Key="SurfaceRaisedColor">#FFFFFF</Color>
+    <Color x:Key="SurfaceSunkenColor">#EBE4D8</Color>
+    <Color x:Key="SurfaceOverlayColor">#FFFFFF</Color>
+    <Color x:Key="ScrimColor">#66000000</Color>
+
+    <!-- Menú lateral: en claro es la única zona oscura, y es parte de la identidad -->
+    <Color x:Key="SidebarColor">#1A1614</Color>
+    <Color x:Key="SidebarHoverColor">#2D2420</Color>
+
+    <!-- Texto -->
+    <Color x:Key="ContentColor">#3D2914</Color>
+    <Color x:Key="ContentMutedColor">#7A6555</Color>
+    <Color x:Key="ContentSubtleColor">#9C8B7A</Color>
+    <Color x:Key="ContentOnBrandColor">#F5F0E8</Color>
+    <Color x:Key="ContentOnSidebarColor">#F5F0E8</Color>
+
+    <!-- Marca -->
+    <Color x:Key="BrandPrimaryColor">#6B4423</Color>
+    <Color x:Key="BrandPrimaryHoverColor">#8B5A2B</Color>
+    <Color x:Key="BrandPrimaryPressedColor">#4A2F18</Color>
+    <Color x:Key="BrandAccentColor">#C4A574</Color>
+    <Color x:Key="BrandAccentSubtleColor">#EFE4CF</Color>
+
+    <!-- Bordes -->
+    <Color x:Key="BorderColor">#E2D8C8</Color>
+    <Color x:Key="BorderStrongColor">#C6B7A0</Color>
+    <Color x:Key="BorderFocusColor">#6B4423</Color>
+
+    <!--
+        Estados. Los *Surface son los fondos tenues de los avisos. En claro se podrían
+        calcular con alpha sobre el fondo (así estaban: #1A4A7C59 y compañía, repetidos
+        a mano en nueve archivos), pero se declaran opacos para que el tema oscuro pueda
+        elegir valores propios: un 10% de opacidad sobre fondo negro no se ve.
+    -->
+    <Color x:Key="StateSuccessColor">#3F6E4C</Color>
+    <Color x:Key="StateSuccessSurfaceColor">#E3EDE5</Color>
+    <Color x:Key="StateWarningColor">#B4521F</Color>
+    <Color x:Key="StateWarningSurfaceColor">#F8E5D9</Color>
+    <Color x:Key="StateDangerColor">#A33224</Color>
+    <Color x:Key="StateDangerSurfaceColor">#F8E1DD</Color>
+    <Color x:Key="StateInfoColor">#2A6480</Color>
+    <Color x:Key="StateInfoSurfaceColor">#DEEAF1</Color>
+
+    <Color x:Key="ShadowColor">#3D2914</Color>
+
+    <!-- ===== Brushes: es lo que consumen los estilos ===== -->
+
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{StaticResource SurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="SurfaceSunkenBrush" Color="{StaticResource SurfaceSunkenColor}" />
+    <SolidColorBrush x:Key="SurfaceOverlayBrush" Color="{StaticResource SurfaceOverlayColor}" />
+    <SolidColorBrush x:Key="ScrimBrush" Color="{StaticResource ScrimColor}" />
+
+    <SolidColorBrush x:Key="SidebarBrush" Color="{StaticResource SidebarColor}" />
+    <SolidColorBrush x:Key="SidebarHoverBrush" Color="{StaticResource SidebarHoverColor}" />
+
+    <SolidColorBrush x:Key="ContentBrush" Color="{StaticResource ContentColor}" />
+    <SolidColorBrush x:Key="ContentMutedBrush" Color="{StaticResource ContentMutedColor}" />
+    <SolidColorBrush x:Key="ContentSubtleBrush" Color="{StaticResource ContentSubtleColor}" />
+    <SolidColorBrush x:Key="ContentOnBrandBrush" Color="{StaticResource ContentOnBrandColor}" />
+    <SolidColorBrush x:Key="ContentOnSidebarBrush" Color="{StaticResource ContentOnSidebarColor}" />
+
+    <SolidColorBrush x:Key="BrandPrimaryBrush" Color="{StaticResource BrandPrimaryColor}" />
+    <SolidColorBrush x:Key="BrandPrimaryHoverBrush" Color="{StaticResource BrandPrimaryHoverColor}" />
+    <SolidColorBrush x:Key="BrandPrimaryPressedBrush" Color="{StaticResource BrandPrimaryPressedColor}" />
+    <SolidColorBrush x:Key="BrandAccentBrush" Color="{StaticResource BrandAccentColor}" />
+    <SolidColorBrush x:Key="BrandAccentSubtleBrush" Color="{StaticResource BrandAccentSubtleColor}" />
+
+    <SolidColorBrush x:Key="BorderBrushToken" Color="{StaticResource BorderColor}" />
+    <SolidColorBrush x:Key="BorderStrongBrush" Color="{StaticResource BorderStrongColor}" />
+    <SolidColorBrush x:Key="BorderFocusBrush" Color="{StaticResource BorderFocusColor}" />
+
+    <SolidColorBrush x:Key="StateSuccessBrush" Color="{StaticResource StateSuccessColor}" />
+    <SolidColorBrush x:Key="StateSuccessSurfaceBrush" Color="{StaticResource StateSuccessSurfaceColor}" />
+    <SolidColorBrush x:Key="StateWarningBrush" Color="{StaticResource StateWarningColor}" />
+    <SolidColorBrush x:Key="StateWarningSurfaceBrush" Color="{StaticResource StateWarningSurfaceColor}" />
+    <SolidColorBrush x:Key="StateDangerBrush" Color="{StaticResource StateDangerColor}" />
+    <SolidColorBrush x:Key="StateDangerSurfaceBrush" Color="{StaticResource StateDangerSurfaceColor}" />
+    <SolidColorBrush x:Key="StateInfoBrush" Color="{StaticResource StateInfoColor}" />
+    <SolidColorBrush x:Key="StateInfoSurfaceBrush" Color="{StaticResource StateInfoSurfaceColor}" />
+
+    <!--
+        Los efectos se declaran enteros acá y se consumen como Effect="{DynamicResource ...}".
+        Un DropShadowEffect escrito dentro de un Setter.Value se congela al aplicarse el
+        estilo, así que su Color no podría seguir un DynamicResource.
+    -->
+    <DropShadowEffect x:Key="CardShadow"
+                      BlurRadius="18" ShadowDepth="2" Direction="270"
+                      Opacity="0.13" Color="{StaticResource ShadowColor}" />
+
+    <DropShadowEffect x:Key="RaisedShadow"
+                      BlurRadius="10" ShadowDepth="1" Direction="270"
+                      Opacity="0.10" Color="{StaticResource ShadowColor}" />
+
+    <DropShadowEffect x:Key="DialogShadow"
+                      BlurRadius="40" ShadowDepth="8" Direction="270"
+                      Opacity="0.32" Color="{StaticResource ShadowColor}" />
+
+
+    <!--
+        COMPATIBILIDAD — nombres viejos de pinceles.
+
+        Viven acá dentro y no en un diccionario aparte por una razón concreta de WPF: un
+        SolidColorBrush declarado con Color="{DynamicResource ...}" se congela al cargarse
+        el diccionario, y a partir de ahí deja de seguir los cambios. Definidos dentro de
+        la paleta, al intercambiarla se crean de nuevo con los colores correctos.
+
+        Se van borrando a medida que las vistas pasan a pedir los tokens semánticos.
+    -->
+    <SolidColorBrush x:Key="PrimaryBrownBrush" Color="{StaticResource BrandPrimaryColor}" />
+    <SolidColorBrush x:Key="PrimaryBrownDarkBrush" Color="{StaticResource BrandPrimaryPressedColor}" />
+    <SolidColorBrush x:Key="PrimaryBrownLightBrush" Color="{StaticResource BrandPrimaryHoverColor}" />
+    <SolidColorBrush x:Key="AccentGoldBrush" Color="{StaticResource BrandAccentColor}" />
+    <SolidColorBrush x:Key="AccentGoldLightBrush" Color="{StaticResource BrandAccentColor}" />
+    <SolidColorBrush x:Key="SidebarDarkBrush" Color="{StaticResource SidebarColor}" />
+    <SolidColorBrush x:Key="ContentBackgroundBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource SurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource ContentColor}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource ContentMutedColor}" />
+    <SolidColorBrush x:Key="TextOnDarkBrush" Color="{StaticResource ContentOnSidebarColor}" />
+    <SolidColorBrush x:Key="AlertBrush" Color="{StaticResource StateWarningColor}" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource StateSuccessColor}" />
+
+</ResourceDictionary>

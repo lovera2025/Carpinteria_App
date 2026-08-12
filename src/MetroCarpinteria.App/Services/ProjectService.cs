@@ -127,6 +127,11 @@ public sealed class ProjectService
         var project = context.Projects.FirstOrDefault(p => p.Id == id)
             ?? throw new InvalidOperationException("Proyecto no encontrado.");
 
+        // El formulario ya solo ofrece los estados alcanzables, pero el que garantiza es
+        // esto: las transiciones que faltan acá son las que mueven inventario, y saltearlas
+        // deja el stock descontado sin trabajo que lo justifique.
+        ProjectStatusPolicy.RequireManual(project.Status, status);
+
         project.Title = title.Trim();
         project.ClientName = clientName.Trim();
         project.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
@@ -337,12 +342,40 @@ public sealed class ProjectService
         context.SaveChanges();
     }
 
-    public bool HasDependencies(int projectId)
+    public bool HasDependencies(int projectId) => DescribeDeleteBlock(projectId) is not null;
+
+    /// <summary>Por qué no se puede borrar el proyecto, o <c>null</c> si se puede.</summary>
+    public string? DescribeDeleteBlock(int projectId)
     {
         using var context = _databaseService.CreateContext();
-        return context.ProjectMaterials.Any(m => m.ProjectId == projectId)
-            || context.ProjectAssignments.Any(a => a.ProjectId == projectId)
-            || context.ProjectBudgetLines.Any(l => l.ProjectId == projectId);
+
+        var materials = context.ProjectMaterials.Count(m => m.ProjectId == projectId);
+        var assignments = context.ProjectAssignments.Count(a => a.ProjectId == projectId);
+        var budgetLines = context.ProjectBudgetLines.Count(l => l.ProjectId == projectId);
+
+        if (materials == 0 && assignments == 0 && budgetLines == 0)
+        {
+            return null;
+        }
+
+        var reasons = new List<string>();
+
+        if (materials > 0)
+        {
+            reasons.Add(Phrases.Count(materials, "material entregado", "materiales entregados"));
+        }
+
+        if (assignments > 0)
+        {
+            reasons.Add(Phrases.Count(assignments, "persona asignada", "personas asignadas"));
+        }
+
+        if (budgetLines > 0)
+        {
+            reasons.Add(Phrases.Count(budgetLines, "línea de presupuesto", "líneas de presupuesto"));
+        }
+
+        return $"No se puede eliminar: tiene {Phrases.JoinWithAnd(reasons)}. Archivalo en su lugar.";
     }
 
     private static void ValidateProject(string title, string clientName, decimal? budget)

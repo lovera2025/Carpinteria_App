@@ -39,8 +39,27 @@ public sealed class QuoteDocumentService
     private const double VerticalMargin = 44;
 
     /// <summary>Documento para entregarle al cliente. Sin porcentajes internos.</summary>
+    /// <exception cref="InvalidOperationException">
+    /// Si el presupuesto no tiene precio o desglose. Los botones ya no lo permiten, pero
+    /// esto se llama también desde Proyectos y desde los tests: un presupuesto impreso con
+    /// el TOTAL en un guión llega al cliente y no hay forma de arreglarlo después.
+    /// </exception>
     public FlowDocument BuildClientQuote(QuoteDetail quote, bool includeMaterialDetail)
     {
+        ArgumentNullException.ThrowIfNull(quote);
+
+        if (quote.Budget is null or <= 0)
+        {
+            throw new InvalidOperationException(
+                "Este presupuesto todavía no tiene un precio final: falta calcularlo antes de imprimirlo.");
+        }
+
+        if (quote.Breakdown is null)
+        {
+            throw new InvalidOperationException(
+                "Este presupuesto no tiene un cálculo guardado, así que el documento saldría sin resumen.");
+        }
+
         var document = CreateDocument();
 
         document.Blocks.Add(BuildHeaderBand());
@@ -55,12 +74,9 @@ public sealed class QuoteDocumentService
 
         document.Blocks.Add(SectionTitle("Resumen"));
 
-        if (quote.Breakdown is not null)
-        {
-            // Sin la línea de total: el bloque destacado de abajo ya la muestra.
-            document.Blocks.Add(BuildSummaryTable(
-                quote.Breakdown.ClientLines.Where(l => !l.IsTotal).ToList()));
-        }
+        // Sin la línea de total: el bloque destacado de abajo ya la muestra.
+        document.Blocks.Add(BuildSummaryTable(
+            quote.Breakdown.ClientLines.Where(l => !l.IsTotal).ToList()));
 
         document.Blocks.Add(BuildTotalBlock(quote));
         document.Blocks.Add(BuildValidityNote(quote));

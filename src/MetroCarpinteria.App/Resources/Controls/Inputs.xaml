@@ -1,0 +1,339 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ctl="clr-namespace:MetroCarpinteria.App.Controls">
+
+    <!--
+        Campos de entrada.
+
+        Hasta acá no existía ni un solo estilo para TextBox, ComboBox o DatePicker: eran
+        controles de WPF sin tocar, con Padding="10,8" copiado a mano en cada uso. De ahí
+        venía casi toda la sensación de que la app estaba sin terminar, porque el borde
+        gris azulado del sistema no tiene nada que ver con la paleta de la carpintería.
+
+        Los estilos son implícitos (sin x:Key) para que alcance con existir: los XAML ya
+        escritos los toman sin cambiar una línea.
+    -->
+
+    <!--
+        El error se dibuja dentro del template del campo, no con un ErrorTemplate.
+
+        Un ErrorTemplate se pinta como adorner, o sea encima del layout y sin ocupar
+        espacio: el mensaje quedaba montado sobre la etiqueta del campo siguiente y
+        cortado a la derecha. Como fila del propio control, empuja lo que viene abajo.
+
+        Éste queda vacío a propósito, para desactivar el recuadro rojo por defecto de WPF.
+    -->
+    <ControlTemplate x:Key="AppValidationTemplate">
+        <AdornedElementPlaceholder />
+    </ControlTemplate>
+
+    <!-- ===== TextBox ===== -->
+
+    <Style TargetType="TextBox">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="SelectionBrush" Value="{DynamicResource BrandAccentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource BorderThin}" />
+        <Setter Property="Padding" Value="{DynamicResource InputPadding}" />
+        <Setter Property="MinHeight" Value="{DynamicResource ControlHeight}" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Validation.ErrorTemplate" Value="{StaticResource AppValidationTemplate}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <!-- Dos filas: el campo y, debajo, el mensaje de error. Que el mensaje
+                         sea parte del control es lo que hace que empuje el contenido de
+                         abajo en vez de taparlo. -->
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Border x:Name="border"
+                                Grid.Row="0"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{DynamicResource RadiusSm}"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <!--
+                                    El texto de ejemplo es un hermano del área de edición, no un
+                                    adorner: dentro de un DataGrid que recicla contenedores, un
+                                    adorner puede no llegar a dibujarse.
+                                -->
+                                <TextBlock x:Name="placeholder"
+                                           Text="{Binding (ctl:Ui.Placeholder), RelativeSource={RelativeSource TemplatedParent}}"
+                                           Foreground="{DynamicResource ContentSubtleBrush}"
+                                           FontSize="{TemplateBinding FontSize}"
+                                           Margin="{TemplateBinding Padding}"
+                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                           IsHitTestVisible="False"
+                                           TextTrimming="CharacterEllipsis"
+                                           Visibility="Collapsed" />
+
+                                <ScrollViewer x:Name="PART_ContentHost"
+                                              Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Focusable="False"
+                                              HorizontalScrollBarVisibility="Hidden"
+                                              VerticalScrollBarVisibility="Hidden" />
+                            </Grid>
+                        </Border>
+
+                        <TextBlock x:Name="errorText"
+                                   Grid.Row="1"
+                                   Text="{Binding (Validation.Errors)[0].ErrorContent, RelativeSource={RelativeSource TemplatedParent}}"
+                                   FontSize="{DynamicResource FontSizeCaption}"
+                                   Foreground="{DynamicResource StateDangerBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="2,5,0,0"
+                                   Visibility="Collapsed" />
+                    </Grid>
+
+                    <ControlTemplate.Triggers>
+                        <!-- El ejemplo desaparece al escribir, no al enfocar: sirve de recordatorio -->
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter TargetName="placeholder" Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource BrandPrimaryHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource BorderFocusBrush}" />
+                            <Setter TargetName="border" Property="BorderThickness" Value="{DynamicResource BorderMedium}" />
+                        </Trigger>
+                        <Trigger Property="IsReadOnly" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource ContentMutedBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+                            <Setter TargetName="border" Property="Opacity" Value="{DynamicResource DisabledOpacity}" />
+                        </Trigger>
+                        <Trigger Property="Validation.HasError" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource StateDangerBrush}" />
+                            <Setter TargetName="border" Property="BorderThickness" Value="{DynamicResource BorderMedium}" />
+                            <Setter TargetName="errorText" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Campo de varias líneas: el texto arranca arriba, no centrado verticalmente -->
+    <Style x:Key="MultilineTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="AcceptsReturn" Value="True" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="VerticalContentAlignment" Value="Top" />
+        <Setter Property="MinHeight" Value="64" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+    </Style>
+
+    <!-- Importes y cantidades: alineados a la derecha y monoespaciados -->
+    <Style x:Key="NumericTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+        <Setter Property="HorizontalContentAlignment" Value="Right" />
+        <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+
+    <!-- ===== ComboBox ===== -->
+
+    <Style x:Key="ComboBoxToggleStyle" TargetType="ToggleButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="ClickMode" Value="Press" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Padding" Value="{DynamicResource InputPadding}" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="border"
+                            Background="Transparent"
+                            CornerRadius="{DynamicResource RadiusSm}"
+                            Padding="{TemplateBinding Padding}"
+                            Margin="3,1">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource BrandAccentSubtleBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource BrandPrimaryBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource ContentOnBrandBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ComboBox">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource BorderThin}" />
+        <Setter Property="Padding" Value="{DynamicResource InputPadding}" />
+        <Setter Property="MinHeight" Value="{DynamicResource ControlHeight}" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{DynamicResource RadiusSm}"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- ContentTemplateSelector va contra ItemTemplateSelector,
+                                     no contra ningún "SelectionBox…": DisplayMemberPath no
+                                     produce un SelectionBoxItemTemplate, WPF lo implementa
+                                     con un selector interno que queda en ItemTemplateSelector.
+                                     Sin esta línea la caja cerrada cae al ToString() del
+                                     objeto y muestra el nombre del tipo. -->
+                                <ContentPresenter Grid.Column="0"
+                                                  Content="{TemplateBinding SelectionBoxItem}"
+                                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                  ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                  ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Left"
+                                                  IsHitTestVisible="False" />
+
+                                <TextBlock Grid.Column="1"
+                                           Text="⌄"
+                                           FontSize="{DynamicResource FontSizeSubtitle}"
+                                           Foreground="{DynamicResource ContentMutedBrush}"
+                                           Margin="0,0,12,4"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False" />
+                            </Grid>
+                        </Border>
+
+                        <!-- El toggle invisible cubre todo: hace clicable la caja entera -->
+                        <ToggleButton Style="{StaticResource ComboBoxToggleStyle}"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+
+                        <Popup x:Name="PART_Popup"
+                               AllowsTransparency="True"
+                               Placement="Bottom"
+                               PopupAnimation="Fade"
+                               Focusable="False"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               MinWidth="{TemplateBinding ActualWidth}">
+                            <Border Background="{DynamicResource SurfaceOverlayBrush}"
+                                    BorderBrush="{DynamicResource BorderStrongBrush}"
+                                    BorderThickness="{DynamicResource BorderThin}"
+                                    CornerRadius="{DynamicResource RadiusMd}"
+                                    Effect="{DynamicResource CardShadow}"
+                                    Margin="0,4,0,8"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,4">
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource BrandPrimaryHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource BorderFocusBrush}" />
+                            <Setter TargetName="border" Property="BorderThickness" Value="{DynamicResource BorderMedium}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+                            <Setter TargetName="border" Property="Opacity" Value="{DynamicResource DisabledOpacity}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== DatePicker ===== -->
+
+    <Style TargetType="DatePickerTextBox">
+        <Setter Property="Foreground" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DatePickerTextBox">
+                    <ScrollViewer x:Name="PART_ContentHost"
+                                  Focusable="False"
+                                  VerticalAlignment="Center"
+                                  HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Hidden" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="DatePicker">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource BorderThin}" />
+        <Setter Property="Padding" Value="{DynamicResource InputPadding}" />
+        <Setter Property="MinHeight" Value="{DynamicResource ControlHeight}" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- ===== PasswordBox: no se usa hoy, pero evita que aparezca sin estilo ===== -->
+
+    <Style TargetType="PasswordBox">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource BorderThin}" />
+        <Setter Property="Padding" Value="{DynamicResource InputPadding}" />
+        <Setter Property="MinHeight" Value="{DynamicResource ControlHeight}" />
+    </Style>
+
+</ResourceDictionary>

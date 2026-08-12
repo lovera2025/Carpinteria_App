@@ -1,0 +1,80 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Tooltips, diálogos y avisos flotantes. -->
+
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentBrush}" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="MaxWidth" Value="320" />
+        <Setter Property="HasDropShadow" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource BorderStrongBrush}"
+                            BorderThickness="{DynamicResource BorderThin}"
+                            CornerRadius="{DynamicResource RadiusMd}"
+                            Padding="12,9"
+                            Effect="{DynamicResource CardShadow}">
+                        <ContentPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Fondo oscurecido detrás de un diálogo -->
+    <Style x:Key="ScrimStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource ScrimBrush}" />
+    </Style>
+
+    <!-- Caja del diálogo. Es un panel dentro de la ventana y no una ventana aparte:
+         una Window con WindowStyle=None obligaría a reimplementar arrastre, sombra,
+         posicionamiento en varios monitores y escalado por DPI. -->
+    <Style x:Key="DialogSurfaceStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusXl}" />
+        <Setter Property="Padding" Value="{DynamicResource SpaceXl}" />
+        <Setter Property="Effect" Value="{DynamicResource DialogShadow}" />
+        <Setter Property="MinWidth" Value="380" />
+        <Setter Property="MaxWidth" Value="520" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="ToastSurfaceStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="14,12" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="MinWidth" Value="260" />
+        <Setter Property="MaxWidth" Value="380" />
+        <Setter Property="BorderThickness" Value="0,0,0,3" />
+        <Setter Property="Effect" Value="{DynamicResource CardShadow}" />
+    </Style>
+
+    <!-- ===== Capa de "esto está tardando" =====
+         Se pone encima de la sección, no de la ventana entera: el menú lateral sigue
+         respondiendo y se ve de qué pantalla es la espera. Solo la usan respaldar,
+         restaurar y recalcular reportes; el resto responde en microsegundos y taparlo
+         con un cartel que parpadea sería peor que no mostrar nada. -->
+    <Style x:Key="BusyOverlayStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource ScrimBrush}" />
+        <Setter Property="Panel.ZIndex" Value="50" />
+    </Style>
+
+    <Style x:Key="BusySurfaceStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceOverlayBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+        <Setter Property="Padding" Value="{DynamicResource SpaceLg}" />
+        <Setter Property="Effect" Value="{DynamicResource DialogShadow}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="MinWidth" Value="260" />
+    </Style>
+
+</ResourceDictionary>

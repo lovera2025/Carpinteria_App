@@ -22,6 +22,7 @@ public class MainViewModel : ObservableObject
     private readonly SettingsViewModel _settingsViewModel;
     private bool _hasUpdateReady;
     private string _updateReadyVersion = string.Empty;
+    private int _lowStockAlertCount;
 
     public MainViewModel()
     {
@@ -63,6 +64,19 @@ public class MainViewModel : ObservableObject
         _currentViewModel = _viewModels[NavigationSection.Home];
         _selectedNavItem = NavItems[0];
         NavigateCommand = new RelayCommand(Navigate);
+
+        AppHost.ClockService.DayChanged += OnDayChanged;
+    }
+
+    /// <summary>
+    /// Al cambiar el día se recarga lo que está a la vista. Las vigencias de los
+    /// presupuestos se derivan de la fecha, y las listas guardan objetos ya construidos:
+    /// sin recargarlas, la pantalla sigue mostrando los estados del día anterior.
+    /// </summary>
+    private void OnDayChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(CurrentDate));
+        RefreshSection(SelectedSection);
     }
 
     public ObservableCollection<NavItem> NavItems { get; }
@@ -97,7 +111,19 @@ public class MainViewModel : ObservableObject
 
     public string CurrentDate => DateTime.Now.ToString("dddd, d 'de' MMMM yyyy", AppCulture.Current);
 
-    public int LowStockAlertCount => AppHost.DatabaseService.GetLowStockCount();
+    /// <summary>
+    /// Cantidad de productos bajo el mínimo, para el badge del menú y el aviso de la barra.
+    /// <para>
+    /// Es un valor cacheado y no un getter que consulte la base. Estando bindeado desde el
+    /// XAML, cualquier reevaluación de binding disparaba una consulta con su propia conexión
+    /// a SQLite, sincrónica sobre el hilo de la interfaz. Se refresca cuando algo cambia.
+    /// </para>
+    /// </summary>
+    public int LowStockAlertCount
+    {
+        get => _lowStockAlertCount;
+        private set => SetProperty(ref _lowStockAlertCount, value);
+    }
 
     /// <summary>Versión en ejecución, para el pie del menú lateral.</summary>
     public string AppVersionDisplay => $"v{AppHost.UpdateService.CurrentVersion}";
@@ -137,6 +163,15 @@ public class MainViewModel : ObservableObject
 
     public ICommand NavigateCommand { get; }
 
+    /// <summary>
+    /// Cambia de sección desde código (los accesos rápidos de Inicio, los atajos de teclado).
+    /// <para>
+    /// Va a través de <see cref="SelectedNavItem"/> y no seteando las propiedades a mano:
+    /// así también se marca el ítem del menú y se actualiza el título de la barra superior.
+    /// Antes navegaba de verdad pero el menú seguía resaltando la sección anterior y el
+    /// encabezado mostraba el nombre equivocado.
+    /// </para>
+    /// </summary>
     private void Navigate(object? parameter)
     {
         if (parameter is not NavigationSection section)
@@ -144,14 +179,11 @@ public class MainViewModel : ObservableObject
             return;
         }
 
-        if (!_viewModels.TryGetValue(section, out var viewModel))
+        var item = NavItems.FirstOrDefault(i => i.Section == section);
+        if (item is not null)
         {
-            return;
+            SelectedNavItem = item;
         }
-
-        SelectedSection = section;
-        CurrentViewModel = viewModel;
-        RefreshSection(section);
     }
 
     private void RefreshSection(NavigationSection section)
@@ -186,9 +218,21 @@ public class MainViewModel : ObservableObject
 
     public bool IsSectionSelected(NavigationSection section) => SelectedSection == section;
 
+    /// <summary>
+    /// Recalcula lo que se ve fuera de la sección actual. La llaman los ViewModels cuando
+    /// cambian datos, así que un fallo acá no puede tumbar la acción que la disparó.
+    /// </summary>
     public void RefreshDashboardMetrics()
     {
-        OnPropertyChanged(nameof(LowStockAlertCount));
+        try
+        {
+            LowStockAlertCount = AppHost.DatabaseService.GetLowStockCount();
+        }
+        catch (Exception ex)
+        {
+            LogService.Error("MainViewModel", "No se pudo contar el stock bajo", ex);
+        }
+
         _homeViewModel.RefreshMetrics();
     }
 }

@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
 using MetroCarpinteria.App.Helpers;
@@ -7,9 +7,13 @@ using MetroCarpinteria.App.Services;
 
 namespace MetroCarpinteria.App.ViewModels;
 
-public class StaffViewModel : ObservableObject
+public class StaffViewModel : ViewModelBase
 {
     private readonly Action _onDataChanged;
+
+    /// <summary>Agrupa el tecleo del buscador para no consultar la base letra por letra.</summary>
+    private readonly Debouncer _searchDebouncer = new();
+
     private EmployeeListItem? _selectedEmployee;
     private string _searchText = string.Empty;
     private bool _showArchived;
@@ -20,6 +24,12 @@ public class StaffViewModel : ObservableObject
     private string _formRole = string.Empty;
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
+
+    /// <summary>
+    /// Por qué no se puede borrar el empleado elegido, o null si se puede. Se calcula una
+    /// vez por selección y no dentro del predicado del comando, que corría con cada tecla.
+    /// </summary>
+    private string? _deleteBlockReason;
 
     public StaffViewModel(Action onDataChanged)
     {
@@ -32,9 +42,10 @@ public class StaffViewModel : ObservableObject
         EditEmployeeCommand = new RelayCommand(_ => StartEdit(), _ => SelectedEmployee is not null);
         SaveEmployeeCommand = new RelayCommand(_ => SaveEmployee());
         CancelFormCommand = new RelayCommand(_ => CloseForm());
-        ArchiveEmployeeCommand = new RelayCommand(_ => ArchiveSelected(), _ => CanArchiveSelected);
+        ArchiveEmployeeCommand = new AsyncRelayCommand(ArchiveSelectedAsync, () => CanArchiveSelected);
         RestoreEmployeeCommand = new RelayCommand(_ => RestoreSelected(), _ => CanRestoreSelected);
-        DeleteEmployeeCommand = new RelayCommand(_ => DeleteSelected(), _ => CanDeleteSelected);
+        DeleteEmployeeCommand = new AsyncRelayCommand(
+            DeleteSelectedAsync, () => CanDeleteSelected, observeRequery: false);
     }
 
     public ObservableCollection<EmployeeListItem> Employees { get; }
@@ -50,11 +61,22 @@ public class StaffViewModel : ObservableObject
                 return;
             }
 
+            RefreshDeleteBlockReason();
             LoadAssignments();
             OnPropertyChanged(nameof(CanArchiveSelected));
             OnPropertyChanged(nameof(CanRestoreSelected));
-            OnPropertyChanged(nameof(CanDeleteSelected));
         }
+    }
+
+    private void RefreshDeleteBlockReason()
+    {
+        _deleteBlockReason = SelectedEmployee is null
+            ? "Elegí a alguien de la lista."
+            : AppHost.EmployeeService.DescribeDeleteBlock(SelectedEmployee.Id);
+
+        OnPropertyChanged(nameof(CanDeleteSelected));
+        OnPropertyChanged(nameof(DeleteBlockTooltip));
+        (DeleteEmployeeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public string SearchText
@@ -64,7 +86,7 @@ public class StaffViewModel : ObservableObject
         {
             if (SetProperty(ref _searchText, value))
             {
-                LoadEmployees();
+                _searchDebouncer.Run(LoadEmployees);
             }
         }
     }
@@ -133,8 +155,11 @@ public class StaffViewModel : ObservableObject
 
     public bool CanArchiveSelected => SelectedEmployee is { IsArchived: false };
     public bool CanRestoreSelected => SelectedEmployee is { IsArchived: true };
-    public bool CanDeleteSelected => SelectedEmployee is not null
-        && !AppHost.EmployeeService.HasAssignments(SelectedEmployee.Id);
+    public bool CanDeleteSelected => SelectedEmployee is not null && _deleteBlockReason is null;
+
+    /// <summary>Lo que dice «Eliminar» al pasarle el mouse, sobre todo cuando está gris.</summary>
+    public string DeleteBlockTooltip =>
+        _deleteBlockReason ?? "Elimina al empleado definitivamente.";
 
     public ICommand LoadCommand { get; }
     public ICommand NewEmployeeCommand { get; }
@@ -145,11 +170,13 @@ public class StaffViewModel : ObservableObject
     public ICommand RestoreEmployeeCommand { get; }
     public ICommand DeleteEmployeeCommand { get; }
 
-    public void Load()
-    {
-        LoadEmployees();
-        _onDataChanged();
-    }
+    public void Load() => SafeLoad(
+        () =>
+        {
+            LoadEmployees();
+            _onDataChanged();
+        },
+        "Personal");
 
     private void LoadEmployees()
     {
@@ -166,6 +193,9 @@ public class StaffViewModel : ObservableObject
             ? Employees.FirstOrDefault(e => e.Id == selectedId.Value)
             : Employees.FirstOrDefault();
 
+        // Explícito: si la selección quedó igual, el setter no corre y el motivo del
+        // bloqueo quedaría con lo que valía antes de recargar.
+        RefreshDeleteBlockReason();
         CommandManager.InvalidateRequerySuggested();
     }
 
@@ -235,18 +265,22 @@ public class StaffViewModel : ObservableObject
 
     private void CloseForm() => IsFormOpen = false;
 
-    private void ArchiveSelected()
+    private async Task ArchiveSelectedAsync()
     {
         if (SelectedEmployee is null)
         {
             return;
         }
 
-        if (MessageBox.Show(
-                $"¿Archivar a «{SelectedEmployee.FullName}»?",
-                "Confirmar",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question) != MessageBoxResult.Yes)
+        var name = SelectedEmployee.FullName;
+
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Archivar a esta persona",
+            $"«{name}» va a dejar de aparecer para asignar a proyectos.\n\n" +
+            "Las asignaciones que ya tiene se conservan.",
+            confirmText: "Archivar");
+
+        if (!confirmed)
         {
             return;
         }
@@ -254,12 +288,12 @@ public class StaffViewModel : ObservableObject
         try
         {
             AppHost.EmployeeService.Archive(SelectedEmployee.Id);
-            SetStatus("Empleado archivado.", isError: false);
+            AppHost.NotificationService.Success($"«{name}» quedó archivado.");
             Load();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, isError: true);
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
@@ -282,18 +316,23 @@ public class StaffViewModel : ObservableObject
         }
     }
 
-    private void DeleteSelected()
+    private async Task DeleteSelectedAsync()
     {
         if (SelectedEmployee is null)
         {
             return;
         }
 
-        if (MessageBox.Show(
-                $"¿Eliminar a «{SelectedEmployee.FullName}» permanentemente?",
-                "Confirmar",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        var name = SelectedEmployee.FullName;
+
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Eliminar a esta persona",
+            $"Se va a borrar «{name}» del listado de personal.\n\n" +
+            "Esto no se puede deshacer. Si solo dejó de trabajar acá, conviene archivarlo.",
+            confirmText: "Eliminar",
+            isDestructive: true);
+
+        if (!confirmed)
         {
             return;
         }
@@ -302,7 +341,7 @@ public class StaffViewModel : ObservableObject
         {
             AppHost.EmployeeService.Delete(SelectedEmployee.Id);
             SelectedEmployee = null;
-            SetStatus("Empleado eliminado.", isError: false);
+            AppHost.NotificationService.Success($"«{name}» se eliminó del listado.");
             Load();
         }
         catch (Exception ex)
@@ -311,10 +350,37 @@ public class StaffViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Publica el resultado de una acción.
+    /// <para>
+    /// Antes esto llenaba una barra fija arriba de la pantalla que <b>nunca se borraba</b>:
+    /// un "Producto creado." quedaba ahí para siempre, y al rato no se sabía si
+    /// correspondía a lo de recién o a algo de veinte minutos antes. Ahora va al aviso
+    /// flotante, que se descarta solo.
+    /// </para>
+    /// <para>
+    /// StatusMessage se sigue actualizando porque los tests lo leen para verificar qué
+    /// pasó tras una acción.
+    /// </para>
+    /// </summary>
     private void SetStatus(string message, bool isError)
     {
         StatusMessage = message;
         IsStatusError = isError;
+
+        if (string.IsNullOrWhiteSpace(message) || !AppHost.IsReady)
+        {
+            return;
+        }
+
+        if (isError)
+        {
+            AppHost.NotificationService.Warning(message);
+        }
+        else
+        {
+            AppHost.NotificationService.Success(message);
+        }
     }
 
     private void ClearStatus()

@@ -11,9 +11,37 @@ internal static class Program
 {
     private static readonly List<TestResult> Results = [];
 
-    public static int Main()
+    /// <param name="args">
+    /// <c>--with-production-db</c> agrega los chequeos de salud contra la base real del
+    /// taller (<c>Documentos/MetroCarpinteria</c>). Son de solo lectura, pero requieren
+    /// que esa base exista, así que en CI no corren: por eso el modo aislado es el default.
+    /// Ese requisito era el motivo real por el que el workflow de release nunca ejecutó
+    /// la suite — en un runner limpio el primer test fallaba y cortaba la publicación.
+    /// </param>
+    public static int Main(string[] args)
     {
+        // Modo aparte: dibuja las pantallas a PNG para poder revisar el diseño sin
+        // tener que abrir la app ni depender de qué ventana esté en primer plano.
+        var shotsIndex = Array.FindIndex(
+            args, a => string.Equals(a, "--screenshots", StringComparison.OrdinalIgnoreCase));
+
+        if (shotsIndex >= 0 && shotsIndex + 1 < args.Length)
+        {
+            Debouncer.DefaultDelay = TimeSpan.Zero;
+            return ScreenshotRunner.Run(args[shotsIndex + 1]);
+        }
+
+        // Las búsquedas corren en el acto: la suite no bombea el bucle de mensajes, así que
+        // un temporizador de WPF no llegaría a disparar y toda aserción sobre una lista
+        // filtrada quedaría mirando la lista sin filtrar.
+        Debouncer.DefaultDelay = TimeSpan.Zero;
+
+        var withProductionDb = args.Contains("--with-production-db", StringComparer.OrdinalIgnoreCase);
+
         Console.WriteLine("=== Metro Carpintería — Smoke Test ===");
+        Console.WriteLine(withProductionDb
+            ? "Modo: aislado + chequeos de la base de producción (solo lectura)"
+            : "Modo: aislado (no toca la base del taller)");
         Console.WriteLine();
 
         Run("Build (solution compiles)", () =>
@@ -21,9 +49,18 @@ internal static class Program
             // Verified by running this executable after dotnet build.
         });
 
-        RunProductionHealthChecks();
+        if (withProductionDb)
+        {
+            RunProductionHealthChecks();
+        }
+
         RunMigrationTests();
+        MigrationTests.Run(Run);
         RunNumberFormatTests();
+        NumberInputTests.Run(Run);
+        StartupTests.Run(Run);
+        ComponentTests.Run(Run);
+        CorrectnessTests.Run(Run);
         RunIsolatedIntegrationFlow();
         UiSmokeTests.Run(Run);
         PrintManualUiChecklist();
@@ -670,6 +707,7 @@ internal static class Program
             var productId = inventory.CreateProduct("Melamina aprobación", 20m, 2m, "Metro cuadrado", 800m).Id;
             approvedId = quotes.CreateQuote("Placard", "Cliente aprobación", null).Id;
             quotes.AddInventoryLine(approvedId, productId, 5m);
+            quotes.SaveCalculation(approvedId, 4000m, 2m, 25000m, BudgetRates.Defaults());
 
             var result = quotes.ApproveQuote(approvedId);
             if (result.HasShortfalls)
@@ -707,6 +745,7 @@ internal static class Program
             var productId = inventory.CreateProduct("Herraje faltante", 3m, 0m, "Unidad", 500m).Id;
             var id = quotes.CreateQuote("Vitrina", "Cliente faltante", null).Id;
             quotes.AddInventoryLine(id, productId, 10m);
+            quotes.SaveCalculation(id, 5000m, 1m, 20000m, BudgetRates.Defaults());
 
             var result = quotes.ApproveQuote(id);
             if (!result.HasShortfalls)
@@ -763,6 +802,7 @@ internal static class Program
             var productId = inventory.CreateProduct("Pino vencido", 5m, 0m, "Metro", 100m).Id;
             var id = quotes.CreateQuote("Banco", "Cliente tardío", null, DateTime.Today.AddDays(-1)).Id;
             quotes.AddInventoryLine(id, productId, 2m);
+            quotes.SaveCalculation(id, 200m, 1m, 15000m, BudgetRates.Defaults());
 
             var detail = RequireQuote(quotes, id);
 

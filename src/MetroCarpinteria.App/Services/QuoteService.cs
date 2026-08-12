@@ -69,8 +69,6 @@ public sealed class QuoteService
             })
             .ToList();
 
-        var today = DateTime.Today;
-
         var items = rows
             .Select(p => new QuoteListItem
             {
@@ -82,10 +80,12 @@ public sealed class QuoteService
                 IsArchived = p.IsArchived,
                 LineCount = p.LineCount,
                 QuotedAtLocal = ToLocalDate(p.QuotedAtUtc),
-                ValidUntilLocal = ToLocalDate(p.QuoteValidUntilUtc),
-                Freshness = QuoteRules.GetFreshness(ToLocalDate(p.QuoteValidUntilUtc), today)
+                ValidUntilLocal = ToLocalDate(p.QuoteValidUntilUtc)
             })
             .ToList();
+
+        // El filtro se aplica en memoria porque la vigencia se deriva de la fecha de hoy
+        // y no de una columna.
 
         return filter switch
         {
@@ -95,6 +95,50 @@ public sealed class QuoteService
             QuoteFilter.Expired => FilterByFreshness(items, QuoteFreshness.Expired, includeNoExpiry: false),
             _ => items
         };
+    }
+
+    /// <summary>
+    /// Una sola fila de la lista, ya actualizada.
+    /// </summary>
+    /// <remarks>
+    /// Existe para poder refrescar el renglón del presupuesto que se está editando sin
+    /// recargar la lista entera. Recargarla vaciaba la colección, y eso hacía que la grilla
+    /// reemitiera la selección y el formulario se recargara encima de lo que el usuario
+    /// estaba tipeando.
+    /// </remarks>
+    public QuoteListItem? GetListItem(int projectId)
+    {
+        using var context = _databaseService.CreateContext();
+
+        return context.Projects
+            .AsNoTracking()
+            .Where(p => p.Id == projectId)
+            .Select(p => new
+            {
+                p.Id,
+                p.Title,
+                p.ClientName,
+                p.Status,
+                p.Budget,
+                p.IsArchived,
+                p.QuotedAtUtc,
+                p.QuoteValidUntilUtc,
+                LineCount = context.ProjectBudgetLines.Count(l => l.ProjectId == p.Id)
+            })
+            .AsEnumerable()
+            .Select(p => new QuoteListItem
+            {
+                Id = p.Id,
+                Title = p.Title,
+                ClientName = p.ClientName,
+                Status = p.Status,
+                Budget = p.Budget,
+                IsArchived = p.IsArchived,
+                LineCount = p.LineCount,
+                QuotedAtLocal = ToLocalDate(p.QuotedAtUtc),
+                ValidUntilLocal = ToLocalDate(p.QuoteValidUntilUtc)
+            })
+            .FirstOrDefault();
     }
 
     public QuoteDetail? GetDetail(int projectId)
@@ -107,13 +151,29 @@ public sealed class QuoteService
             return null;
         }
 
-        var lines = context.ProjectBudgetLines
+        // AsEnumerable antes de tocar cantidades: en las instalaciones viejas las
+        // columnas de decimales son TEXT y cualquier comparación que quede en SQL se
+        // resuelve como texto ('9.0' > '15.0').
+        var rows = context.ProjectBudgetLines
             .AsNoTracking()
             .Include(l => l.Product)
             .Where(l => l.ProjectId == projectId)
             .OrderBy(l => l.SortOrder)
             .ThenBy(l => l.Id)
-            .ToList()
+            .AsEnumerable()
+            .ToList();
+
+        // El faltante se mide sobre el total pedido de cada producto, no línea por
+        // línea: dos líneas de 6 contra un stock de 10 alcanzan por separado y no
+        // juntas, y al aprobar se descuenta la suma.
+        var pendingByProduct = rows
+            .Where(l => l.ProductId.HasValue)
+            .GroupBy(l => l.ProductId!.Value)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(l => Math.Max(0m, l.Quantity - l.AppliedQuantity)));
+
+        var lines = rows
             .Select(l => new QuoteLineItem
             {
                 Id = l.Id,
@@ -124,7 +184,10 @@ public sealed class QuoteService
                 UnitCost = l.UnitCost,
                 AppliedQuantity = l.AppliedQuantity,
                 AvailableStock = l.Product?.CurrentStock,
-                SortOrder = l.SortOrder
+                SortOrder = l.SortOrder,
+                HasStockWarning = l.Product is not null
+                    && l.ProductId.HasValue
+                    && l.Product.CurrentStock < pendingByProduct[l.ProductId.Value]
             })
             .ToList();
 
@@ -413,6 +476,21 @@ public sealed class QuoteService
                 throw new InvalidOperationException("Este presupuesto ya fue aprobado o rechazado.");
             }
 
+            // Aprobar es irreversible: descuenta inventario y arranca el trabajo. Un
+            // presupuesto sin precio o sin materiales quedó a medio cargar, no es una
+            // decisión del taller, y una vez aprobado ya no se puede volver a editar.
+            if (project.Budget is null or <= 0)
+            {
+                throw new InvalidOperationException(
+                    "Falta calcular el precio final: un presupuesto sin precio no se puede aprobar.");
+            }
+
+            if (!context.ProjectBudgetLines.Any(l => l.ProjectId == project.Id))
+            {
+                throw new InvalidOperationException(
+                    "El presupuesto no tiene materiales cargados. Agregá al menos uno antes de aprobar.");
+            }
+
             var result = ApplyLinesToStock(context, project);
 
             project.Status = ProjectStatus.InProgress;
@@ -464,6 +542,8 @@ public sealed class QuoteService
         using var context = _databaseService.CreateContext();
         var project = RequireEditableQuote(context, projectId);
 
+        ProjectStatusPolicy.RequireWorkflow(project.Status, ProjectStatus.Rejected);
+
         project.Status = ProjectStatus.Rejected;
         project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
@@ -480,9 +560,90 @@ public sealed class QuoteService
             throw new InvalidOperationException("Solo se puede reabrir un presupuesto rechazado.");
         }
 
+        ProjectStatusPolicy.RequireWorkflow(project.Status, ProjectStatus.Quote);
+
         project.Status = ProjectStatus.Quote;
         project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
+    }
+
+    /// <summary>
+    /// Deshace una aprobación: devuelve al inventario todo lo que se había descontado y
+    /// el trabajo vuelve a ser un presupuesto editable.
+    /// </summary>
+    /// <remarks>
+    /// Es el único camino de vuelta desde «En curso», y existe porque el otro —cambiar el
+    /// estado a mano desde Proyectos— dejaba el stock descontado sin nada que lo devolviera.
+    /// Solo desde «En curso»: si el trabajo ya está terminado o entregado, el material se
+    /// usó de verdad y devolverlo al inventario sería inventar existencias que no están.
+    /// </remarks>
+    public void CancelApproval(int projectId)
+    {
+        using var context = _databaseService.CreateContext();
+        using var transaction = context.Database.BeginTransaction();
+
+        try
+        {
+            var project = context.Projects.FirstOrDefault(p => p.Id == projectId)
+                ?? throw new InvalidOperationException("Proyecto no encontrado.");
+
+            if (project.IsArchived)
+            {
+                throw new InvalidOperationException("El proyecto está archivado.");
+            }
+
+            if (project.Status != ProjectStatus.InProgress)
+            {
+                throw new InvalidOperationException(
+                    "Solo se puede cancelar un trabajo en curso. " +
+                    ProjectStatusPolicy.Explain(project.Status, ProjectStatus.Quote));
+            }
+
+            ProjectStatusPolicy.RequireWorkflow(project.Status, ProjectStatus.Quote);
+
+            var now = DateTime.UtcNow;
+
+            var materials = context.ProjectMaterials
+                .Include(m => m.Product)
+                .Where(m => m.ProjectId == projectId)
+                .ToList();
+
+            foreach (var material in materials)
+            {
+                material.Product.CurrentStock += material.Quantity;
+                material.Product.UpdatedAtUtc = now;
+
+                context.StockMovements.Add(new StockMovement
+                {
+                    ProductId = material.ProductId,
+                    Type = StockMovementType.In,
+                    Quantity = material.Quantity,
+                    Reason = $"Trabajo cancelado: {project.Title}",
+                    CreatedAtUtc = now
+                });
+            }
+
+            context.ProjectMaterials.RemoveRange(materials);
+
+            // Las líneas vuelven a figurar como no aplicadas: si el presupuesto se
+            // aprueba de nuevo, tiene que volver a descontar todo desde cero.
+            foreach (var line in context.ProjectBudgetLines.Where(l => l.ProjectId == projectId))
+            {
+                line.AppliedQuantity = 0m;
+                line.AppliedToStockAtUtc = null;
+            }
+
+            project.Status = ProjectStatus.Quote;
+            project.UpdatedAtUtc = now;
+
+            context.SaveChanges();
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 
     /// <summary>Copia el presupuesto con los precios de hoy, para volver a cotizar el mismo trabajo.</summary>

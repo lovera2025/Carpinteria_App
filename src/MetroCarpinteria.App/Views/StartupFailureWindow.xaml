@@ -1,0 +1,69 @@
+﻿<Window x:Class="MetroCarpinteria.App.Views.StartupFailureWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="METRO CARPINTERÍA — no se pudo abrir"
+        Width="640"
+        SizeToContent="Height"
+        MinHeight="380"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        Background="#F5F0E8"
+        FontFamily="Segoe UI">
+
+    <!--
+        Todo el estilo va escrito acá adentro a propósito. Esta ventana aparece cuando el
+        arranque falló, y una de las causas posibles es justamente que un ResourceDictionary
+        no cargó: si dependiera de los estilos de la app podría no poder mostrarse.
+    -->
+    <Grid Margin="28,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,14">
+            <TextBlock Text="⚠" FontSize="30" Foreground="#C45C26" Margin="0,0,14,0" VerticalAlignment="Center" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="No se pudo abrir la aplicación"
+                           FontSize="21" FontWeight="SemiBold" Foreground="#3D2914" />
+                <TextBlock Text="Tus datos no se tocaron. Abajo está el detalle y qué podés hacer."
+                           FontSize="13" Foreground="#7A6555" Margin="0,3,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="#1AC45C26" CornerRadius="8" Padding="14,12" Margin="0,0,0,14">
+            <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="13.5" Foreground="#3D2914" />
+        </Border>
+
+        <Border Grid.Row="2" Background="White" BorderBrush="#333D2914" BorderThickness="1"
+                CornerRadius="8" Padding="12,10" MinHeight="90" MaxHeight="200">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                <TextBlock x:Name="DetailText" FontFamily="Consolas" FontSize="11.5"
+                           Foreground="#7A6555" TextWrapping="NoWrap" />
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Grid.Row="3" Margin="0,14,0,0">
+            <TextBlock x:Name="BackupHintText" FontSize="12.5" Foreground="#7A6555"
+                       TextWrapping="Wrap" Margin="0,0,0,10" />
+            <TextBlock x:Name="LogPathText" FontSize="11.5" Foreground="#7A6555" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <WrapPanel Grid.Row="4" Margin="0,18,0,0" HorizontalAlignment="Right">
+            <Button x:Name="OpenDataFolderButton" Content="Abrir la carpeta de datos"
+                    Click="OnOpenDataFolder" Padding="16,9" Margin="0,0,10,0"
+                    Background="Transparent" BorderBrush="#6B4423" BorderThickness="2"
+                    Foreground="#6B4423" FontWeight="SemiBold" Cursor="Hand" />
+            <Button x:Name="RestoreBackupButton" Content="Restaurar un respaldo…"
+                    Click="OnRestoreBackup" Padding="16,9" Margin="0,0,10,0"
+                    Background="Transparent" BorderBrush="#6B4423" BorderThickness="2"
+                    Foreground="#6B4423" FontWeight="SemiBold" Cursor="Hand" />
+            <Button Content="Cerrar" IsCancel="True" IsDefault="True" Click="OnClose"
+                    Padding="20,9" Background="#6B4423" BorderThickness="0"
+                    Foreground="#F5F0E8" FontWeight="SemiBold" Cursor="Hand" />
+        </WrapPanel>
+    </Grid>
+</Window>

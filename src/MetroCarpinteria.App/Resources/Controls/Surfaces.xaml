@@ -1,0 +1,183 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Tarjetas, paneles, separadores, chips y avisos. -->
+
+    <Style x:Key="CardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusXl}" />
+        <Setter Property="Padding" Value="{DynamicResource CardPadding}" />
+        <Setter Property="Effect" Value="{DynamicResource CardShadow}" />
+    </Style>
+
+    <!-- Tarjeta sin sombra: para las anidadas, donde dos sombras se ensucian entre sí -->
+    <Style x:Key="PanelStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushToken}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource BorderThin}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+        <Setter Property="Padding" Value="{DynamicResource CardPadding}" />
+    </Style>
+
+    <!-- Zona hundida: totales, resúmenes, campos de solo lectura -->
+    <Style x:Key="SunkenPanelStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="{DynamicResource SpaceMd}" />
+    </Style>
+
+    <!-- Barra del precio final: el número que el carpintero le dice al cliente -->
+    <Style x:Key="HighlightPanelStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource BrandPrimaryBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+        <Setter Property="Padding" Value="{DynamicResource CardPadding}" />
+        <Setter Property="Effect" Value="{DynamicResource RaisedShadow}" />
+    </Style>
+
+    <!-- ===== Avisos por estado ===== -->
+
+    <Style x:Key="NoticeBaseStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="{DynamicResource SpaceMd}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource BorderThin}" />
+    </Style>
+
+    <Style x:Key="SuccessNoticeStyle" TargetType="Border" BasedOn="{StaticResource NoticeBaseStyle}">
+        <Setter Property="Background" Value="{DynamicResource StateSuccessSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StateSuccessBrush}" />
+    </Style>
+
+    <Style x:Key="WarningNoticeStyle" TargetType="Border" BasedOn="{StaticResource NoticeBaseStyle}">
+        <Setter Property="Background" Value="{DynamicResource StateWarningSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StateWarningBrush}" />
+    </Style>
+
+    <Style x:Key="DangerNoticeStyle" TargetType="Border" BasedOn="{StaticResource NoticeBaseStyle}">
+        <Setter Property="Background" Value="{DynamicResource StateDangerSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StateDangerBrush}" />
+    </Style>
+
+    <Style x:Key="InfoNoticeStyle" TargetType="Border" BasedOn="{StaticResource NoticeBaseStyle}">
+        <Setter Property="Background" Value="{DynamicResource StateInfoSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StateInfoBrush}" />
+    </Style>
+
+    <Style x:Key="AccentNoticeStyle" TargetType="Border" BasedOn="{StaticResource NoticeBaseStyle}">
+        <Setter Property="Background" Value="{DynamicResource BrandAccentSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrandAccentBrush}" />
+    </Style>
+
+    <!-- ===== Chips y badges ===== -->
+
+    <Style x:Key="ChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusPill}" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="BadgeStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource StateWarningBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusPill}" />
+        <Setter Property="MinWidth" Value="20" />
+        <!-- MinHeight y no Height: con letra grande un alto fijo recorta el número -->
+        <Setter Property="MinHeight" Value="20" />
+        <Setter Property="Padding" Value="6,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- Número del paso en un flujo guiado (1 · 2 · 3 de Presupuestos) -->
+    <Style x:Key="StepBadgeStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource BrandPrimaryBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusPill}" />
+        <Setter Property="MinWidth" Value="24" />
+        <Setter Property="MinHeight" Value="24" />
+        <Setter Property="Padding" Value="5,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+
+    <!-- ===== Separadores ===== -->
+
+    <Style x:Key="SeparatorStyle" TargetType="Rectangle">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Fill" Value="{DynamicResource BorderBrushToken}" />
+        <Setter Property="Margin" Value="0,12" />
+    </Style>
+
+    <!-- ===== Barra de acciones ===== -->
+
+    <!--
+        No amerita un control propio: no tiene comportamiento. Un UserControl acá solo
+        agregaría un ContentPresenter y problemas de orden de tabulación.
+    -->
+    <Style x:Key="ActionBarStyle" TargetType="WrapPanel">
+        <Setter Property="Orientation" Value="Horizontal" />
+        <Setter Property="Margin" Value="0,4,0,0" />
+    </Style>
+
+    <!-- ===== Expander ===== -->
+
+    <Style TargetType="Expander">
+        <Setter Property="Foreground" Value="{DynamicResource BrandPrimaryBrush}" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFont}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Expander">
+                    <StackPanel>
+                        <ToggleButton x:Name="toggle"
+                                      IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      Cursor="Hand"
+                                      HorizontalContentAlignment="Stretch"
+                                      Focusable="True">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="head"
+                                            Background="{DynamicResource SurfaceSunkenBrush}"
+                                            CornerRadius="{DynamicResource RadiusMd}"
+                                            Padding="{DynamicResource SpaceMd}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="arrow" Grid.Column="0"
+                                                       Text="▸"
+                                                       Foreground="{DynamicResource BrandPrimaryBrush}"
+                                                       FontSize="{DynamicResource FontSizeSubtitle}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,10,0" />
+                                            <ContentPresenter Grid.Column="1" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="arrow" Property="Text" Value="▾" />
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="head" Property="Background" Value="{DynamicResource BrandAccentSubtleBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsKeyboardFocused" Value="True">
+                                            <Setter TargetName="head" Property="Background" Value="{DynamicResource BrandAccentSubtleBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" />
+                        </ToggleButton>
+
+                        <ContentPresenter x:Name="body" Visibility="Collapsed" Margin="0,10,0,0" />
+                    </StackPanel>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter TargetName="body" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

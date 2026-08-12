@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
@@ -9,7 +9,7 @@ using MetroCarpinteria.App.Services;
 
 namespace MetroCarpinteria.App.ViewModels;
 
-public class CashRegisterViewModel : ObservableObject
+public class CashRegisterViewModel : ViewModelBase
 {
     private readonly Action _onDataChanged;
     private OpenCashSessionState? _currentSession;
@@ -32,7 +32,7 @@ public class CashRegisterViewModel : ObservableObject
         LoadCommand = new RelayCommand(_ => Load());
         OpenSessionCommand = new RelayCommand(_ => OpenSession(), _ => !HasOpenSession);
         RegisterMovementCommand = new RelayCommand(_ => RegisterMovement(), _ => HasOpenSession);
-        CloseSessionCommand = new RelayCommand(_ => CloseSession(), _ => HasOpenSession);
+        CloseSessionCommand = new AsyncRelayCommand(CloseSessionAsync, () => HasOpenSession);
     }
 
     public ObservableCollection<CashMovementListItem> Movements { get; }
@@ -121,7 +121,9 @@ public class CashRegisterViewModel : ObservableObject
     public ICommand RegisterMovementCommand { get; }
     public ICommand CloseSessionCommand { get; }
 
-    public void Load()
+    public void Load() => SafeLoad(LoadCore, "Caja");
+
+    private void LoadCore()
     {
         CurrentSession = AppHost.CashRegisterService.GetOpenSessionState();
 
@@ -145,7 +147,7 @@ public class CashRegisterViewModel : ObservableObject
     {
         try
         {
-            if (!NumberInput.TryParseDecimal(OpenAmount, out var amount))
+            if (!NumberInput.TryParseMoney(OpenAmount, out var amount))
             {
                 throw new InvalidOperationException("Monto inicial inválido.");
             }
@@ -166,7 +168,7 @@ public class CashRegisterViewModel : ObservableObject
     {
         try
         {
-            if (!NumberInput.TryParseDecimal(MovementAmount, out var amount))
+            if (!NumberInput.TryParseMoney(MovementAmount, out var amount))
             {
                 throw new InvalidOperationException("Monto inválido.");
             }
@@ -186,34 +188,40 @@ public class CashRegisterViewModel : ObservableObject
         }
     }
 
-    private void CloseSession()
+    private async Task CloseSessionAsync()
     {
         if (CurrentSession is null)
         {
             return;
         }
 
-        if (!NumberInput.TryParseDecimal(CloseCountedAmount, out var counted))
+        if (!NumberInput.TryParseMoney(CloseCountedAmount, out var counted))
         {
-            SetStatus("Monto contado inválido.", isError: true);
+            AppHost.NotificationService.Warning("El monto contado no es un número válido.");
             return;
         }
 
         var expected = CurrentSession.ExpectedBalance;
         var difference = counted - expected;
-        var diffText = AppCulture.Money(difference);
 
+        // El desglose completo antes de confirmar: cerrar con diferencia es una decisión
+        // que hay que poder tomar con los tres números a la vista, no de memoria.
+        // Todos con AppCulture; antes dos de ellos usaban el formato del sistema.
         var message = difference == 0
-            ? $"¿Cerrar caja?\n\nContado: {counted:C} (cuadra exacto)"
-            : $"¿Cerrar caja?\n\nEsperado: {expected:C}\nContado: {counted:C}\nDiferencia: {diffText}";
+            ? $"Contaste {AppCulture.Money(counted)} y es exactamente lo esperado."
+            : $"Esperado: {AppCulture.Money(expected)}\n" +
+              $"Contado: {AppCulture.Money(counted)}\n" +
+              $"Diferencia: {AppCulture.Money(difference)} " +
+              (difference > 0 ? "(sobra)" : "(falta)") +
+              "\n\nLa diferencia queda registrada en el cierre.";
 
-        var result = MessageBox.Show(
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            "Cerrar la caja del día",
             message,
-            "Confirmar cierre de caja",
-            MessageBoxButton.YesNo,
-            difference == 0 ? MessageBoxImage.Question : MessageBoxImage.Warning);
+            confirmText: "Cerrar caja",
+            isDestructive: false);
 
-        if (result != MessageBoxResult.Yes)
+        if (!confirmed)
         {
             return;
         }
@@ -223,18 +231,49 @@ public class CashRegisterViewModel : ObservableObject
             AppHost.CashRegisterService.CloseSession(counted, CloseNotes);
             CloseCountedAmount = string.Empty;
             CloseNotes = string.Empty;
-            SetStatus("Caja cerrada correctamente.", isError: false);
+
+            AppHost.NotificationService.Success(difference == 0
+                ? "Caja cerrada. Cuadró exacto."
+                : $"Caja cerrada con una diferencia de {AppCulture.Money(difference)}.");
+
             Load();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, isError: true);
+            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
+    /// <summary>
+    /// Publica el resultado de una acción.
+    /// <para>
+    /// Antes esto llenaba una barra fija arriba de la pantalla que <b>nunca se borraba</b>:
+    /// un "Producto creado." quedaba ahí para siempre, y al rato no se sabía si
+    /// correspondía a lo de recién o a algo de veinte minutos antes. Ahora va al aviso
+    /// flotante, que se descarta solo.
+    /// </para>
+    /// <para>
+    /// StatusMessage se sigue actualizando porque los tests lo leen para verificar qué
+    /// pasó tras una acción.
+    /// </para>
+    /// </summary>
     private void SetStatus(string message, bool isError)
     {
         StatusMessage = message;
         IsStatusError = isError;
+
+        if (string.IsNullOrWhiteSpace(message) || !AppHost.IsReady)
+        {
+            return;
+        }
+
+        if (isError)
+        {
+            AppHost.NotificationService.Warning(message);
+        }
+        else
+        {
+            AppHost.NotificationService.Success(message);
+        }
     }
 }

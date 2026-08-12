@@ -1,10 +1,10 @@
-using MetroCarpinteria.App.Helpers;
+﻿using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
 using MetroCarpinteria.App.Services;
 
 namespace MetroCarpinteria.App.ViewModels;
 
-public class HomeViewModel : ObservableObject
+public class HomeViewModel : ViewModelBase
 {
     private int _lowStockCount;
     private string _lowStockValue = "0";
@@ -19,7 +19,9 @@ public class HomeViewModel : ObservableObject
     public string WelcomeMessage => "Bienvenido al panel de gestión";
     public string ContactInfo => "Diseños a medida | 3777-412207";
 
-    public void RefreshMetrics()
+    public void RefreshMetrics() => SafeLoad(RefreshMetricsCore, "Inicio");
+
+    private void RefreshMetricsCore()
     {
         _lowStockCount = AppHost.DatabaseService.GetLowStockCount();
         _lowStockValue = _lowStockCount.ToString();

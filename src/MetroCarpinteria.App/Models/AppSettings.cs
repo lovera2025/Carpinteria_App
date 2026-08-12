@@ -1,3 +1,5 @@
+using MetroCarpinteria.App.Services;
+
 namespace MetroCarpinteria.App.Models;
 
 public class AppSettings
@@ -20,4 +22,15 @@ public class AppSettings
 
     /// <summary>Cuándo se buscaron actualizaciones por última vez.</summary>
     public DateTime? LastUpdateCheckUtc { get; set; }
+
+    // --- Apariencia ---------------------------------------------------------
+
+    /// <summary>
+    /// Claro, oscuro, o lo que tenga Windows. El taller cambia de luz durante el día
+    /// y la app se usa tanto de mañana como de noche.
+    /// </summary>
+    public AppTheme Theme { get; set; } = AppTheme.System;
+
+    /// <summary>Tamaño de letra. Chica, normal o grande.</summary>
+    public FontScale FontScale { get; set; } = FontScale.Normal;
 }
