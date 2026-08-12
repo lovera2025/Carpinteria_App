@@ -94,10 +94,65 @@ public partial class QuotesViewModel
         set => SetProperty(ref _formTitle, value);
     }
 
+    /// <summary>
+    /// El cliente del presupuesto. Es texto libre a propósito.
+    /// </summary>
+    /// <remarks>
+    /// Obligar a dar de alta una ficha antes de poder cotizar rompe el flujo del taller:
+    /// llega alguien, se le pasa un precio, y recién si acepta importa quién es. Se
+    /// escribe el nombre y la ficha se crea o se reusa sola al guardar; mientras tanto,
+    /// <see cref="ClientSuggestions"/> ofrece las que ya existen para no duplicar.
+    /// </remarks>
     public string FormClientName
     {
         get => _formClientName;
-        set => SetProperty(ref _formClientName, value);
+        set
+        {
+            if (SetProperty(ref _formClientName, value))
+            {
+                _clientSearchDebouncer.Run(LoadClientSuggestions);
+            }
+        }
+    }
+
+    /// <summary>Fichas que coinciden con lo tipeado. Vacío cuando no hace falta elegir.</summary>
+    public ObservableCollection<ClientListItem> ClientSuggestions { get; } = [];
+
+    public bool HasClientSuggestions => ClientSuggestions.Count > 0;
+
+    private void LoadClientSuggestions()
+    {
+        ClientSuggestions.Clear();
+
+        if (!string.IsNullOrWhiteSpace(FormClientName) && AppHost.IsReady)
+        {
+            foreach (var client in AppHost.ClientService.Search(FormClientName, limit: 5))
+            {
+                // El que ya está escrito completo no se ofrece: elegirlo no cambiaría nada.
+                if (!string.Equals(
+                        ClientRules.Normalize(client.Name),
+                        ClientRules.Normalize(FormClientName),
+                        StringComparison.Ordinal))
+                {
+                    ClientSuggestions.Add(client);
+                }
+            }
+        }
+
+        OnPropertyChanged(nameof(HasClientSuggestions));
+    }
+
+    /// <summary>Completa el nombre con el de una ficha existente.</summary>
+    private void PickClient(object? parameter)
+    {
+        if (parameter is not ClientListItem client)
+        {
+            return;
+        }
+
+        FormClientName = client.Name;
+        ClientSuggestions.Clear();
+        OnPropertyChanged(nameof(HasClientSuggestions));
     }
 
     public string FormDescription
@@ -221,6 +276,11 @@ public partial class QuotesViewModel
             ApplyRates(detail.Rates ?? AppHost.Settings.BudgetRates);
             ShowBreakdown(detail.Breakdown);
 
+            // Se limpia el cartel de qué falta: si venimos de un presupuesto a medio
+            // cargar, el aviso quedaba pegado sobre uno que ya tiene todo. Cuando falte
+            // algo de verdad, el AutoCalculate del final lo vuelve a poner.
+            SetMissingData(string.Empty);
+
             // Campo editable: va con NumberInput.Format, no con AppCulture.
             AdjustedPrice = NumberInput.Format(detail.Budget);
 
@@ -279,6 +339,8 @@ public partial class QuotesViewModel
                 var created = AppHost.QuoteService.CreateQuote(
                     FormTitle, FormClientName, FormDescription, FormValidUntil);
 
+                LinkClient(created.Id);
+
                 CloseForm();
                 LoadQuotes();
                 SelectedQuote = Quotes.FirstOrDefault(q => q.Id == created.Id);
@@ -294,6 +356,8 @@ public partial class QuotesViewModel
             AppHost.QuoteService.UpdateQuote(
                 Detail.Id, FormTitle, FormClientName, FormDescription, FormValidUntil);
 
+            LinkClient(Detail.Id);
+
             CloseForm();
             ReloadListAndDetail();
             SetStatus("Presupuesto actualizado.", isError: false);
@@ -304,10 +368,38 @@ public partial class QuotesViewModel
         }
     }
 
+    /// <summary>
+    /// Engancha el presupuesto a la ficha del cliente, creándola si es la primera vez.
+    /// </summary>
+    /// <remarks>
+    /// Un fallo acá no puede tumbar el guardado: el presupuesto ya se guardó y su
+    /// <c>ClientName</c> quedó bien, que es lo que sale impreso. La ficha es organización,
+    /// no un requisito para cotizar.
+    /// </remarks>
+    private void LinkClient(int projectId)
+    {
+        if (string.IsNullOrWhiteSpace(FormClientName))
+        {
+            return;
+        }
+
+        try
+        {
+            var client = AppHost.ClientService.GetOrCreate(FormClientName);
+            AppHost.QuoteService.AssignClient(projectId, client.Id);
+        }
+        catch (Exception ex)
+        {
+            LogService.Warning("QuotesViewModel", $"No se pudo vincular la ficha del cliente: {ex.Message}");
+        }
+    }
+
     private void CloseForm()
     {
         IsFormOpen = false;
         IsCreating = false;
+        ClientSuggestions.Clear();
+        OnPropertyChanged(nameof(HasClientSuggestions));
     }
 
 }

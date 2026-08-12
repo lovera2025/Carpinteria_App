@@ -74,6 +74,10 @@
                 <views:QuotesView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type vm:ClientsViewModel}">
+                <views:ClientsView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type vm:ProjectsViewModel}">
                 <views:ProjectsView />
             </DataTemplate>

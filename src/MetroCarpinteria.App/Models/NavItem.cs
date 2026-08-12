@@ -6,6 +6,7 @@ public enum NavigationSection
     Inventory,
     CashRegister,
     Quotes,
+    Clients,
     Projects,
     Staff,
     Reports,

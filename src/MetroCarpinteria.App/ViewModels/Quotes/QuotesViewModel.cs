@@ -79,6 +79,7 @@ public partial class QuotesViewModel : ViewModelBase
     /// <summary>Agrupan el tecleo para no consultar la base letra por letra.</summary>
     private readonly Debouncer _searchDebouncer = new();
     private readonly Debouncer _productSearchDebouncer = new();
+    private readonly Debouncer _clientSearchDebouncer = new();
 
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
@@ -104,6 +105,7 @@ public partial class QuotesViewModel : ViewModelBase
         EditQuoteCommand = new RelayCommand(_ => StartEdit(), _ => Detail is { IsEditable: true });
         SaveQuoteCommand = new RelayCommand(_ => SaveQuote());
         CancelFormCommand = new RelayCommand(_ => CloseForm());
+        PickClientCommand = new RelayCommand(PickClient);
 
         AddMaterialCommand = new RelayCommand(_ => OpenMaterialForm(), _ => CanEditSelected);
         ConfirmMaterialCommand = new RelayCommand(_ => ConfirmMaterial(), _ => CanConfirmMaterial);
@@ -169,6 +171,7 @@ public partial class QuotesViewModel : ViewModelBase
     public ICommand EditQuoteCommand { get; }
     public ICommand SaveQuoteCommand { get; }
     public ICommand CancelFormCommand { get; }
+    public ICommand PickClientCommand { get; }
     public ICommand AddMaterialCommand { get; }
     public ICommand ConfirmMaterialCommand { get; }
     public ICommand CancelMaterialCommand { get; }

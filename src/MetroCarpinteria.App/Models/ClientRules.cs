@@ -97,6 +97,108 @@ public static class ClientRules
             .Select(group => group.Key)
             .FirstOrDefault() ?? string.Empty;
 
+    /// <summary>Desde acá para arriba se propone revisar el par a mano.</summary>
+    public const double SimilarityThreshold = 0.85;
+
+    /// <summary>Un prefijo compartido más corto que esto no dice nada: hay muchos «Juan».</summary>
+    public const int MinimumSharedPrefix = 6;
+
+    /// <summary>
+    /// Cuánto se parecen dos nombres, de 0 a 1, comparando sus claves normalizadas.
+    /// </summary>
+    /// <remarks>
+    /// Solo se usa para <b>proponer</b> una revisión, nunca para fusionar solo. «Juan
+    /// Pérez» y «Juan Pérez h.» dan 0,92 y bien pueden ser padre e hijo: la máquina no
+    /// tiene cómo saberlo y el que sabe es el carpintero.
+    /// </remarks>
+    public static double Similarity(string? left, string? right)
+    {
+        var a = Normalize(left);
+        var b = Normalize(right);
+
+        if (a.Length == 0 || b.Length == 0)
+        {
+            return 0;
+        }
+
+        if (string.Equals(a, b, StringComparison.Ordinal))
+        {
+            return 1;
+        }
+
+        var distance = LevenshteinDistance(a, b);
+        return 1.0 - ((double)distance / Math.Max(a.Length, b.Length));
+    }
+
+    /// <summary>Los dos nombres arrancan igual y lo compartido es lo bastante largo.</summary>
+    public static bool SharesLongPrefix(string? left, string? right)
+    {
+        var a = Normalize(left);
+        var b = Normalize(right);
+        var shared = 0;
+
+        while (shared < a.Length && shared < b.Length && a[shared] == b[shared])
+        {
+            shared++;
+        }
+
+        return shared >= MinimumSharedPrefix;
+    }
+
+    /// <summary>
+    /// Compara teléfonos por sus dígitos: «3777-412207» y «3777 412207» son el mismo.
+    /// </summary>
+    public static bool SamePhone(string? left, string? right)
+    {
+        var a = OnlyDigits(left);
+        var b = OnlyDigits(right);
+
+        // Menos de seis dígitos es un interno o un número a medio cargar.
+        return a.Length >= 6 && string.Equals(a, b, StringComparison.Ordinal);
+    }
+
+    private static string OnlyDigits(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : new string(value.Where(char.IsDigit).ToArray());
+
+    /// <summary>
+    /// Cuántas letras hay que cambiar para pasar de un texto al otro.
+    /// </summary>
+    /// <remarks>
+    /// Implementado con dos filas en vez de la matriz completa: son nombres de personas,
+    /// pero esto corre contra todos los pares de la agenda y no hay motivo para reservar
+    /// memoria de más.
+    /// </remarks>
+    private static int LevenshteinDistance(string a, string b)
+    {
+        var previous = new int[b.Length + 1];
+        var current = new int[b.Length + 1];
+
+        for (var j = 0; j <= b.Length; j++)
+        {
+            previous[j] = j;
+        }
+
+        for (var i = 1; i <= a.Length; i++)
+        {
+            current[0] = i;
+
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+
+                current[j] = Math.Min(
+                    Math.Min(current[j - 1] + 1, previous[j] + 1),
+                    previous[j - 1] + cost);
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[b.Length];
+    }
+
     /// <summary>Menor es mejor: mezclada, después minúsculas, y last el grito en mayúsculas.</summary>
     private static int CapitalizationRank(string name)
     {

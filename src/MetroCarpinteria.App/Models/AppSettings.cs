@@ -23,6 +23,16 @@ public class AppSettings
     /// <summary>Cuándo se buscaron actualizaciones por última vez.</summary>
     public DateTime? LastUpdateCheckUtc { get; set; }
 
+    /// <summary>
+    /// Pares de fichas de cliente que alguien ya revisó y marcó como distintas.
+    /// </summary>
+    /// <remarks>
+    /// Va en la configuración y no en la base porque no es un dato del taller sino una
+    /// decisión sobre qué mostrar. Sin esto, la revisión de duplicados vuelve a proponer
+    /// «Juan Pérez» y «Juan Pérez h.» cada vez que se abre, y se termina ignorando entera.
+    /// </remarks>
+    public List<string> DismissedClientPairs { get; set; } = [];
+
     // --- Apariencia ---------------------------------------------------------
 
     /// <summary>

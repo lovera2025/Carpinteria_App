@@ -16,6 +16,7 @@ public class MainViewModel : ObservableObject
     private readonly InventoryViewModel _inventoryViewModel;
     private readonly CashRegisterViewModel _cashRegisterViewModel;
     private readonly QuotesViewModel _quotesViewModel;
+    private readonly ClientsViewModel _clientsViewModel;
     private readonly ProjectsViewModel _projectsViewModel;
     private readonly StaffViewModel _staffViewModel;
     private readonly ReportsViewModel _reportsViewModel;
@@ -30,6 +31,7 @@ public class MainViewModel : ObservableObject
         _inventoryViewModel = new InventoryViewModel(RefreshDashboardMetrics);
         _cashRegisterViewModel = new CashRegisterViewModel(RefreshDashboardMetrics);
         _quotesViewModel = new QuotesViewModel(RefreshDashboardMetrics);
+        _clientsViewModel = new ClientsViewModel(RefreshDashboardMetrics);
         _projectsViewModel = new ProjectsViewModel(RefreshDashboardMetrics);
         _staffViewModel = new StaffViewModel(RefreshDashboardMetrics);
         _reportsViewModel = new ReportsViewModel();
@@ -41,6 +43,7 @@ public class MainViewModel : ObservableObject
             new() { Section = NavigationSection.Inventory, Title = "Inventario", Icon = "📦" },
             new() { Section = NavigationSection.CashRegister, Title = "Caja", Icon = "💰" },
             new() { Section = NavigationSection.Quotes, Title = "Presupuestos", Icon = "🧮" },
+            new() { Section = NavigationSection.Clients, Title = "Clientes", Icon = "👥" },
             new() { Section = NavigationSection.Projects, Title = "Proyectos", Icon = "🪚" },
             new() { Section = NavigationSection.Staff, Title = "Personal", Icon = "👷" },
             new() { Section = NavigationSection.Reports, Title = "Reportes", Icon = "📊" },
@@ -54,6 +57,7 @@ public class MainViewModel : ObservableObject
             [NavigationSection.Inventory] = _inventoryViewModel,
             [NavigationSection.CashRegister] = _cashRegisterViewModel,
             [NavigationSection.Quotes] = _quotesViewModel,
+            [NavigationSection.Clients] = _clientsViewModel,
             [NavigationSection.Projects] = _projectsViewModel,
             [NavigationSection.Staff] = _staffViewModel,
             [NavigationSection.Reports] = _reportsViewModel,
@@ -198,6 +202,9 @@ public class MainViewModel : ObservableObject
                 break;
             case NavigationSection.Quotes:
                 _quotesViewModel.Load();
+                break;
+            case NavigationSection.Clients:
+                _clientsViewModel.Load();
                 break;
             case NavigationSection.Projects:
                 _projectsViewModel.Load();

@@ -193,7 +193,13 @@ public sealed class QuoteDetail
 {
     public int Id { get; init; }
     public string Title { get; init; } = string.Empty;
+
+    /// <summary>El nombre tal como se escribió acá. Es lo que sale impreso.</summary>
     public string ClientName { get; init; } = string.Empty;
+
+    /// <summary>Ficha vinculada, si la hay. Null en los presupuestos que nunca se asociaron.</summary>
+    public int? ClientId { get; init; }
+
     public string? Description { get; init; }
     public ProjectStatus Status { get; init; }
     public bool IsArchived { get; init; }

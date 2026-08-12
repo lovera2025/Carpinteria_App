@@ -206,6 +206,7 @@ public sealed class QuoteService
             Id = project.Id,
             Title = project.Title,
             ClientName = project.ClientName,
+            ClientId = project.ClientId,
             Description = project.Description,
             Status = project.Status,
             IsArchived = project.IsArchived,
@@ -309,6 +310,38 @@ public sealed class QuoteService
         project.ClientName = clientName.Trim();
         project.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         project.QuoteValidUntilUtc = ToUtcFromLocalDate(validUntilLocal);
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    /// <summary>
+    /// Engancha el presupuesto a una ficha de cliente.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Project.ClientName"/> se actualiza también, porque es el nombre que va a
+    /// salir impreso: cambiar de cliente sin cambiar lo que dice el papel dejaría los dos
+    /// datos contándose historias distintas. Lo que no se toca nunca es el nombre de un
+    /// presupuesto <em>ya entregado</em>, y de eso se ocupa que esto solo corra sobre
+    /// presupuestos editables.
+    /// </remarks>
+    public void AssignClient(int projectId, int? clientId)
+    {
+        using var context = _databaseService.CreateContext();
+        var project = RequireEditableQuote(context, projectId);
+
+        if (clientId is null)
+        {
+            project.ClientId = null;
+        }
+        else
+        {
+            var client = context.Clients.FirstOrDefault(c => c.Id == clientId.Value)
+                ?? throw new InvalidOperationException("Cliente no encontrado.");
+
+            project.ClientId = client.Id;
+            project.ClientName = client.Name;
+        }
+
         project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
     }

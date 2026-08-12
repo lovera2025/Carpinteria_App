@@ -87,6 +87,14 @@ internal sealed class TestFixture : IDisposable
         AppHost.PaymentService.RegisterPayment(
             QuoteId, PaymentKind.Deposit, 50000m, PaymentMethod.Transfer, "Adelanto por transferencia");
 
+        // Agenda de clientes: la ficha del presupuesto, una repetida a la que le falta un
+        // acento —para que la revisión de duplicados tenga qué mostrar— y una tercera.
+        var client = AppHost.ClientService.GetOrCreate("Cliente de prueba");
+        AppHost.QuoteService.AssignClient(QuoteId, client.Id);
+
+        AppHost.ClientService.Create("Cliente de prueba h.", "3777-100200");
+        AppHost.ClientService.Create("Carpintería Vecina", "3777-778899", "vecina@ejemplo.com");
+
         ActiveProjectId = AppHost.ProjectService
             .Create("Placard empotrado", "Cliente en curso", "Melamina blanca", 250000m, ProjectStatus.InProgress)
             .Id;

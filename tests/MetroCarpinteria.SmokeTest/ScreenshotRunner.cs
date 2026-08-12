@@ -74,6 +74,7 @@ internal static class ScreenshotRunner
             (NavigationSection.Inventory, "inventario"),
             (NavigationSection.CashRegister, "caja"),
             (NavigationSection.Quotes, "presupuestos"),
+            (NavigationSection.Clients, "clientes"),
             (NavigationSection.Projects, "proyectos"),
             (NavigationSection.Staff, "personal"),
             (NavigationSection.Reports, "reportes"),

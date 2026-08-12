@@ -397,6 +397,7 @@ internal static class Program
             RunStockCounterTests(inventory, database, reports);
             RunQuoteTests(inventory, quotes, projects);
             CommercialTests.RunIntegration(Run, quotes, new PaymentService(database), cash, inventory);
+            ClientTests.Run(Run, new ClientService(database), quotes, inventory);
 
             Run("Backup: create and restore", () =>
             {

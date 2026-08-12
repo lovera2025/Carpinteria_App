@@ -304,6 +304,81 @@ internal static class UiSmokeTests
             Assert.False(offered.Contains(ProjectStatus.Rejected), "un trabajo aprobado no se rechaza.");
         });
 
+        run("UI: ClientsView + ViewModel", () =>
+        {
+            var viewModel = new ClientsViewModel(() => { });
+            viewModel.Load();
+            LoadView(() => new ClientsView(), viewModel);
+        });
+
+        run("UI: la revisión de duplicados propone el par y recuerda el «son distintos»", () =>
+        {
+            // La fixture siembra «Cliente de prueba» y «Cliente de prueba h.»: pueden ser
+            // padre e hijo, así que la app propone y el carpintero decide.
+            var viewModel = new ClientsViewModel(() => { });
+            viewModel.Load();
+
+            viewModel.ToggleDuplicatesCommand.Execute(null);
+            Assert.True(viewModel.IsReviewingDuplicates, "tendría que entrar en modo revisión.");
+            Assert.True(viewModel.HasDuplicates, "el par sembrado tendría que aparecer.");
+
+            var pair = viewModel.Duplicates.First();
+            viewModel.DismissPairCommand.Execute(pair);
+
+            Assert.False(
+                viewModel.Duplicates.Any(d => d.PairKey == pair.PairKey),
+                "el par descartado tendría que desaparecer de la lista.");
+
+            // Y sigue descartado al volver a entrar: si la revisión repite lo que ya se
+            // marcó, se termina ignorando entera.
+            var again = new ClientsViewModel(() => { });
+            again.Load();
+            again.ToggleDuplicatesCommand.Execute(null);
+
+            Assert.False(
+                again.Duplicates.Any(d => d.PairKey == pair.PairKey),
+                "el descarte tendría que recordarse entre sesiones.");
+        });
+
+        run("UI: al cotizar se ofrecen las fichas que ya existen, sin obligar a elegir", () =>
+        {
+            // El campo sigue siendo texto libre: llega alguien, se le pasa un precio, y
+            // recién si acepta importa quién es.
+            AppHost.ClientService.Create("Mueblería Los Álamos", "3777-333444");
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.NewQuoteCommand.Execute(null);
+
+            viewModel.FormClientName = "muebleria los";
+            Assert.True(viewModel.HasClientSuggestions, "tendría que ofrecer la ficha que ya existe.");
+
+            var suggestion = viewModel.ClientSuggestions.First();
+            Assert.Equal(suggestion.Name, "Mueblería Los Álamos", "sugerencia encontrada sin acentos");
+
+            viewModel.PickClientCommand.Execute(suggestion);
+            Assert.Equal(viewModel.FormClientName, "Mueblería Los Álamos", "nombre completado");
+            Assert.False(viewModel.HasClientSuggestions, "elegida una, no quedan sugerencias.");
+        });
+
+        run("UI: guardar un presupuesto con un cliente nuevo le crea la ficha", () =>
+        {
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+
+            viewModel.NewQuoteCommand.Execute(null);
+            viewModel.FormTitle = "Alacena";
+            viewModel.FormClientName = "Doña Rosa";
+            viewModel.SaveQuoteCommand.Execute(null);
+
+            var client = AppHost.ClientService.GetClients(search: "Doña Rosa").SingleOrDefault();
+            Assert.NotNull(client, "la ficha tendría que haberse creado sola");
+
+            // Y el presupuesto quedó enganchado a ella.
+            Assert.Equal(viewModel.Detail!.ClientId ?? 0, client!.Id, "ficha vinculada al presupuesto");
+            Assert.Equal(viewModel.Detail.ClientName, "Doña Rosa", "nombre impreso");
+        });
+
         run("UI: StaffView + ViewModel", () =>
         {
             var viewModel = new StaffViewModel(() => { });
@@ -409,6 +484,24 @@ internal static class UiSmokeTests
             viewModel.SelectedQuote = otherInstance;
 
             Assert.Equal(viewModel.CalcDays, "9", "días tras reelegir el mismo presupuesto");
+        });
+
+        run("UI: pasar de un presupuesto incompleto a uno completo limpia el cartel de qué falta", () =>
+        {
+            // El aviso quedaba pegado: se abría uno sin calcular, se elegía otro que sí
+            // tenía precio, y el cartel seguía diciendo «Falta el valor del jornal».
+            var pendingId = AppHost.QuoteService.CreateQuote("Sin calcular aún", "Cliente pendiente", null).Id;
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == pendingId);
+            Assert.True(viewModel.HasMissingData, "un presupuesto sin calcular tendría que decir qué le falta.");
+
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            Assert.False(viewModel.HasMissingData, $"quedó pegado: «{viewModel.MissingDataMessage}»");
+            Assert.Equal(viewModel.PriceStepSummary, viewModel.FinalPriceOrPlaceholder, "resumen del paso");
         });
 
         run("UI: cambiar de presupuesto sí recarga el formulario", () =>

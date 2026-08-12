@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:MetroCarpinteria.App.Models"
              mc:Ignorable="d"
              d:DesignHeight="400"
              d:DesignWidth="520">
@@ -22,7 +23,29 @@
                          Padding="10,8" Margin="0,0,0,12" />
                 <TextBlock Text="Cliente" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                 <TextBox Text="{Binding FormClientName, UpdateSourceTrigger=PropertyChanged}"
-                         Padding="10,8" Margin="0,0,0,12" />
+                         Padding="10,8" Margin="0,0,0,4"
+                         ToolTip="Escribí el nombre. La ficha se crea o se reusa sola al guardar." />
+
+                <!-- Se ofrecen las fichas que ya existen, pero el campo sigue siendo texto
+                     libre: obligar a dar de alta un cliente antes de cotizar rompe el
+                     flujo del taller. -->
+                <ItemsControl ItemsSource="{Binding ClientSuggestions}" Margin="0,0,0,12"
+                              Visibility="{Binding HasClientSuggestions, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:ClientListItem}">
+                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="10,6" Margin="0,4,0,0" FontSize="12"
+                                    Command="{Binding DataContext.PickClientCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding HistoryDisplay}" FontSize="10" Opacity="0.8" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <TextBlock Text="Descripción (opcional)" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                 <TextBox Text="{Binding FormDescription, UpdateSourceTrigger=PropertyChanged}"
                          Padding="10,8" Margin="0,0,0,12" MinHeight="56"
