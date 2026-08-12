@@ -75,6 +75,18 @@ internal sealed class TestFixture : IDisposable
         quotes.AddLooseLine(QuoteId, "Bisagra importada", "Unidad", 8m, 250m, saveToCatalog: false);
         quotes.SaveCalculation(QuoteId, 14000m, 3m, 30000m, BudgetRates.Defaults());
 
+        // Condiciones comerciales y una seña: es el caso completo, el que hace falta para
+        // revisar el pie del presupuesto y el saldo sin tener que provocarlos a mano.
+        quotes.SaveCommercialTerms(QuoteId, new CommercialTerms
+        {
+            DiscountMode = DiscountMode.Percentage,
+            DiscountValue = 10m,
+            VatPercent = 21m
+        });
+
+        AppHost.PaymentService.RegisterPayment(
+            QuoteId, PaymentKind.Deposit, 50000m, PaymentMethod.Transfer, "Adelanto por transferencia");
+
         ActiveProjectId = AppHost.ProjectService
             .Create("Placard empotrado", "Cliente en curso", "Melamina blanca", 250000m, ProjectStatus.InProgress)
             .Id;

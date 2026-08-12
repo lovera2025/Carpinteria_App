@@ -79,6 +79,10 @@
 
                         <quotes:QuoteCalculatorPanel />
 
+                        <!-- El bloque de cobros trae su propio ViewModel, compartido con
+                             Proyectos: un trabajo en curso también cobra. -->
+                        <quotes:QuotePaymentsPanel DataContext="{Binding PaymentsSection}" />
+
                         <!-- Faltantes -->
                         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
                                 Visibility="{Binding Shortfalls.Count, Converter={StaticResource IntToVisibilityConverter}}">

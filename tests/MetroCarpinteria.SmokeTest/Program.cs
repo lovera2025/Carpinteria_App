@@ -61,6 +61,7 @@ internal static class Program
         StartupTests.Run(Run);
         ComponentTests.Run(Run);
         CorrectnessTests.Run(Run);
+        CommercialTests.Run(Run);
         RunIsolatedIntegrationFlow();
         UiSmokeTests.Run(Run);
         PrintManualUiChecklist();
@@ -395,6 +396,7 @@ internal static class Program
             RunQuoteFreshnessTests();
             RunStockCounterTests(inventory, database, reports);
             RunQuoteTests(inventory, quotes, projects);
+            CommercialTests.RunIntegration(Run, quotes, new PaymentService(database), cash, inventory);
 
             Run("Backup: create and restore", () =>
             {

@@ -209,6 +209,32 @@ public sealed class QuoteDetail
     /// <summary>Desglose reconstruido desde las entradas congeladas. Null si nunca se calculó.</summary>
     public BudgetBreakdown? Breakdown { get; init; }
 
+    /// <summary>Lo pactado con el cliente: IVA y descuento. Nunca null; vacío es «nada pactado».</summary>
+    public CommercialTerms Terms { get; init; } = CommercialTerms.None();
+
+    /// <summary>
+    /// El tramo comercial reconstruido sobre el desglose. Null si todavía no hay cálculo.
+    /// </summary>
+    public CommercialBreakdown? Commercial { get; init; }
+
+    public IReadOnlyList<ProjectPaymentItem> Payments { get; init; } = [];
+
+    /// <summary>Lo cobrado hasta ahora.</summary>
+    public decimal PaidTotal => Payments.Sum(p => p.Amount);
+
+    /// <summary>
+    /// Lo que falta cobrar. Se calcula, no se guarda: un saldo guardado hay que mantenerlo
+    /// al día con cada cambio de precio y con cada cobro, y basta que una de las dos cosas
+    /// falle para que la cuenta del cliente quede mal.
+    /// </summary>
+    public decimal Balance => Math.Max(0m, (Budget ?? 0m) - PaidTotal);
+
+    public bool HasPayments => Payments.Count > 0;
+    public bool IsFullyPaid => Budget is > 0 && PaidTotal >= Budget.Value;
+
+    public string PaidTotalDisplay => AppCulture.Money(PaidTotal);
+    public string BalanceDisplay => AppCulture.Money(Balance);
+
     public decimal MaterialsTotal => Lines.Sum(l => l.LineTotal);
     public string MaterialsTotalDisplay => AppCulture.Money(MaterialsTotal);
     public string BudgetDisplay => AppCulture.Money(Budget);
@@ -224,10 +250,16 @@ public sealed class QuoteDetail
 
     public bool IsEditable => Status == ProjectStatus.Quote && !IsArchived;
 
-    /// <summary>El precio guardado no coincide con el calculado: lo redondearon a mano.</summary>
-    public bool BudgetAdjustedManually => Breakdown is not null
+    /// <summary>
+    /// El precio guardado no coincide con el que sale del cálculo: lo redondearon a mano.
+    /// </summary>
+    /// <remarks>
+    /// Se compara contra el total <b>con descuento e IVA</b>, no contra el precio pelado:
+    /// si no, pactar un 21% haría que todo presupuesto pareciera ajustado a mano.
+    /// </remarks>
+    public bool BudgetAdjustedManually => Commercial is not null
         && Budget.HasValue
-        && Budget.Value != Breakdown.FinalPrice;
+        && Budget.Value != Commercial.Total;
 
     public bool HasPendingStock => Lines.Any(l => l.IsFromInventory && l.AppliedQuantity < l.Quantity)
         && Status != ProjectStatus.Quote

@@ -78,7 +78,21 @@ public sealed class QuoteDocumentService
         document.Blocks.Add(BuildSummaryTable(
             quote.Breakdown.ClientLines.Where(l => !l.IsTotal).ToList()));
 
+        // El pie comercial solo aparece si se pactó algo. Un presupuesto sin IVA ni
+        // descuento no tiene por qué mostrar «Descuento $ 0» ni un subtotal repetido.
+        if (quote.Commercial is { IsPlain: false } commercial)
+        {
+            document.Blocks.Add(BuildSummaryTable(commercial.Lines.Where(l => !l.IsTotal).ToList()));
+        }
+
         document.Blocks.Add(BuildTotalBlock(quote));
+
+        // Si el cliente ya adelantó plata, lo que necesita ver es cuánto falta.
+        if (quote.HasPayments)
+        {
+            document.Blocks.Add(BuildBalanceBlock(quote));
+        }
+
         document.Blocks.Add(BuildValidityNote(quote));
         document.Blocks.Add(BuildSignature());
         document.Blocks.Add(BuildFooter());
@@ -126,10 +140,90 @@ public sealed class QuoteDocumentService
             document.Blocks.Add(Muted("Este presupuesto todavía no tiene un cálculo guardado."));
         }
 
+        if (quote.Commercial is { IsPlain: false } commercial)
+        {
+            document.Blocks.Add(SectionTitle("Condiciones comerciales"));
+            document.Blocks.Add(BuildSummaryTable(commercial.Lines.Where(l => !l.IsTotal).ToList()));
+        }
+
         document.Blocks.Add(BuildTotalBlock(quote));
+
+        if (quote.HasPayments)
+        {
+            document.Blocks.Add(BuildBalanceBlock(quote));
+        }
+
+        document.Blocks.Add(BuildEffectiveMarginBlock(quote));
         document.Blocks.Add(BuildFooter());
 
         return document;
+    }
+
+    /// <summary>
+    /// Cuánta ganancia queda después de resignar el descuento.
+    /// </summary>
+    /// <remarks>
+    /// Es el número que hace útil la hoja interna. Un descuento del 15% sobre un margen del
+    /// 30% deja 12%, y eso hay que verlo antes de dar la mano, no al cerrar el mes. Como es
+    /// exactamente lo que no puede salir del taller, va solo en este documento.
+    /// </remarks>
+    private static Block BuildEffectiveMarginBlock(QuoteDetail quote)
+    {
+        if (quote.Breakdown is null || quote.Commercial is null)
+        {
+            return Muted("Sin cálculo guardado no se puede medir el margen.");
+        }
+
+        var margin = CommercialTermsService.EffectiveMargin(quote.Breakdown, quote.Commercial);
+
+        if (margin is null)
+        {
+            return Muted("Sin base gravada no se puede medir el margen.");
+        }
+
+        var paragraph = new Paragraph
+        {
+            Background = margin.Value < 0 ? BandBrush : CreamBrush,
+            Padding = new Thickness(14, 11, 14, 11),
+            Margin = new Thickness(0, 14, 0, 0)
+        };
+
+        paragraph.Inlines.Add(new Run("Margen efectivo:  ")
+        {
+            FontSize = 12,
+            Foreground = MutedBrush
+        });
+
+        paragraph.Inlines.Add(new Run(AppCulture.Percent(margin.Value))
+        {
+            FontSize = 15,
+            FontWeight = FontWeights.Bold,
+            Foreground = TextBrush
+        });
+
+        paragraph.Inlines.Add(new Run(
+            $"   (ganancia {AppCulture.Money(quote.Breakdown.Profit)}" +
+            (quote.Commercial.HasDiscount
+                ? $" menos {AppCulture.Money(quote.Commercial.Discount)} de descuento"
+                : string.Empty) +
+            $", sobre {quote.Commercial.TaxableBaseDisplay})")
+        {
+            FontSize = 10,
+            Foreground = MutedBrush
+        });
+
+        if (margin.Value < 0)
+        {
+            paragraph.Inlines.Add(new LineBreak());
+            paragraph.Inlines.Add(new Run("El descuento se comió toda la ganancia: este trabajo sale a pérdida.")
+            {
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = TextBrush
+            });
+        }
+
+        return paragraph;
     }
 
     /// <summary>Abre el diálogo de impresión. Devuelve false si el usuario canceló.</summary>
@@ -462,6 +556,66 @@ public sealed class QuoteDocumentService
         table.RowGroups.Add(group);
         table.Margin = new Thickness(0, 0, 0, 14);
         return table;
+    }
+
+    /// <summary>
+    /// Seña recibida y saldo a pagar. Va después del TOTAL porque es lo que el cliente
+    /// mira: el total ya lo negoció, lo que quiere saber es cuánto le queda.
+    /// </summary>
+    private static Block BuildBalanceBlock(QuoteDetail quote)
+    {
+        var table = NoBorderTable();
+        table.Columns.Add(Column(ContentWidth - 210));
+        table.Columns.Add(Column(210));
+
+        var group = new TableRowGroup();
+
+        group.Rows.Add(BalanceRow(
+            "Entregado a cuenta",
+            "- " + quote.PaidTotalDisplay,
+            emphasis: false));
+
+        group.Rows.Add(BalanceRow("SALDO A PAGAR", quote.BalanceDisplay, emphasis: true));
+
+        table.RowGroups.Add(group);
+        table.Margin = new Thickness(0, 10, 0, 16);
+        return table;
+    }
+
+    private static TableRow BalanceRow(string label, string amount, bool emphasis)
+    {
+        var background = emphasis ? BandBrush : CreamBrush;
+        var size = emphasis ? 14 : 12;
+        var weight = emphasis ? FontWeights.Bold : FontWeights.Normal;
+
+        var row = new TableRow();
+
+        row.Cells.Add(new TableCell(new Paragraph(new Run(label)
+        {
+            FontSize = size,
+            FontWeight = weight,
+            Foreground = TextBrush
+        })
+        { Margin = new Thickness(0) })
+        {
+            Background = background,
+            Padding = new Thickness(16, 9, 8, 9)
+        });
+
+        row.Cells.Add(new TableCell(new Paragraph(new Run(amount)
+        {
+            FontSize = size + 2,
+            FontWeight = weight,
+            Foreground = TextBrush
+        })
+        { Margin = new Thickness(0) })
+        {
+            Background = background,
+            Padding = new Thickness(8, 9, 16, 9),
+            TextAlignment = TextAlignment.Right
+        });
+
+        return row;
     }
 
     private static Block BuildTotalBlock(QuoteDetail quote)

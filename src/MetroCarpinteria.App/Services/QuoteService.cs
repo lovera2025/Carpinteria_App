@@ -193,9 +193,16 @@ public sealed class QuoteService
 
         var rates = ReadRates(project);
         var materialsTotal = lines.Sum(l => l.LineTotal);
+        var breakdown = RebuildBreakdown(project, rates, materialsTotal);
+        var terms = ReadTerms(project);
 
         return new QuoteDetail
         {
+            Terms = terms,
+            Commercial = breakdown is null
+                ? null
+                : CommercialTermsService.Apply(breakdown.FinalPrice, terms),
+            Payments = ReadPayments(context, projectId),
             Id = project.Id,
             Title = project.Title,
             ClientName = project.ClientName,
@@ -210,9 +217,34 @@ public sealed class QuoteService
             DailyRate = project.DailyRate,
             Rates = rates,
             Lines = lines,
-            Breakdown = RebuildBreakdown(project, rates, materialsTotal)
+            Breakdown = breakdown
         };
     }
+
+    private static CommercialTerms ReadTerms(Project project) => new()
+    {
+        VatPercent = project.VatPercent,
+        DiscountMode = project.DiscountMode ?? DiscountMode.None,
+        DiscountValue = project.DiscountValue ?? 0m
+    };
+
+    private static List<ProjectPaymentItem> ReadPayments(AppDbContext context, int projectId) =>
+        context.ProjectPayments
+            .AsNoTracking()
+            .Where(p => p.ProjectId == projectId)
+            .OrderBy(p => p.CreatedAtUtc)
+            .AsEnumerable()
+            .Select(p => new ProjectPaymentItem
+            {
+                Id = p.Id,
+                Kind = p.Kind,
+                Amount = p.Amount,
+                Method = p.Method,
+                Notes = p.Notes,
+                CreatedAtLocal = DateTime.SpecifyKind(p.CreatedAtUtc, DateTimeKind.Utc).ToLocalTime(),
+                IsLinkedToCash = p.CashMovementId.HasValue
+            })
+            .ToList();
 
     public QuotePendingSummary GetPendingSummary()
     {
@@ -431,11 +463,78 @@ public sealed class QuoteService
         project.ToolWearPercent = breakdown.Rates.ToolWearPercent;
         project.OverheadPercent = breakdown.Rates.OverheadPercent;
         project.ProfitPercent = breakdown.Rates.ProfitPercent;
-        project.Budget = breakdown.FinalPrice;
+
+        // Budget es lo que el cliente paga: el precio calculado ya con descuento e IVA.
+        // Es el número que necesitan Caja, Reportes y el saldo de la seña, y por eso vale
+        // más que guardar el precio pelado y que cada pantalla rehaga la cuenta.
+        project.Budget = CommercialTermsService.Apply(breakdown.FinalPrice, ReadTerms(project)).Total;
         project.UpdatedAtUtc = DateTime.UtcNow;
 
         context.SaveChanges();
         return breakdown;
+    }
+
+    /// <summary>
+    /// Guarda el IVA y el descuento pactados y recalcula el total.
+    /// </summary>
+    /// <remarks>
+    /// Igual que el resto del cálculo, se guardan las entradas y no los importes: el
+    /// desglose comercial se reconstruye cada vez que se muestra el presupuesto.
+    /// </remarks>
+    public CommercialBreakdown SaveCommercialTerms(int projectId, CommercialTerms terms)
+    {
+        ArgumentNullException.ThrowIfNull(terms);
+        ValidateTerms(terms);
+
+        using var context = _databaseService.CreateContext();
+        var project = RequireEditableQuote(context, projectId);
+
+        project.VatPercent = terms.VatPercent is > 0 ? terms.VatPercent : null;
+        project.DiscountMode = terms.DiscountValue > 0 ? terms.DiscountMode : null;
+        project.DiscountValue = terms.DiscountValue > 0 ? terms.DiscountValue : null;
+
+        var lines = context.ProjectBudgetLines
+            .Where(l => l.ProjectId == projectId)
+            .AsEnumerable()
+            .Sum(l => l.LineTotal);
+
+        var breakdown = RebuildBreakdown(project, ReadRates(project), lines);
+        var commercial = CommercialTermsService.Apply(breakdown?.FinalPrice ?? 0m, terms);
+
+        // Sin cálculo todavía no hay precio que ajustar: las condiciones quedan guardadas
+        // y se aplican solas en cuanto se calcule.
+        if (breakdown is not null)
+        {
+            project.Budget = commercial.Total;
+        }
+
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+
+        return commercial;
+    }
+
+    private static void ValidateTerms(CommercialTerms terms)
+    {
+        if (terms.VatPercent is < 0)
+        {
+            throw new InvalidOperationException("El IVA no puede ser negativo.");
+        }
+
+        if (terms.VatPercent is > 100)
+        {
+            throw new InvalidOperationException("El IVA no puede superar el 100%.");
+        }
+
+        if (terms.DiscountValue < 0)
+        {
+            throw new InvalidOperationException("El descuento no puede ser negativo.");
+        }
+
+        if (terms.DiscountMode == DiscountMode.Percentage && terms.DiscountValue > 100)
+        {
+            throw new InvalidOperationException("Un descuento en porcentaje no puede superar el 100%.");
+        }
     }
 
     /// <summary>Ajuste manual del precio final, para redondear lo que se le pasa al cliente.</summary>

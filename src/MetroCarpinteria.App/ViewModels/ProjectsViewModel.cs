@@ -72,6 +72,10 @@ public class ProjectsViewModel : ViewModelBase
         RemoveAssignmentCommand = new AsyncRelayCommand(RemoveAssignmentAsync, () => SelectedProject is not null);
         PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => CanPrintQuote);
         CancelProjectCommand = new AsyncRelayCommand(CancelSelectedAsync, () => CanCancelSelected);
+
+        // El mismo bloque que Presupuestos: la seña se toma al cotizar, pero el saldo se
+        // cobra con el trabajo en curso, y ahí el carpintero está mirando esta pantalla.
+        PaymentsSection = new PaymentsSectionViewModel(Load);
     }
 
     public ObservableCollection<ProjectListItem> Projects { get; }
@@ -275,6 +279,9 @@ public class ProjectsViewModel : ViewModelBase
     public ICommand PrintQuoteCommand { get; }
     public ICommand CancelProjectCommand { get; }
 
+    /// <summary>Señas y pagos. El mismo bloque que usa Presupuestos.</summary>
+    public PaymentsSectionViewModel PaymentsSection { get; }
+
     /// <summary>Presupuesto que originó el proyecto. Solo lectura: acá ya no se edita.</summary>
     public QuoteDetail? Quote
     {
@@ -366,10 +373,12 @@ public class ProjectsViewModel : ViewModelBase
         if (SelectedProject is null)
         {
             Quote = null;
+            PaymentsSection.Load(null);
             return;
         }
 
         Quote = AppHost.QuoteService.GetDetail(SelectedProject.Id);
+        PaymentsSection.Load(Quote);
 
         if (Quote?.Breakdown is not null)
         {

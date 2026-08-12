@@ -128,7 +128,17 @@ public partial class QuotesViewModel : ViewModelBase
         // puede sacar a medio hacer, es de uso interno y sirve para revisar los materiales.
         PrintClientCommand = new RelayCommand(_ => PrintClient(), _ => CanPrintForClient);
         PrintCostSheetCommand = new RelayCommand(_ => PrintCostSheet(), _ => Detail is not null);
+
+        _selectedVat = VatOptions[0];
+        _selectedDiscountMode = DiscountModeOptions[0];
+
+        // Cobrar cambia el saldo y el renglón de la lista, así que la sección avisa y
+        // acá se recarga todo.
+        PaymentsSection = new PaymentsSectionViewModel(ReloadListAndDetail);
     }
+
+    /// <summary>Señas y pagos. El mismo bloque que usa Proyectos.</summary>
+    public PaymentsSectionViewModel PaymentsSection { get; }
 
     public ObservableCollection<QuoteListItem> Quotes { get; }
     public ObservableCollection<QuoteLineItem> Lines { get; }

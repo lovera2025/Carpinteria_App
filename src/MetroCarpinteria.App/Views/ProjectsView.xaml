@@ -7,6 +7,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ctl="clr-namespace:MetroCarpinteria.App.Controls"
+             xmlns:quotes="clr-namespace:MetroCarpinteria.App.Views.Quotes"
              d:DesignHeight="700"
              d:DesignWidth="1100">
     <Grid x:Name="PageRoot" Background="{DynamicResource ContentBackgroundBrush}" Opacity="0">
@@ -156,6 +157,10 @@
                                         Command="{Binding PrintQuoteCommand}" />
                             </StackPanel>
                         </Border>
+
+                        <!-- El trabajo en curso también cobra: es el mismo bloque de
+                             Presupuestos, con su propio ViewModel. -->
+                        <quotes:QuotePaymentsPanel DataContext="{Binding PaymentsSection}" />
 
                         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
                             <StackPanel>

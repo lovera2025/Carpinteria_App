@@ -104,6 +104,13 @@ internal static class ScreenshotRunner
             Path.Combine(outputDirectory, "presupuestos-precio-ajustado.png"),
             scrollToEnd: true);
 
+        // El bloque de condiciones comerciales queda en el medio del scroll, así que se
+        // dibuja el panel solo: es la única forma de revisarlo entero.
+        CapturePanel(
+            new MetroCarpinteria.App.Views.Quotes.QuoteCalculatorPanel(),
+            Path.Combine(outputDirectory, "presupuestos-condiciones-comerciales.png"),
+            NavigationSection.Quotes);
+
         // Y una en letra grande, que es donde se nota si algo recorta.
         theme.Apply(AppTheme.Light, FontScale.Large, persist: false);
         var bigWindow = new MetroCarpinteria.App.MainWindow();
@@ -225,6 +232,42 @@ internal static class ScreenshotRunner
         {
             window.Close();
         }
+    }
+
+    /// <summary>
+    /// Dibuja un panel suelto con el ViewModel de su sección. Sirve para los bloques que
+    /// quedan a mitad del scroll y no entran completos en la captura de la pantalla.
+    /// </summary>
+    private static void CapturePanel(FrameworkElement panel, string path, NavigationSection section)
+    {
+        var window = new MetroCarpinteria.App.MainWindow();
+        var main = (MainViewModel)window.DataContext!;
+        main.NavigateCommand.Execute(section);
+
+        panel.DataContext = main.CurrentViewModel;
+        panel.Width = 560;
+        panel.Measure(new Size(560, double.PositiveInfinity));
+        panel.Arrange(new Rect(0, 0, 560, panel.DesiredSize.Height));
+        panel.UpdateLayout();
+
+        RevealHiddenElements(panel);
+        panel.UpdateLayout();
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+        var height = (int)Math.Ceiling(panel.ActualHeight);
+        if (height <= 0)
+        {
+            return;
+        }
+
+        var bitmap = new RenderTargetBitmap(560, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(panel);
+
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+
+        using var stream = File.Create(path);
+        encoder.Save(stream);
     }
 
     private static void ScrollPanelsToEnd(DependencyObject root)

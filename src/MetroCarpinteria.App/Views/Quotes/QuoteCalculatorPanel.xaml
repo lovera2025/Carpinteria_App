@@ -165,10 +165,88 @@
                                 HorizontalAlignment="Left" Padding="12,6" FontSize="12" Margin="0,10,0,0"
                                 Command="{Binding RestoreCalculatedPriceCommand}"
                                 Visibility="{Binding ShowManualAdjustNotice, Converter={StaticResource BoolToVisibilityConverter}}"
-                                ToolTip="{Binding FinalPriceDisplay, StringFormat=Vuelve a {0}}" />
+                                ToolTip="{Binding Detail.Commercial.TotalDisplay, StringFormat=Vuelve a {0}}" />
                     </StackPanel>
                 </Border>
             </StackPanel>
+        </Border>
+
+        <!-- Condiciones comerciales: plegado por default porque la mayoría de los
+             presupuestos del taller no llevan IVA discriminado. El encabezado dice qué se
+             pactó, así no hace falta abrirlo para saberlo. -->
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding CanEditCommercialTerms, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Expander Header="{Binding CommercialSummary}" IsExpanded="{Binding IsCommercialOpen}"
+                      Foreground="{DynamicResource PrimaryBrownBrush}">
+                <StackPanel Margin="0,12,0,0">
+                    <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,14"
+                               Text="Se aplican sobre el precio calculado y no cambian el desglose. El descuento se resta primero y el IVA se calcula sobre lo que queda." />
+
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="IVA" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding VatOptions}" SelectedItem="{Binding SelectedVat}"
+                                      DisplayMemberPath="Label" Padding="8,8" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2"
+                                    Visibility="{Binding IsCustomVat, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="Alícuota (%)" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                            <TextBox Text="{Binding CustomVatPercent, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Descuento" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding DiscountModeOptions}"
+                                      SelectedItem="{Binding SelectedDiscountMode}"
+                                      DisplayMemberPath="Label" Padding="8,8" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2"
+                                    Visibility="{Binding HasDiscountMode, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="{Binding DiscountValueLabel}" Style="{StaticResource SubtitleStyle}"
+                                       Margin="0,0,0,4" />
+                            <TextBox Text="{Binding DiscountValue, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- El pie tal como va a salir impreso. -->
+                    <Border Background="{DynamicResource BrandAccentSubtleBrush}" CornerRadius="8"
+                            Padding="14,12" Margin="0,4,0,0"
+                            Visibility="{Binding HasCommercialTerms, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel>
+                            <ItemsControl ItemsSource="{Binding CommercialLines}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type models:BudgetBreakdownLine}">
+                                        <Grid Margin="0,3">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Label}" FontSize="13"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                <TextBlock Text="{Binding Detail}" FontSize="11"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           Visibility="{Binding Detail, Converter={StaticResource StringToVisibilityConverter}}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding AmountDisplay}" HorizontalAlignment="Right"
+                                                       VerticalAlignment="Center" FontWeight="SemiBold" FontSize="13"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Expander>
         </Border>
     </StackPanel>
 </UserControl>

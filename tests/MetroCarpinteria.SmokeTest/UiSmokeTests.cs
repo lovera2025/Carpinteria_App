@@ -326,6 +326,47 @@ internal static class UiSmokeTests
             _ = viewModel.CurrentDate;
         });
 
+        run("UI: con IVA pactado, todos los carteles muestran el mismo total", () =>
+        {
+            // El presupuesto sembrado lleva 10% de descuento y 21% de IVA. Tener el precio
+            // calculado en un cartel y el total en otro es la forma más fácil de que
+            // alguien lea el número equivocado en voz alta con el cliente enfrente.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            var total = viewModel.Detail!.Commercial!.TotalDisplay;
+
+            Assert.True(
+                viewModel.Detail.Commercial.Total != viewModel.Breakdown!.FinalPrice,
+                "la prueba necesita condiciones pactadas para tener sentido.");
+
+            Assert.Equal(viewModel.FinalPriceOrPlaceholder, total, "barra fija de precio final");
+            Assert.Equal(viewModel.PriceStepSummary, total, "resumen del paso de precio");
+            Assert.Equal(viewModel.Detail.BudgetDisplay, total, "precio guardado");
+            Assert.False(viewModel.ShowManualAdjustNotice, "aplicar condiciones no es un ajuste a mano.");
+        });
+
+        run("UI: «Volver al calculado» no tira a la basura el IVA pactado", () =>
+        {
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            var withTerms = viewModel.Detail!.Commercial!.Total;
+
+            // Se redondea a mano para cerrar la venta…
+            viewModel.AdjustedPrice = "190000";
+            viewModel.ApplyAdjustedPriceCommand.Execute(null);
+            Assert.True(viewModel.ShowManualAdjustNotice, "tendría que quedar marcado como ajustado.");
+
+            // …y al volver atrás se vuelve al total CON condiciones, no al precio pelado.
+            viewModel.RestoreCalculatedPriceCommand.Execute(null);
+
+            Assert.Equal(viewModel.Detail!.Budget ?? 0m, withTerms, "precio tras volver al calculado");
+            Assert.False(viewModel.ShowManualAdjustNotice, "ya no habría que avisar de un ajuste.");
+        });
+
         run("UI: buscar en la lista no pisa lo tipeado en la calculadora", () =>
         {
             // El ciclo era: buscar → recargar la lista → la grilla reemite la selección →
@@ -565,15 +606,7 @@ internal static class UiSmokeTests
         run("PDF: el documento del cliente NO muestra la ganancia", () =>
         {
             var text = ToText(service.BuildClientQuote(quote, includeMaterialDetail: true));
-
-            foreach (var forbidden in new[] { "Ganancia", "Desperdicio", "Desgaste", "Gastos adicionales", "30%", "16%" })
-            {
-                if (text.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException(
-                        $"El presupuesto del cliente no debía contener «{forbidden}».");
-                }
-            }
+            AssertNoInternalNumbers(text);
 
             foreach (var expected in new[] { "PRESUPUESTO", "Cliente de prueba", "Mesa de prueba", "TOTAL" })
             {
@@ -581,6 +614,93 @@ internal static class UiSmokeTests
                 {
                     throw new InvalidOperationException($"Faltaba «{expected}» en el documento del cliente.");
                 }
+            }
+        });
+
+        run("PDF: con descuento e IVA, el cliente ve el pie comercial y ni una cifra interna", () =>
+        {
+            var commercial = BuildSampleQuote(new CommercialTerms
+            {
+                DiscountMode = DiscountMode.Percentage,
+                DiscountValue = 15m,
+                VatPercent = 21m
+            });
+
+            var text = ToText(service.BuildClientQuote(commercial, includeMaterialDetail: true));
+
+            foreach (var expected in new[] { "Subtotal", "Descuento", "Neto gravado", "IVA", "TOTAL" })
+            {
+                if (!text.Contains(expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Faltaba «{expected}» en el pie comercial.");
+                }
+            }
+
+            // Y el margen efectivo es justamente lo que no puede salir del taller.
+            AssertNoInternalNumbers(text);
+        });
+
+        run("PDF: sin condiciones pactadas no aparece un pie comercial vacío", () =>
+        {
+            // Un «Descuento $ 0,00» o un subtotal repetido solo agregan ruido al papel.
+            var text = ToText(service.BuildClientQuote(quote, includeMaterialDetail: false));
+
+            if (text.Contains("Neto gravado", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Descuento", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Sin nada pactado no debía imprimirse el bloque de condiciones comerciales.");
+            }
+        });
+
+        run("PDF: con una seña, el cliente ve cuánto le queda por pagar", () =>
+        {
+            var withDeposit = BuildSampleQuote(payments:
+            [
+                new ProjectPaymentItem
+                {
+                    Id = 1,
+                    Kind = PaymentKind.Deposit,
+                    Amount = 100000m,
+                    Method = PaymentMethod.Cash,
+                    CreatedAtLocal = DateTime.Today
+                }
+            ]);
+
+            var text = ToText(service.BuildClientQuote(withDeposit, includeMaterialDetail: false));
+
+            foreach (var expected in new[] { "Entregado a cuenta", "SALDO A PAGAR" })
+            {
+                if (!text.Contains(expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Faltaba «{expected}» en el documento con seña.");
+                }
+            }
+
+            AssertNoInternalNumbers(text);
+        });
+
+        run("PDF: la hoja de costos muestra el margen efectivo", () =>
+        {
+            // Un descuento del 15% sobre este presupuesto deja el margen en negativo, y eso
+            // hay que verlo antes de firmar.
+            var discounted = BuildSampleQuote(new CommercialTerms
+            {
+                DiscountMode = DiscountMode.Percentage,
+                DiscountValue = 15m
+            });
+
+            var text = ToText(service.BuildCostSheet(discounted));
+
+            if (!text.Contains("Margen efectivo", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("La hoja de costos debía traer el margen efectivo.");
+            }
+
+            if (!text.Contains("a pérdida", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Con la ganancia comida por el descuento, la hoja tenía que avisarlo.");
             }
         });
 
@@ -608,7 +728,32 @@ internal static class UiSmokeTests
         });
     }
 
-    private static QuoteDetail BuildSampleQuote()
+    /// <summary>
+    /// Lo que el papel del cliente no puede contener bajo ninguna circunstancia. La lista
+    /// crece con cada concepto interno que se agrega al cálculo: enseñarle el margen al
+    /// cliente es un problema comercial que no se arregla después.
+    /// </summary>
+    private static void AssertNoInternalNumbers(string text)
+    {
+        string[] forbidden =
+        [
+            "Ganancia", "Desperdicio", "Desgaste", "Gastos adicionales",
+            "Margen efectivo", "a pérdida", "30%", "16%"
+        ];
+
+        foreach (var word in forbidden)
+        {
+            if (text.Contains(word, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"El documento del cliente no debía contener «{word}».");
+            }
+        }
+    }
+
+    private static QuoteDetail BuildSampleQuote(
+        CommercialTerms? terms = null,
+        IReadOnlyList<ProjectPaymentItem>? payments = null)
     {
         var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
         {
@@ -618,6 +763,9 @@ internal static class UiSmokeTests
             Rates = BudgetRates.Defaults()
         });
 
+        terms ??= CommercialTerms.None();
+        var commercial = CommercialTermsService.Apply(breakdown.FinalPrice, terms);
+
         return new QuoteDetail
         {
             Id = 42,
@@ -625,7 +773,10 @@ internal static class UiSmokeTests
             ClientName = "Cliente de prueba",
             Description = "Roble macizo",
             Status = ProjectStatus.Quote,
-            Budget = breakdown.FinalPrice,
+            Budget = commercial.Total,
+            Terms = terms,
+            Commercial = commercial,
+            Payments = payments ?? [],
             QuotedAtLocal = DateTime.Today,
             ValidUntilLocal = DateTime.Today.AddDays(15),
             QuotedMaterialsCost = 100000m,

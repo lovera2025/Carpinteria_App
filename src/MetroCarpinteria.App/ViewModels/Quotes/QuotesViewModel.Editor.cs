@@ -25,6 +25,8 @@ public partial class QuotesViewModel
                 OnPropertyChanged(nameof(CanPrintForClient));
                 OnPropertyChanged(nameof(CanAdjustPrice));
                 OnPropertyChanged(nameof(FinalPriceOrPlaceholder));
+                OnPropertyChanged(nameof(CanEditCommercialTerms));
+                PaymentsSection.Load(value);
                 OnPropertyChanged(nameof(DetailStatusLabel));
                 OnPropertyChanged(nameof(MaterialsTotalDisplay));
                 OnPropertyChanged(nameof(ShowPendingStockNotice));
@@ -142,7 +144,10 @@ public partial class QuotesViewModel
                 return string.Empty;
             }
 
-            return HasMissingData ? MissingDataMessage : FinalPriceDisplay;
+            // Lo que paga el cliente, no el precio pelado: con IVA pactado, mostrar el
+            // calculado acá y el total en la barra fija son dos números distintos para
+            // la misma cosa.
+            return HasMissingData ? MissingDataMessage : FinalPriceOrPlaceholder;
         }
     }
 
@@ -218,6 +223,9 @@ public partial class QuotesViewModel
 
             // Campo editable: va con NumberInput.Format, no con AppCulture.
             AdjustedPrice = NumberInput.Format(detail.Budget);
+
+            LoadCommercialTerms(detail);
+            PaymentsSection.Load(detail);
         }
         finally
         {

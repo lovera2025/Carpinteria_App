@@ -431,15 +431,16 @@ public partial class QuotesViewModel
 
     private void RestoreCalculatedPrice()
     {
-        if (Detail is not { IsEditable: true } || Breakdown is null)
+        if (Detail is not { IsEditable: true, Commercial: not null } detail)
         {
             return;
         }
 
-        // El display se toma antes de recargar: al volver de LoadQuotes, Breakdown
-        // apunta a otra instancia.
-        var calculated = Breakdown.FinalPrice;
-        var display = Breakdown.FinalPriceDisplay;
+        // Se vuelve al total <b>con las condiciones aplicadas</b>, no al precio pelado:
+        // restaurar al calculado no puede significar tirar a la basura el IVA pactado.
+        // El display se toma antes de recargar, que reemplaza la instancia.
+        var calculated = detail.Commercial.Total;
+        var display = detail.Commercial.TotalDisplay;
 
         try
         {
