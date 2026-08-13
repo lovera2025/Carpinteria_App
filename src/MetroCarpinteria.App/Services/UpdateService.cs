@@ -3,14 +3,39 @@ using Velopack.Sources;
 
 namespace MetroCarpinteria.App.Services;
 
+/// <summary>Cómo terminó una consulta de actualizaciones.</summary>
+public enum UpdateCheckOutcome
+{
+    /// <summary>No es una copia instalada: portable, o corriendo desde el proyecto.</summary>
+    NotSupported,
+
+    /// <summary>Se consultó y no hay nada nuevo.</summary>
+    UpToDate,
+
+    /// <summary>Hay una versión nueva.</summary>
+    Available,
+
+    /// <summary>No se pudo consultar. <b>No</b> significa que estés al día.</summary>
+    Failed
+}
+
+/// <param name="Update">La versión encontrada. Solo viene con <see cref="UpdateCheckOutcome.Available"/>.</param>
+public sealed record UpdateCheck(UpdateCheckOutcome Outcome, UpdateInfo? Update = null);
+
 /// <summary>
 /// Busca versiones nuevas en los releases de GitHub y las deja listas para aplicarse
 /// al cerrar la app.
 ///
 /// Regla de oro de este servicio: <b>ningún problema de red puede molestar al usuario</b>.
 /// La app es de taller y funciona entera sin internet; si no hay conexión, el chequeo
-/// falla en silencio y todo sigue igual.
+/// falla sin interrumpir nada y todo sigue igual.
 /// </summary>
+/// <remarks>
+/// «Sin molestar» no es lo mismo que «sin dejar rastro». Todo lo que pasa acá queda en el
+/// log, y un chequeo que falla se distingue de uno que no encontró nada: mientras los dos
+/// se reportaban igual, una máquina que no lograba consultar mostraba «ya tenés la última
+/// versión» y se quedaba sin actualizar sin que nadie pudiera darse cuenta.
+/// </remarks>
 public sealed class UpdateService
 {
     private const string RepositoryUrl = "https://github.com/lovera2025/Carpinteria_App";
@@ -28,12 +53,26 @@ public sealed class UpdateService
             // embebidas en el ejecutable que se reparte.
             _manager = new UpdateManager(new GithubSource(RepositoryUrl, null, false));
         }
-        catch
+        catch (Exception ex)
         {
             // Si Velopack no puede resolver dónde está instalada la app, el updater
             // simplemente no está disponible. No es motivo para impedir que abra.
+            LogService.Warning("UpdateService", $"No se pudo iniciar el actualizador: {ex.Message}");
             _manager = null;
         }
+    }
+
+    /// <summary>
+    /// Deja en el log en qué versión está la copia y si puede actualizarse. Sin esto no hay
+    /// forma de saber, mirando el log del taller, si arrancó la copia instalada o una suelta.
+    /// </summary>
+    public void LogInstallState()
+    {
+        LogService.Info(
+            "UpdateService",
+            IsSupported
+                ? $"Copia instalada v{CurrentVersion}; el actualizador está disponible."
+                : $"Copia NO instalada v{CurrentVersion} (portable o desde el proyecto): no se actualiza sola.");
     }
 
     /// <summary>
@@ -86,26 +125,43 @@ public sealed class UpdateService
     public bool HasPendingUpdate => PendingUpdate is not null;
 
     /// <summary>
-    /// Pregunta a GitHub si hay una versión nueva. Devuelve null si no hay ninguna,
-    /// si no hay internet o si la app no está instalada. Nunca lanza.
+    /// Pregunta a GitHub si hay una versión nueva. Nunca lanza: informa qué pasó.
     /// </summary>
-    public async Task<UpdateInfo?> CheckAsync()
+    /// <remarks>
+    /// Devolver un resultado y no un <c>UpdateInfo?</c> es el punto: «no encontré nada» y
+    /// «no pude preguntar» son cosas distintas y antes se confundían en el mismo null.
+    /// </remarks>
+    public async Task<UpdateCheck> CheckAsync()
     {
         if (!IsSupported || _manager is null)
         {
-            return null;
+            return new UpdateCheck(UpdateCheckOutcome.NotSupported);
         }
 
         try
         {
             var update = await _manager.CheckForUpdatesAsync().ConfigureAwait(false);
             RecordCheck();
-            return update;
+
+            if (update is null)
+            {
+                LogService.Info("UpdateService", $"Sin novedades: v{CurrentVersion} es la última.");
+                return new UpdateCheck(UpdateCheckOutcome.UpToDate);
+            }
+
+            LogService.Info(
+                "UpdateService",
+                $"Hay versión nueva: v{update.TargetFullRelease.Version} (tenés la v{CurrentVersion}).");
+
+            return new UpdateCheck(UpdateCheckOutcome.Available, update);
         }
-        catch
+        catch (Exception ex)
         {
-            // Sin internet, GitHub caído o un release a medio publicar: se ignora.
-            return null;
+            // Sin internet, GitHub caído o un release a medio publicar. No se le avisa al
+            // usuario —la app de taller trabaja sin conexión todo el tiempo— pero queda
+            // escrito con el error real: es lo único que permite diagnosticarlo después.
+            LogService.Warning("UpdateService", $"No se pudo consultar si hay actualizaciones: {ex.Message}");
+            return new UpdateCheck(UpdateCheckOutcome.Failed);
         }
     }
 
@@ -128,10 +184,16 @@ public sealed class UpdateService
                 .ConfigureAwait(false);
 
             PendingUpdate = update;
+
+            LogService.Info(
+                "UpdateService",
+                $"v{update.TargetFullRelease.Version} descargada; se instala al cerrar la app.");
+
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            LogService.Warning("UpdateService", $"No se pudo descargar la actualización: {ex.Message}");
             PendingUpdate = null;
             return false;
         }
@@ -151,28 +213,34 @@ public sealed class UpdateService
         try
         {
             _manager.WaitExitThenApplyUpdates(PendingUpdate, silent: true, restart: false);
+            LogService.Info("UpdateService", $"Instalando v{PendingUpdate.TargetFullRelease.Version} al salir.");
         }
-        catch
+        catch (Exception ex)
         {
             // Si falla, la actualización se vuelve a intentar en el próximo arranque.
+            LogService.Warning("UpdateService", $"No se pudo dejar la actualización aplicándose: {ex.Message}");
         }
     }
 
     /// <summary>Chequeo automático de arranque, según lo configurado.</summary>
+    /// <returns>La versión ya descargada y lista, o null si no hay nada que avisar.</returns>
     public async Task<UpdateInfo?> CheckAndDownloadOnStartupAsync()
     {
+        LogInstallState();
+
         if (!_settingsService.Current.CheckUpdatesOnStartup)
         {
+            LogService.Info("UpdateService", "El chequeo al arrancar está desactivado en Configuración.");
             return null;
         }
 
-        var update = await CheckAsync().ConfigureAwait(false);
-        if (update is null)
+        var check = await CheckAsync().ConfigureAwait(false);
+        if (check is not { Outcome: UpdateCheckOutcome.Available, Update: not null })
         {
             return null;
         }
 
-        return await DownloadAsync(update).ConfigureAwait(false) ? update : null;
+        return await DownloadAsync(check.Update).ConfigureAwait(false) ? check.Update : null;
     }
 
     private void RecordCheck()

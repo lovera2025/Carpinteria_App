@@ -67,6 +67,7 @@ internal static class Program
 
         RunMigrationTests();
         MigrationTests.Run(Run);
+        RunUpdateCheckTests();
         RunNumberFormatTests();
         NumberInputTests.Run(Run);
         StartupTests.Run(Run);
@@ -1081,6 +1082,56 @@ internal static class Program
     /// Las cantidades se mostraban con "N2", que rellena decimales: 5 tornillos salían
     /// como "5,00 Unidad". Acá se fija que los decimales aparezcan solo si existen.
     /// </summary>
+    // --- Actualizaciones ------------------------------------------------------
+
+    /// <summary>
+    /// Que «no pude preguntar» nunca se confunda con «estás al día».
+    /// </summary>
+    /// <remarks>
+    /// Se publicó la 1.4.0 y la máquina del taller, con la 1.3.0 instalada, no se enteró.
+    /// El chequeo devolvía el mismo null cuando fallaba que cuando no había novedades, así
+    /// que la pantalla decía «ya tenés la última versión» y nadie podía notar la diferencia.
+    /// Los tests corren sin instalar, así que acá solo se puede fijar el caso NotSupported;
+    /// lo que importa es que ninguno de los dos caiga en UpToDate por descarte.
+    /// </remarks>
+    private static void RunUpdateCheckTests()
+    {
+        Run("Actualizaciones: una copia sin instalar no dice que está al día", () =>
+        {
+            var service = new UpdateService(new SettingsService(new AppPaths(
+                Path.Combine(Path.GetTempPath(), $"MetroUpdate_{Guid.NewGuid():N}"))));
+
+            // Corriendo desde los tests nunca es una copia instalada.
+            if (service.IsSupported)
+            {
+                throw new InvalidOperationException(
+                    "Los tests no corren desde una instalación, así que esto tenía que ser falso.");
+            }
+
+            var check = service.CheckAsync().GetAwaiter().GetResult();
+
+            Assert.Equal(
+                check.Outcome,
+                UpdateCheckOutcome.NotSupported,
+                "una copia suelta tiene que decir que no aplica, no que está al día");
+
+            if (check.Update is not null)
+            {
+                throw new InvalidOperationException("Sin actualizador no puede venir una versión.");
+            }
+        });
+
+        Run("Actualizaciones: los cuatro resultados son distintos entre sí", () =>
+        {
+            // Si alguien colapsa dos de estos en el mismo valor, volvemos al problema
+            // original: un fallo indistinguible de estar actualizado.
+            var outcomes = Enum.GetValues<UpdateCheckOutcome>();
+
+            Assert.Equal(outcomes.Length, 4, "esperaba NotSupported, UpToDate, Available y Failed");
+            Assert.Equal(outcomes.Distinct().Count(), 4, "los resultados no pueden repetirse");
+        });
+    }
+
     private static void RunNumberFormatTests()
     {
         Run("Cantidad entera sin decimales de relleno", () =>

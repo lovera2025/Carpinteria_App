@@ -192,14 +192,23 @@ public class SettingsViewModel : ViewModelBase
 
         try
         {
-            var update = await AppHost.UpdateService.CheckAsync();
+            var check = await AppHost.UpdateService.CheckAsync();
             OnPropertyChanged(nameof(LastUpdateCheckDisplay));
 
-            if (update is null)
+            if (check is not { Outcome: UpdateCheckOutcome.Available, Update: { } update })
             {
-                UpdateStatus = AppHost.UpdateService.HasPendingUpdate
-                    ? UpdateStatus
-                    : "Ya tenés la última versión.";
+                // Un chequeo que falló no puede decir «estás al día»: así una máquina que
+                // no llega a GitHub se queda sin actualizar y nadie se entera.
+                UpdateStatus = check.Outcome switch
+                {
+                    UpdateCheckOutcome.Failed =>
+                        "No se pudo consultar si hay versiones nuevas. Revisá la conexión a internet.",
+                    UpdateCheckOutcome.NotSupported =>
+                        "Estás usando una copia portable: las actualizaciones automáticas no aplican.",
+                    _ when AppHost.UpdateService.HasPendingUpdate => UpdateStatus,
+                    _ => $"Ya tenés la última versión ({AppHost.UpdateService.CurrentVersion})."
+                };
+
                 return;
             }
 
