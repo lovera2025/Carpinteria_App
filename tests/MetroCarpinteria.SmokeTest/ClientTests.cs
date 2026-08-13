@@ -35,6 +35,26 @@ internal static class ClientTests
             Assert.Equal(again.Name, "Vecino de enfrente", "nombre conservado");
         });
 
+        run("Clientes: al cotizar, teléfono y email quedan en la ficha", () =>
+        {
+            var created = clients.SaveFromQuote(
+                "Familia Acosta", "3777-555666", "acosta@ejemplo.com");
+
+            Assert.Equal(created.Phone, "3777-555666", "teléfono guardado");
+            Assert.Equal(created.Email, "acosta@ejemplo.com", "email guardado");
+
+            // Un segundo presupuesto de la misma persona a menudo no vuelve a tipear
+            // el contacto: el vacío no puede borrar lo que ya estaba.
+            var again = clients.SaveFromQuote("familia acosta", null, "  ");
+            Assert.Equal(again.Id, created.Id, "la misma ficha");
+            Assert.Equal(again.Phone, "3777-555666", "teléfono conservado");
+            Assert.Equal(again.Email, "acosta@ejemplo.com", "email conservado");
+
+            var updated = clients.SaveFromQuote("Familia Acosta", "3777-111222", null);
+            Assert.Equal(updated.Phone, "3777-111222", "teléfono actualizado");
+            Assert.Equal(updated.Email, "acosta@ejemplo.com", "email intacto al no venir");
+        });
+
         run("Clientes: buscar encuentra sin acentos y sin importar mayúsculas", () =>
         {
             clients.Create("Estudio Ramírez");

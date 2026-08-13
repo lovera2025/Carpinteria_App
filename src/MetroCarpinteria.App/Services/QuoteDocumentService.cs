@@ -662,10 +662,10 @@ public sealed class QuoteDocumentService
     /// Qué cobra cada uno y qué le suma al precio final.
     /// </summary>
     /// <remarks>
-    /// La segunda columna es el punto de la tabla: un ayudante de $ 22.000 por día durante
-    /// tres días cobra $ 66.000, pero arrastra su parte de gastos y ganancia y le suma
-    /// $ 118.800 al presupuesto. Ese es el número que sirve para decidir a quién poner en un
-    /// trabajo, y como incluye la ganancia <b>solo puede salir en la hoja interna</b>.
+    /// La segunda columna es el punto de la tabla: el jefe pesa su jornal más gastos y
+    /// ganancia; un operario, solo lo que cobra. Un ayudante de $ 22.000 por día durante
+    /// tres días le suma $ 66.000 al presupuesto. Como el renglón del jefe incluye la
+    /// ganancia, la tabla <b>solo puede salir en la hoja interna</b>.
     /// </remarks>
     private static Block BuildLaborTable(BudgetBreakdown breakdown)
     {

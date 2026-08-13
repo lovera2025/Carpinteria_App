@@ -61,7 +61,7 @@
                           Foreground="{DynamicResource PrimaryBrownBrush}" Margin="0,0,0,16">
                     <StackPanel Margin="0,12,0,0">
                         <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
-                                   Text="Los porcentajes se aplican sobre materiales (desperdicio y desgaste) y sobre la mano de obra (gastos y ganancia)." />
+                                   Text="Los porcentajes se aplican sobre materiales (desperdicio y desgaste) y sobre el jornal del jefe (gastos y ganancia). Los operarios se suman al costo." />
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

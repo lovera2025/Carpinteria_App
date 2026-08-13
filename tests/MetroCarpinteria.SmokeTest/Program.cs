@@ -540,14 +540,21 @@ internal static class Program
 
         // --- Mano de obra con operarios ---------------------------------------
 
-        Run("Mano de obra: el jefe más dos operarios ($ 828.800)", () =>
+        Run("Mano de obra: el jefe más dos operarios ($ 676.000)", () =>
         {
             var breakdown = CalculateWithWorkers();
 
             Expect(breakdown.Labor, 391000m, "mano de obra: 200.000 + 125.000 + 66.000");
-            Expect(breakdown.Overhead, 195500m, "gastos 50% sobre la mano de obra completa");
-            Expect(breakdown.Profit, 117300m, "ganancia 30% sobre la mano de obra completa");
-            Expect(breakdown.FinalPrice, 828800m, "precio final");
+            Expect(breakdown.Overhead, 100000m, "gastos 50% sobre el jornal del jefe");
+            Expect(breakdown.Profit, 60000m, "ganancia 30% sobre el jornal del jefe");
+            Expect(breakdown.FinalPrice, 676000m, "precio final");
+
+            var overheadLine = breakdown.Lines.Single(l => l.Label == "Gastos adicionales");
+            if (overheadLine.Detail?.Contains("jornal del jefe", StringComparison.Ordinal) != true)
+            {
+                throw new InvalidOperationException(
+                    $"El detalle de gastos tenía que decir que es del jefe: «{overheadLine.Detail}».");
+            }
         });
 
         Run("Mano de obra: sin operarios el resultado no se mueve", () =>
@@ -582,8 +589,8 @@ internal static class Program
 
         Run("Mano de obra: lo que pesa cada persona suma exactamente el total cargado", () =>
         {
-            // Números feos a propósito: si el reparto se hiciera reaplicando los
-            // porcentajes en vez de repartir el total, acá diferiría en centavos.
+            // Números feos a propósito: el jefe se lleva gastos y ganancia redondeados;
+            // cada operario pesa exactamente su jornal. La columna tiene que cerrar igual.
             var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
             {
                 MaterialsCost = 33333.33m,
@@ -622,10 +629,10 @@ internal static class Program
             Expect(breakdown.LaborShares[0].Amount, 200000m, "jornal del jefe");
             Expect(breakdown.LaborShares[0].Loaded, 360000m, "lo que pesa el jefe");
 
-            // El punto de la columna: Diego cobra 66.000 pero cuesta 118.800.
+            // El operario se suma al costo: Diego cobra 66.000 y pesa 66.000.
             var diego = breakdown.LaborShares.Single(s => s.Description == "Diego Ruiz");
             Expect(diego.Amount, 66000m, "jornal de Diego");
-            Expect(diego.Loaded, 118800m, "lo que Diego le suma al precio");
+            Expect(diego.Loaded, 66000m, "lo que Diego le suma al precio");
         });
 
         Run("Mano de obra: validación (un operario con valores negativos)", () =>
@@ -1129,6 +1136,16 @@ internal static class Program
 
             Assert.Equal(outcomes.Length, 4, "esperaba NotSupported, UpToDate, Available y Failed");
             Assert.Equal(outcomes.Distinct().Count(), 4, "los resultados no pueden repetirse");
+        });
+
+        Run("Actualizaciones: el feed se busca en la URL estable de GitHub, no en la API", () =>
+        {
+            // GithubSource pega a api.github.com (60 pedidos/hora) y baja el json de
+            // cada release viejo: un solo 404 tumba el chequeo. Esta URL es un archivo.
+            Assert.Equal(
+                GitHubLatestUpdateSource.LatestDownloadUrl,
+                "https://github.com/lovera2025/Carpinteria_App/releases/latest/download/",
+                "si cambia esta URL, las copias instaladas dejan de encontrar versiones nuevas");
         });
     }
 

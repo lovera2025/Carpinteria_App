@@ -1,5 +1,6 @@
 using Velopack;
-using Velopack.Sources;
+using Velopack.Locators;
+using Velopack.Logging;
 
 namespace MetroCarpinteria.App.Services;
 
@@ -38,7 +39,7 @@ public sealed record UpdateCheck(UpdateCheckOutcome Outcome, UpdateInfo? Update 
 /// </remarks>
 public sealed class UpdateService
 {
-    private const string RepositoryUrl = "https://github.com/lovera2025/Carpinteria_App";
+    private const int CheckAttempts = 3;
 
     private readonly SettingsService _settingsService;
     private readonly UpdateManager? _manager;
@@ -49,9 +50,11 @@ public sealed class UpdateService
 
         try
         {
-            // El repositorio es público, así que no hace falta token: nada de credenciales
-            // embebidas en el ejecutable que se reparte.
-            _manager = new UpdateManager(new GithubSource(RepositoryUrl, null, false));
+            TryAttachVelopackLogger();
+
+            // El repositorio es público: la URL de /releases/latest/download/ no lleva
+            // token ni pega a la API. GithubSource queda de respaldo adentro de la fuente.
+            _manager = new UpdateManager(new GitHubLatestUpdateSource());
         }
         catch (Exception ex)
         {
@@ -138,31 +141,48 @@ public sealed class UpdateService
             return new UpdateCheck(UpdateCheckOutcome.NotSupported);
         }
 
-        try
-        {
-            var update = await _manager.CheckForUpdatesAsync().ConfigureAwait(false);
-            RecordCheck();
+        Exception? lastError = null;
 
-            if (update is null)
+        for (var attempt = 1; attempt <= CheckAttempts; attempt++)
+        {
+            try
             {
-                LogService.Info("UpdateService", $"Sin novedades: v{CurrentVersion} es la última.");
-                return new UpdateCheck(UpdateCheckOutcome.UpToDate);
+                var update = await _manager.CheckForUpdatesAsync().ConfigureAwait(false);
+                RecordCheck();
+
+                if (update is null)
+                {
+                    LogService.Info("UpdateService", $"Sin novedades: v{CurrentVersion} es la última.");
+                    return new UpdateCheck(UpdateCheckOutcome.UpToDate);
+                }
+
+                LogService.Info(
+                    "UpdateService",
+                    $"Hay versión nueva: v{update.TargetFullRelease.Version} (tenés la v{CurrentVersion}).");
+
+                return new UpdateCheck(UpdateCheckOutcome.Available, update);
             }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                LogService.Warning(
+                    "UpdateService",
+                    $"No se pudo consultar actualizaciones (intento {attempt}/{CheckAttempts}): {Describe(ex)}");
 
-            LogService.Info(
-                "UpdateService",
-                $"Hay versión nueva: v{update.TargetFullRelease.Version} (tenés la v{CurrentVersion}).");
+                if (attempt < CheckAttempts)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(400 * attempt)).ConfigureAwait(false);
+                }
+            }
+        }
 
-            return new UpdateCheck(UpdateCheckOutcome.Available, update);
-        }
-        catch (Exception ex)
-        {
-            // Sin internet, GitHub caído o un release a medio publicar. No se le avisa al
-            // usuario —la app de taller trabaja sin conexión todo el tiempo— pero queda
-            // escrito con el error real: es lo único que permite diagnosticarlo después.
-            LogService.Warning("UpdateService", $"No se pudo consultar si hay actualizaciones: {ex.Message}");
-            return new UpdateCheck(UpdateCheckOutcome.Failed);
-        }
+        // Sin internet, GitHub caído o un release a medio publicar. No se le avisa al
+        // usuario en el arranque —la app de taller trabaja sin conexión todo el tiempo—
+        // pero el resultado es Failed, no UpToDate: si no, la pantalla miente.
+        LogService.Warning(
+            "UpdateService",
+            $"No se pudo consultar si hay actualizaciones: {Describe(lastError)}");
+        return new UpdateCheck(UpdateCheckOutcome.Failed);
     }
 
     /// <summary>
@@ -252,6 +272,62 @@ public sealed class UpdateService
         catch
         {
             // Guardar la fecha del último chequeo no es crítico.
+        }
+    }
+
+    private static void TryAttachVelopackLogger()
+    {
+        try
+        {
+            VelopackLocator.Current.AddLogger(new AppVelopackLogger());
+        }
+        catch
+        {
+            // Sin locator (dotnet run / tests) no hay nada que enganchar.
+        }
+    }
+
+    private static string Describe(Exception? ex)
+    {
+        if (ex is null)
+        {
+            return "error desconocido";
+        }
+
+        return ex.InnerException is null
+            ? ex.Message
+            : $"{ex.Message} ({ex.InnerException.Message})";
+    }
+
+    /// <summary>Pasa el diagnóstico de Velopack al log de la app, para poder leerlo en el taller.</summary>
+    private sealed class AppVelopackLogger : IVelopackLogger
+    {
+        public void Log(VelopackLogLevel logLevel, string? message, Exception? exception)
+        {
+            if (logLevel < VelopackLogLevel.Information)
+            {
+                return;
+            }
+
+            var text = string.IsNullOrWhiteSpace(message) ? exception?.Message : message;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            if (logLevel >= VelopackLogLevel.Error)
+            {
+                LogService.Error("Velopack", text, exception);
+                return;
+            }
+
+            if (logLevel == VelopackLogLevel.Warning)
+            {
+                LogService.Warning("Velopack", text);
+                return;
+            }
+
+            LogService.Info("Velopack", text);
         }
     }
 }

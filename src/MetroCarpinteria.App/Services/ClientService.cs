@@ -169,6 +169,44 @@ public sealed class ClientService
         return Create(name);
     }
 
+    /// <summary>
+    /// Crea o reusa la ficha al cotizar, y le deja teléfono y email si vinieron.
+    /// </summary>
+    /// <remarks>
+    /// Un campo vacío no borra lo que ya tenía: al armar un segundo presupuesto de la
+    /// misma persona a menudo no se vuelven a tipear. CUIT, dirección y notas no se
+    /// tocan desde acá.
+    /// </remarks>
+    public Client SaveFromQuote(string name, string? phone, string? email)
+    {
+        var client = GetOrCreate(name);
+        var trimmedPhone = Trim(phone);
+        var trimmedEmail = Trim(email);
+
+        if (trimmedPhone is null && trimmedEmail is null)
+        {
+            return client;
+        }
+
+        using var context = _databaseService.CreateContext();
+        var tracked = context.Clients.FirstOrDefault(c => c.Id == client.Id)
+            ?? throw new InvalidOperationException("Cliente no encontrado.");
+
+        if (trimmedPhone is not null)
+        {
+            tracked.Phone = trimmedPhone;
+        }
+
+        if (trimmedEmail is not null)
+        {
+            tracked.Email = trimmedEmail;
+        }
+
+        tracked.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+        return tracked;
+    }
+
     public void Update(
         int clientId,
         string name,

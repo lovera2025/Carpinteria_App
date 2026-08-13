@@ -19,10 +19,10 @@ public sealed class BudgetRates
     /// <summary>Desgaste de herramientas, como % del costo de materiales.</summary>
     public decimal ToolWearPercent { get; set; } = DefaultToolWear;
 
-    /// <summary>Gastos adicionales, como % de la mano de obra.</summary>
+    /// <summary>Gastos adicionales, como % del jornal del jefe.</summary>
     public decimal OverheadPercent { get; set; } = DefaultOverhead;
 
-    /// <summary>Ganancia, como % de la mano de obra.</summary>
+    /// <summary>Ganancia, como % del jornal del jefe.</summary>
     public decimal ProfitPercent { get; set; } = DefaultProfit;
 
     public static BudgetRates Defaults() => new();
@@ -67,9 +67,9 @@ public sealed class BudgetInput
 /// Lo que aporta una persona a la mano de obra, y lo que termina pesando en el precio.
 /// </summary>
 /// <remarks>
-/// La diferencia entre <see cref="Amount"/> y <see cref="Loaded"/> es el dato que sirve para
-/// decidir a quién poner en un trabajo: un ayudante de $ 22.000 por día durante tres días
-/// cobra $ 66.000, pero arrastra su parte de gastos y ganancia y le suma $ 118.800 al precio.
+/// En el jefe, <see cref="Loaded"/> incluye gastos y ganancia. En un operario es igual a
+/// <see cref="Amount"/>: se suma al costo, sin ese markup. Un ayudante de $ 22.000 por día
+/// durante tres días cobra $ 66.000 y le suma exactamente eso al precio.
 /// </remarks>
 public sealed class LaborShare
 {
@@ -80,7 +80,10 @@ public sealed class LaborShare
     /// <summary>El jornal pelado: días × valor del día.</summary>
     public decimal Amount { get; init; }
 
-    /// <summary>El jornal más la parte proporcional de gastos adicionales y ganancia.</summary>
+    /// <summary>
+    /// Lo que le suma al precio: en el jefe, el jornal más gastos y ganancia; en un
+    /// operario, el jornal pelado.
+    /// </summary>
     public decimal Loaded { get; init; }
 
     /// <summary>Es el jefe y no un operario. Solo hay una por cálculo.</summary>
@@ -128,8 +131,8 @@ public sealed class BudgetBreakdown
     /// que cada uno pesa en el precio final. Siempre trae al menos la línea del jefe.
     /// </summary>
     /// <remarks>
-    /// <b>Solo para la hoja de costos.</b> <see cref="LaborShare.Loaded"/> incluye la parte
-    /// proporcional de la ganancia, así que no puede salir en el papel del cliente.
+    /// <b>Solo para la hoja de costos.</b> En el jefe, <see cref="LaborShare.Loaded"/>
+    /// incluye gastos y ganancia, así que no puede salir en el papel del cliente.
     /// </remarks>
     public IReadOnlyList<LaborShare> LaborShares { get; init; } = [];
 
@@ -191,13 +194,13 @@ public sealed class BudgetBreakdown
         {
             Label = "Gastos adicionales",
             Amount = Overhead,
-            Detail = AppCulture.Percent(Rates.OverheadPercent) + " de mano de obra"
+            Detail = AppCulture.Percent(Rates.OverheadPercent) + " del jornal del jefe"
         },
         new()
         {
             Label = "Ganancia",
             Amount = Profit,
-            Detail = AppCulture.Percent(Rates.ProfitPercent) + " de mano de obra"
+            Detail = AppCulture.Percent(Rates.ProfitPercent) + " del jornal del jefe"
         },
         new() { Label = "PRECIO FINAL", Amount = FinalPrice, IsTotal = true }
     ];

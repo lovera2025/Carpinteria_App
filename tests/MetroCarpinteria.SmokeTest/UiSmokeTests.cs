@@ -373,6 +373,7 @@ internal static class UiSmokeTests
 
             viewModel.PickClientCommand.Execute(suggestion);
             Assert.Equal(viewModel.FormClientName, "Mueblería Los Álamos", "nombre completado");
+            Assert.Equal(viewModel.FormClientPhone, "3777-333444", "teléfono prellenado");
             Assert.False(viewModel.HasClientSuggestions, "elegida una, no quedan sugerencias.");
         });
 
@@ -384,6 +385,8 @@ internal static class UiSmokeTests
             viewModel.NewQuoteCommand.Execute(null);
             viewModel.FormTitle = "Alacena";
             viewModel.FormClientName = "Doña Rosa";
+            viewModel.FormClientPhone = "3777-444555";
+            viewModel.FormClientEmail = "rosa@ejemplo.com";
             viewModel.SaveQuoteCommand.Execute(null);
 
             var client = AppHost.ClientService.GetClients(search: "Doña Rosa").SingleOrDefault();
@@ -392,6 +395,28 @@ internal static class UiSmokeTests
             // Y el presupuesto quedó enganchado a ella.
             Assert.Equal(viewModel.Detail!.ClientId ?? 0, client!.Id, "ficha vinculada al presupuesto");
             Assert.Equal(viewModel.Detail.ClientName, "Doña Rosa", "nombre impreso");
+            Assert.Equal(client.Phone, "3777-444555", "teléfono guardado en la ficha");
+            Assert.Equal(client.Email, "rosa@ejemplo.com", "email guardado en la ficha");
+
+            viewModel.EditQuoteCommand.Execute(null);
+            Assert.Equal(viewModel.FormClientPhone, "3777-444555", "teléfono al reeditar");
+            Assert.Equal(viewModel.FormClientEmail, "rosa@ejemplo.com", "email al reeditar");
+        });
+
+        run("UI: un segundo presupuesto sin teléfono no le borra el contacto a la ficha", () =>
+        {
+            AppHost.ClientService.Create("Don Pedro", "3777-777888", "pedro@ejemplo.com");
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.NewQuoteCommand.Execute(null);
+            viewModel.FormTitle = "Estante";
+            viewModel.FormClientName = "Don Pedro";
+            viewModel.SaveQuoteCommand.Execute(null);
+
+            var client = AppHost.ClientService.GetClients(search: "Don Pedro").Single();
+            Assert.Equal(client.Phone, "3777-777888", "teléfono conservado");
+            Assert.Equal(client.Email, "pedro@ejemplo.com", "email conservado");
         });
 
         run("UI: StaffView + ViewModel", () =>

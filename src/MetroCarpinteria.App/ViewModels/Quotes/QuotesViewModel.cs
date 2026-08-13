@@ -38,6 +38,8 @@ public partial class QuotesViewModel : ViewModelBase
     private bool _isCreating;
     private string _formTitle = string.Empty;
     private string _formClientName = string.Empty;
+    private string _formClientPhone = string.Empty;
+    private string _formClientEmail = string.Empty;
     private string _formDescription = string.Empty;
     private DateTime? _formValidUntil;
 

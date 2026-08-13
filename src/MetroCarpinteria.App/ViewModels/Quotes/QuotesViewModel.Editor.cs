@@ -142,7 +142,21 @@ public partial class QuotesViewModel
         OnPropertyChanged(nameof(HasClientSuggestions));
     }
 
-    /// <summary>Completa el nombre con el de una ficha existente.</summary>
+    /// <summary>Teléfono del cliente. Queda en la ficha; no sale en el PDF.</summary>
+    public string FormClientPhone
+    {
+        get => _formClientPhone;
+        set => SetProperty(ref _formClientPhone, value);
+    }
+
+    /// <summary>Email del cliente. Queda en la ficha; no sale en el PDF.</summary>
+    public string FormClientEmail
+    {
+        get => _formClientEmail;
+        set => SetProperty(ref _formClientEmail, value);
+    }
+
+    /// <summary>Completa el nombre y el contacto con los de una ficha existente.</summary>
     private void PickClient(object? parameter)
     {
         if (parameter is not ClientListItem client)
@@ -151,6 +165,8 @@ public partial class QuotesViewModel
         }
 
         FormClientName = client.Name;
+        FormClientPhone = client.Phone ?? string.Empty;
+        FormClientEmail = client.Email ?? string.Empty;
         ClientSuggestions.Clear();
         OnPropertyChanged(nameof(HasClientSuggestions));
     }
@@ -313,6 +329,8 @@ public partial class QuotesViewModel
     {
         FormTitle = string.Empty;
         FormClientName = string.Empty;
+        FormClientPhone = string.Empty;
+        FormClientEmail = string.Empty;
         FormDescription = string.Empty;
         FormValidUntil = DateTime.Today.AddDays(Math.Max(0, AppHost.Settings.DefaultQuoteValidityDays));
         IsCreating = true;
@@ -329,11 +347,20 @@ public partial class QuotesViewModel
 
         FormTitle = Detail.Title;
         FormClientName = Detail.ClientName;
+        FormClientPhone = string.Empty;
+        FormClientEmail = string.Empty;
         FormDescription = Detail.Description ?? string.Empty;
         FormValidUntil = Detail.ValidUntilLocal;
         IsCreating = false;
         IsFormOpen = true;
         ClearStatus();
+
+        if (Detail.ClientId is int clientId)
+        {
+            var client = AppHost.ClientService.GetClient(clientId);
+            FormClientPhone = client?.Phone ?? string.Empty;
+            FormClientEmail = client?.Email ?? string.Empty;
+        }
     }
 
     private void SaveQuote()
@@ -391,7 +418,8 @@ public partial class QuotesViewModel
 
         try
         {
-            var client = AppHost.ClientService.GetOrCreate(FormClientName);
+            var client = AppHost.ClientService.SaveFromQuote(
+                FormClientName, FormClientPhone, FormClientEmail);
             AppHost.QuoteService.AssignClient(projectId, client.Id);
         }
         catch (Exception ex)

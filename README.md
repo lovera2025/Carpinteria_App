@@ -77,9 +77,11 @@ sigue dando lo mismo aunque después cambien los precios o el margen del taller.
 ```
 desperdicio          = materiales × 16 %
 desgasteHerramientas = materiales ×  9 %
-manoDeObra           = (jornalJefe × díasJefe) + Σ (jornalOperario × díasOperario)
-gastosAdicionales    = manoDeObra × 50 %
-ganancia             = manoDeObra × 30 %
+jornalJefe           = valorDia × díasJefe
+jornalOperarios      = Σ (jornalOperario × díasOperario)
+manoDeObra           = jornalJefe + jornalOperarios
+gastosAdicionales    = jornalJefe × 50 %
+ganancia             = jornalJefe × 30 %
 precioFinal          = suma de los seis
 ```
 
@@ -96,6 +98,9 @@ cobran lo mismo ni están la misma cantidad de días.
 Los operarios se eligen de **Personal**, y el jornal viene de la ficha —se carga una
 sola vez ahí— pero se puede pisar para ese presupuesto sin tocarle el legajo a nadie.
 También se puede escribir un nombre a mano para alguien que no está dado de alta.
+
+Gastos adicionales y ganancia se calculan solo sobre el jornal del jefe. Los
+operarios se suman al costo, sin ese 50 % ni ese 30 % encima.
 
 **Al aprobar, los operarios cotizados quedan asignados al proyecto solos.** Los que se
 escribieron a mano no, porque no hay ficha a la que engancharlos.
@@ -127,9 +132,10 @@ PDF**. El PDF pregunta dónde guardarlo, con el nombre ya puesto
   margen efectivo y la mano de obra persona por persona.
 
 En la hoja de costos, la columna **Pesa en el precio** muestra cuánto le suma cada
-persona al presupuesto una vez repartidos los gastos y la ganancia: un ayudante de
-$ 22.000 por día durante tres días cobra $ 66.000 pero cuesta $ 118.800. Es el número
-que sirve para decidir a quién poner en un trabajo, y por eso nunca sale del taller.
+persona al presupuesto. Gastos y ganancia van solo sobre el jornal del jefe; un
+ayudante de $ 22.000 por día durante tres días cobra $ 66.000 y pesa exactamente
+eso. Es el número que sirve para decidir a quién poner en un trabajo, y por eso
+nunca sale del taller.
 
 El PDF se arma sin librerías externas: cada hoja se dibuja tal como saldría impresa.
 El texto no se puede seleccionar ni buscar —es una imagen de la hoja—, pero se ve e
