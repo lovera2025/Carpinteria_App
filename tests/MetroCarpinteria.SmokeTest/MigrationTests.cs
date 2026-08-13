@@ -28,6 +28,7 @@ internal static class MigrationTests
         RunPaymentTests(run);
         RunBackupGuardTests(run);
         RunNormalizationTests(run);
+        RunQuoteImageMigrationTests(run);
     }
 
     // --- v7: afinidad de las columnas de dinero -------------------------------
@@ -349,6 +350,45 @@ internal static class MigrationTests
                 ClientRules.PickDisplayName(["JUAN PÉREZ", "Juan Pérez", "juan perez"]),
                 "Juan Pérez",
                 "desempate por capitalización");
+        });
+    }
+
+    // --- v8: fotos de referencia ----------------------------------------------
+
+    private static void RunQuoteImageMigrationTests(Action<string, Action> run)
+    {
+        run("Migración v8: aparece la tabla de fotos y no se tocan los proyectos", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+            var projects = legacy.Count("Projects");
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "versión del esquema");
+            Assert.Equal(
+                legacy.ReadInt(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ProjectQuoteImages';"),
+                1,
+                "tabla ProjectQuoteImages");
+            Assert.Equal(legacy.Count("Projects"), projects, "proyectos preservados");
+            Assert.Equal(legacy.Count("ProjectQuoteImages"), 0, "fotos al migrar");
+            legacy.AssertIntegrity();
+        });
+
+        run("Migración v8: inicializar dos veces es idempotente", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+            var paths = new AppPaths(legacy.Root);
+            var database = new DatabaseService(paths);
+            database.Initialize();
+            database.Initialize();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "user_version");
+            Assert.Equal(
+                legacy.ReadInt(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ProjectQuoteImages';"),
+                1,
+                "tabla presente tras el segundo arranque");
         });
     }
 

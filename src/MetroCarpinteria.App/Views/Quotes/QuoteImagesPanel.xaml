@@ -1,0 +1,87 @@
+<UserControl x:Class="MetroCarpinteria.App.Views.Quotes.QuoteImagesPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:MetroCarpinteria.App.ViewModels"
+             mc:Ignorable="d"
+             d:DesignHeight="400"
+             d:DesignWidth="520">
+
+    <!-- Fotos de referencia para el cliente. Van entre materiales y el precio: primero
+         qué se usa, después cómo puede quedar, después cuánto sale. -->
+    <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+            Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+        <StackPanel>
+            <Grid Margin="0,0,0,4">
+                <TextBlock Text="FOTOS PARA EL CLIENTE" FontSize="15" FontWeight="Bold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <WrapPanel HorizontalAlignment="Right">
+                    <Button Content="Pegar" Style="{StaticResource SecondaryButtonStyle}"
+                            Padding="12,6" FontSize="12" Margin="0,0,8,0"
+                            Command="{Binding PasteImageCommand}"
+                            ToolTip="Pega una imagen copiada (por ejemplo desde WhatsApp)" />
+                    <Button Content="+ Agregar" Style="{StaticResource SecondaryButtonStyle}"
+                            Padding="12,6" FontSize="12"
+                            Command="{Binding AddImagesCommand}"
+                            ToolTip="Hasta 4 fotos. Se copian al presupuesto; el original no se toca." />
+                </WrapPanel>
+            </Grid>
+
+            <TextBlock Text="{Binding ImagesSummary}" Margin="0,0,0,12"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="{DynamicResource PrimaryBrownBrush}" />
+
+            <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                       Text="Salen en el presupuesto impreso, no en la hoja de costos. Máximo 4." />
+
+            <ItemsControl ItemsSource="{Binding Images}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:QuoteImageRow}">
+                        <Border Padding="0,8" BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,0,0,1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Width="96" Height="72"
+                                        Background="{DynamicResource BrandAccentSubtleBrush}"
+                                        CornerRadius="6" ClipToBounds="True">
+                                    <Grid>
+                                        <TextBlock Text="Sin archivo" FontSize="10"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource AlertBrush}"
+                                                   Visibility="{Binding IsMissing, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
+                                               Visibility="{Binding IsMissing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <TextBlock Text="Pie de foto (opcional)" Style="{StaticResource SubtitleStyle}"
+                                               Margin="0,0,0,4" />
+                                    <TextBox Text="{Binding Caption, UpdateSourceTrigger=LostFocus}"
+                                             Padding="8,6"
+                                             IsEnabled="{Binding DataContext.CanEditImages, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                             LostFocus="OnCaptionLostFocus"
+                                             ToolTip="Ejemplo: Placard similar en melamina blanca" />
+                                </StackPanel>
+
+                                <Button Grid.Column="3" Content="Quitar"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,6" FontSize="12" Margin="8,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding DataContext.RemoveImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Border>
+</UserControl>

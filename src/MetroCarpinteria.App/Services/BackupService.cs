@@ -47,12 +47,23 @@ public sealed class BackupService
 
         File.Copy(_paths.DatabasePath, backupPath, overwrite: false);
 
+        try
+        {
+            CopyImagesSidecar(_paths.QuoteImagesDirectory, ImagesSidecarPath(backupPath));
+        }
+        catch
+        {
+            TryDeleteFile(backupPath);
+            TryDeleteDirectory(ImagesSidecarPath(backupPath));
+            throw;
+        }
+
         var backupInfo = new BackupInfo
         {
             FileName = backupFileName,
             FullPath = backupPath,
             CreatedAtLocal = File.GetCreationTime(backupPath),
-            SizeBytes = new FileInfo(backupPath).Length
+            SizeBytes = MeasureBackupSize(backupPath)
         };
 
         _settingsService.Update(settings => settings.LastBackupUtc = DateTime.UtcNow);
@@ -77,15 +88,48 @@ public sealed class BackupService
         if (File.Exists(_paths.DatabasePath))
         {
             CheckpointWal();
-            var safetyName = $"{SafetyPrefix}{DateTime.Now:yyyyMMdd_HHmmss}.db";
+            var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var safetyName = $"{SafetyPrefix}{stamp}.db";
             var safetyPath = Path.Combine(_paths.BackupsDirectory, safetyName);
+            if (File.Exists(safetyPath))
+            {
+                safetyName = $"{SafetyPrefix}{stamp}_{Guid.NewGuid():N}.db";
+                safetyPath = Path.Combine(_paths.BackupsDirectory, safetyName);
+            }
+
             File.Copy(_paths.DatabasePath, safetyPath, overwrite: false);
+            CopyImagesSidecar(_paths.QuoteImagesDirectory, ImagesSidecarPath(safetyPath));
         }
 
-        DeleteSidecarFiles(_paths.DatabasePath);
-        File.Copy(backupPath, _paths.DatabasePath, overwrite: true);
-        DeleteSidecarFiles(_paths.DatabasePath);
-        SqliteConnection.ClearAllPools();
+        var sidecar = ImagesSidecarPath(backupPath);
+        var staged = Path.Combine(
+            _paths.BackupsDirectory,
+            $"_restore_images_{Guid.NewGuid():N}");
+
+        try
+        {
+            if (Directory.Exists(sidecar))
+            {
+                QuoteImageService.CopyImageTree(sidecar, staged);
+            }
+
+            DeleteSidecarFiles(_paths.DatabasePath);
+            File.Copy(backupPath, _paths.DatabasePath, overwrite: true);
+            DeleteSidecarFiles(_paths.DatabasePath);
+            SqliteConnection.ClearAllPools();
+
+            // Sin sidecar (respaldo viejo o uno sin fotos) se vacía la carpeta: dejar
+            // las fotos actuales mezclaría ids de otro trabajo con la base restaurada.
+            QuoteImageService.ClearAllFiles(_paths);
+            if (Directory.Exists(staged))
+            {
+                QuoteImageService.CopyImageTree(staged, _paths.QuoteImagesDirectory);
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(staged);
+        }
     }
 
     /// <summary>
@@ -200,7 +244,7 @@ public sealed class BackupService
                 FileName = file.Name,
                 FullPath = file.FullName,
                 CreatedAtLocal = file.CreationTime,
-                SizeBytes = file.Length
+                SizeBytes = MeasureBackupSize(file.FullName)
             })
             .ToList();
     }
@@ -236,6 +280,85 @@ public sealed class BackupService
         }
     }
 
+    /// <summary>
+    /// Carpeta hermana de un respaldo <c>.db</c>: <c>carpinteria_20260813_120000.images</c>.
+    /// Los respaldos viejos no la tienen y siguen siendo restaurables.
+    /// </summary>
+    internal static string ImagesSidecarPath(string backupDbPath)
+    {
+        var directory = Path.GetDirectoryName(backupDbPath) ?? string.Empty;
+        var name = Path.GetFileNameWithoutExtension(backupDbPath);
+        return Path.Combine(directory, name + ".images");
+    }
+
+    private static void CopyImagesSidecar(string sourceDirectory, string destinationDirectory)
+    {
+        if (!HasAnyFiles(sourceDirectory))
+        {
+            return;
+        }
+
+        QuoteImageService.CopyImageTree(sourceDirectory, destinationDirectory);
+    }
+
+    private static bool HasAnyFiles(string directory) =>
+        Directory.Exists(directory)
+        && Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).Any();
+
+    private static long MeasureBackupSize(string backupDbPath)
+    {
+        var size = new FileInfo(backupDbPath).Length;
+        var sidecar = ImagesSidecarPath(backupDbPath);
+        if (!Directory.Exists(sidecar))
+        {
+            return size;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(sidecar, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                size += new FileInfo(file).Length;
+            }
+            catch
+            {
+                // Un archivo bloqueado no puede impedir listar el respaldo.
+            }
+        }
+
+        return size;
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best effort.
+        }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // Best effort.
+        }
+    }
+
     private void CleanupOldBackups()
     {
         // El límite configurado cuenta solo los respaldos buenos. Con las copias
@@ -260,6 +383,8 @@ public sealed class BackupService
             {
                 // Best effort cleanup.
             }
+
+            TryDeleteDirectory(ImagesSidecarPath(backup.FullPath));
         }
     }
 }

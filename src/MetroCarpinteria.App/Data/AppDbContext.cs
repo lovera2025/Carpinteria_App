@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<ProjectBudgetLine> ProjectBudgetLines => Set<ProjectBudgetLine>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<ProjectPayment> ProjectPayments => Set<ProjectPayment>();
+    public DbSet<ProjectQuoteImage> ProjectQuoteImages => Set<ProjectQuoteImage>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -173,6 +174,17 @@ public class AppDbContext : DbContext
             entity.Ignore(l => l.PendingQuantity);
             entity.HasOne(l => l.Project).WithMany(p => p.BudgetLines).HasForeignKey(l => l.ProjectId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(l => l.Product).WithMany().HasForeignKey(l => l.ProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProjectQuoteImage>(entity =>
+        {
+            entity.HasIndex(i => i.ProjectId);
+            entity.Property(i => i.FileName).HasMaxLength(80).IsRequired();
+            entity.Property(i => i.Caption).HasMaxLength(200);
+            entity.HasOne(i => i.Project)
+                .WithMany(p => p.QuoteImages)
+                .HasForeignKey(i => i.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

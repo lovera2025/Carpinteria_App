@@ -167,7 +167,9 @@ public partial class QuotesViewModel
 
         try
         {
-            var document = AppHost.QuoteDocumentService.BuildClientQuote(Detail, includeMaterialDetail: true);
+            var document = AppHost.QuoteDocumentService.BuildClientQuote(
+                AppHost.QuoteService.GetDetail(Detail.Id) ?? Detail,
+                includeMaterialDetail: true);
 
             if (AppHost.QuoteDocumentService.Print(document, $"Presupuesto {Detail.Id:0000}"))
             {

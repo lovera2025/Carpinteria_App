@@ -9,10 +9,12 @@ namespace MetroCarpinteria.App.Services;
 public sealed class ProjectService
 {
     private readonly DatabaseService _databaseService;
+    private readonly QuoteImageService? _imageService;
 
-    public ProjectService(DatabaseService databaseService)
+    public ProjectService(DatabaseService databaseService, QuoteImageService? imageService = null)
     {
         _databaseService = databaseService;
+        _imageService = imageService;
     }
 
     public IReadOnlyList<ProjectListItem> GetProjects(
@@ -179,6 +181,7 @@ public sealed class ProjectService
 
         context.Projects.Remove(project);
         context.SaveChanges();
+        _imageService?.DeleteFilesForProject(id);
     }
 
     public void AssignMaterial(int projectId, int productId, decimal quantity)

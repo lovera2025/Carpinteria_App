@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 7;
+    public const int LatestVersion = 8;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -76,7 +76,8 @@ public sealed class SchemaMigrator
         new(4, "IVA y descuento comercial", ApplyCommercialTerms),
         new(5, "Ficha de clientes", ApplyClients, TransformsData: true),
         new(6, "Señas y pagos a cuenta", ApplyProjectPayments),
-        new(7, "Afinidad de las columnas de dinero", ApplyMoneyColumnAffinity, TransformsData: true)
+        new(7, "Afinidad de las columnas de dinero", ApplyMoneyColumnAffinity, TransformsData: true),
+        new(8, "Fotos de referencia en presupuestos", ApplyQuoteImages)
     ];
 
     /// <summary>
@@ -290,6 +291,28 @@ public sealed class SchemaMigrator
             "CREATE INDEX IF NOT EXISTS IX_ProjectPayments_ProjectId ON ProjectPayments (ProjectId);");
         Execute(connection, transaction,
             "CREATE INDEX IF NOT EXISTS IX_ProjectPayments_CreatedAtUtc ON ProjectPayments (CreatedAtUtc);");
+    }
+
+    /// <summary>
+    /// Fotos de referencia del presupuesto. Solo metadatos: el archivo vive en
+    /// <c>data/quote-images</c>. Agregar la tabla no toca filas existentes.
+    /// </summary>
+    private static void ApplyQuoteImages(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        Execute(connection, transaction, """
+            CREATE TABLE IF NOT EXISTS ProjectQuoteImages (
+                Id INTEGER NOT NULL CONSTRAINT PK_ProjectQuoteImages PRIMARY KEY AUTOINCREMENT,
+                ProjectId INTEGER NOT NULL,
+                FileName TEXT NOT NULL,
+                Caption TEXT NULL,
+                SortOrder INTEGER NOT NULL,
+                CreatedAtUtc TEXT NOT NULL,
+                CONSTRAINT FK_ProjectQuoteImages_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE
+            );
+            """);
+
+        Execute(connection, transaction,
+            "CREATE INDEX IF NOT EXISTS IX_ProjectQuoteImages_ProjectId ON ProjectQuoteImages (ProjectId);");
     }
 
     /// <summary>

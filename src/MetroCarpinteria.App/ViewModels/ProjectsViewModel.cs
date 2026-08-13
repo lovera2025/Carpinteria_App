@@ -728,7 +728,9 @@ public class ProjectsViewModel : ViewModelBase
 
         try
         {
-            var document = AppHost.QuoteDocumentService.BuildClientQuote(Quote, includeMaterialDetail: true);
+            var document = AppHost.QuoteDocumentService.BuildClientQuote(
+                AppHost.QuoteService.GetDetail(Quote.Id) ?? Quote,
+                includeMaterialDetail: true);
 
             if (AppHost.QuoteDocumentService.Print(document, $"Presupuesto {Quote.Id:0000}"))
             {

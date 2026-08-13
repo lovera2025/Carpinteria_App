@@ -72,6 +72,8 @@ public sealed class QuoteDocumentService
             document.Blocks.Add(BuildMaterialsTable(quote, showUnitCost: false));
         }
 
+        AddReferenceSection(document, quote);
+
         document.Blocks.Add(SectionTitle("Resumen"));
 
         // Sin la línea de total: el bloque destacado de abajo ya la muestra.
@@ -447,6 +449,122 @@ public sealed class QuoteDocumentService
         }
 
         return paragraph;
+    }
+
+    /// <summary>
+    /// Fotos de referencia. Si no hay ninguna usable no agrega bloques: el presupuesto
+    /// sin fotos tiene que seguir cabiendo en una hoja A4.
+    /// </summary>
+    private static void AddReferenceSection(FlowDocument document, QuoteDetail quote)
+    {
+        var images = quote.PrintableImages;
+        if (images.Count == 0)
+        {
+            return;
+        }
+
+        document.Blocks.Add(SectionTitle("Referencias"));
+        document.Blocks.Add(BuildReferencesTable(images));
+    }
+
+    private static Block BuildReferencesTable(IReadOnlyList<QuoteImageItem> images)
+    {
+        var table = NoBorderTable();
+        var cellWidth = (ContentWidth - 12) / 2;
+        table.Columns.Add(Column(cellWidth));
+        table.Columns.Add(Column(cellWidth));
+        table.Margin = new Thickness(0, 0, 0, 4);
+
+        var group = new TableRowGroup();
+
+        for (var i = 0; i < images.Count; i += 2)
+        {
+            var row = new TableRow();
+            row.Cells.Add(ReferenceCell(images[i], cellWidth));
+            row.Cells.Add(i + 1 < images.Count
+                ? ReferenceCell(images[i + 1], cellWidth)
+                : new TableCell());
+            group.Rows.Add(row);
+        }
+
+        table.RowGroups.Add(group);
+        return table;
+    }
+
+    private static TableCell ReferenceCell(QuoteImageItem item, double width)
+    {
+        var cell = new TableCell { Padding = new Thickness(0, 0, 10, 10) };
+        var bitmap = LoadQuoteImage(item.FullPath);
+
+        if (bitmap is not null)
+        {
+            var maxWidth = Math.Max(32, width - 8);
+            const double maxHeight = 148;
+            var scale = Math.Min(
+                maxWidth / Math.Max(1, bitmap.PixelWidth),
+                maxHeight / Math.Max(1, bitmap.PixelHeight));
+            scale = Math.Min(scale, 1);
+
+            var displayWidth = bitmap.PixelWidth * scale;
+            var displayHeight = bitmap.PixelHeight * scale;
+
+            // InlineUIContainer y no BlockUIContainer: dentro de una celda, el de bloque
+            // estira la fila a lo alto de la página.
+            var imageParagraph = new Paragraph(new InlineUIContainer(new Image
+            {
+                Source = bitmap,
+                Width = displayWidth,
+                Height = displayHeight,
+                Stretch = Stretch.Uniform
+            }))
+            {
+                Margin = new Thickness(0),
+                LineHeight = displayHeight + 6,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight
+            };
+
+            cell.Blocks.Add(imageParagraph);
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Caption))
+        {
+            cell.Blocks.Add(new Paragraph(new Run(item.Caption)
+            {
+                FontSize = 10,
+                FontStyle = FontStyles.Italic,
+                Foreground = MutedBrush
+            })
+            {
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+        }
+
+        return cell;
+    }
+
+    private static BitmapImage? LoadQuoteImage(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = new Uri(path, UriKind.Absolute);
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch
+        {
+            // Una foto ilegible no puede impedir imprimir el presupuesto.
+            return null;
+        }
     }
 
     private static Block BuildMaterialsTable(QuoteDetail quote, bool showUnitCost)

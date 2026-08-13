@@ -17,6 +17,8 @@ public sealed class DatabaseService
     /// <summary>Última migración aplicada al arrancar. Vacía si no había nada pendiente.</summary>
     public SchemaMigrationResult? LastMigration { get; private set; }
 
+    public AppPaths Paths => _paths;
+
     /// <param name="beforeMigration">
     /// Deja un respaldo antes de tocar el esquema y devuelve dónde quedó. Se invoca solo
     /// si hay migraciones pendientes sobre una base preexistente: no corre en una

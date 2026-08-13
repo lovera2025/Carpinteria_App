@@ -225,6 +225,16 @@ public sealed class QuoteDetail
 
     public IReadOnlyList<ProjectPaymentItem> Payments { get; init; } = [];
 
+    /// <summary>
+    /// Fotos de referencia. Incluye las que faltan en disco: la UI avisa, la impresión
+    /// las saltea. Un archivo perdido no puede impedir entregar el presupuesto.
+    /// </summary>
+    public IReadOnlyList<QuoteImageItem> Images { get; init; } = [];
+
+    /// <summary>Las que de verdad se pueden imprimir: archivo presente y nombre seguro.</summary>
+    public IReadOnlyList<QuoteImageItem> PrintableImages =>
+        Images.Where(i => !i.IsMissing).ToList();
+
     /// <summary>Lo cobrado hasta ahora.</summary>
     public decimal PaidTotal => Payments.Sum(p => p.Amount);
 
@@ -270,4 +280,18 @@ public sealed class QuoteDetail
     public bool HasPendingStock => Lines.Any(l => l.IsFromInventory && l.AppliedQuantity < l.Quantity)
         && Status != ProjectStatus.Quote
         && Status != ProjectStatus.Rejected;
+}
+
+/// <summary>Una foto adjunta a un presupuesto. El archivo está en disco, no en la base.</summary>
+public sealed class QuoteImageItem
+{
+    public int Id { get; init; }
+    public int ProjectId { get; init; }
+    public string FileName { get; init; } = string.Empty;
+    public string Caption { get; init; } = string.Empty;
+    public int SortOrder { get; init; }
+    public string FullPath { get; init; } = string.Empty;
+    public bool IsMissing { get; init; }
+
+    public string CaptionDisplay => string.IsNullOrWhiteSpace(Caption) ? "Sin pie de foto" : Caption;
 }

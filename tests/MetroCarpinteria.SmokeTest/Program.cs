@@ -74,6 +74,7 @@ internal static class Program
         CorrectnessTests.Run(Run);
         CommercialTests.Run(Run);
         RunIsolatedIntegrationFlow();
+        QuoteImageTests.Run(Run);
         UiSmokeTests.Run(Run);
         PrintManualUiChecklist();
 

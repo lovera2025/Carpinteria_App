@@ -288,6 +288,19 @@ internal static class UiSmokeTests
             Assert.True(viewModel.CanPrintForClient, "con precio y desglose tendría que poder imprimirse.");
         });
 
+        run("UI: el panel de fotos carga en un presupuesto", () =>
+        {
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            Assert.True(viewModel.CanEditImages, "un presupuesto abierto tendría que aceptar fotos.");
+            Assert.True(viewModel.CanAddImages, "sin fotos todavía se pueden agregar.");
+            Assert.True(viewModel.AddImagesCommand.CanExecute(null), "el botón Agregar tendría que estar habilitado.");
+
+            LoadView(() => new MetroCarpinteria.App.Views.Quotes.QuoteImagesPanel(), viewModel);
+        });
+
         run("UI: los estados que ofrece Proyectos dependen del actual", () =>
         {
             // El desplegable ofrecía los cinco siempre: de ahí salía el salteo del ciclo.

@@ -13,6 +13,7 @@ public static class AppHost
     public static InventoryService InventoryService { get; private set; } = null!;
     public static CashRegisterService CashRegisterService { get; private set; } = null!;
     public static ProjectService ProjectService { get; private set; } = null!;
+    public static QuoteImageService QuoteImageService { get; private set; } = null!;
     public static QuoteService QuoteService { get; private set; } = null!;
     public static PaymentService PaymentService { get; private set; } = null!;
     public static ClientService ClientService { get; private set; } = null!;
@@ -69,8 +70,9 @@ public static class AppHost
 
         InventoryService = new InventoryService(DatabaseService);
         CashRegisterService = new CashRegisterService(DatabaseService);
-        ProjectService = new ProjectService(DatabaseService);
-        QuoteService = new QuoteService(DatabaseService, SettingsService);
+        QuoteImageService = new QuoteImageService(DatabaseService, Paths);
+        ProjectService = new ProjectService(DatabaseService, QuoteImageService);
+        QuoteService = new QuoteService(DatabaseService, SettingsService, QuoteImageService);
         PaymentService = new PaymentService(DatabaseService);
         ClientService = new ClientService(DatabaseService);
         QuoteDocumentService = new QuoteDocumentService();
@@ -106,6 +108,7 @@ public static class AppHost
         BackupService = null!;
         InventoryService = null!;
         CashRegisterService = null!;
+        QuoteImageService = null!;
         ProjectService = null!;
         QuoteService = null!;
         PaymentService = null!;

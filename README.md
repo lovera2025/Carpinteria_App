@@ -52,7 +52,7 @@ también se puede buscar una actualización a mano.
 
 - **Inventario** — productos, stock, precio de costo, alertas, movimientos
 - **Caja** — apertura, ingresos/egresos, cierre
-- **Presupuestos** — cotización con materiales, calculadora, vigencia e impresión
+- **Presupuestos** — cotización con materiales, fotos de referencia, calculadora, vigencia e impresión
 - **Proyectos** — trabajos, materiales (descuenta stock), estados
 - **Personal** — empleados y asignación a proyectos
 - **Reportes** — resumen de inventario, caja y proyectos
@@ -113,6 +113,7 @@ Print to PDF* sale el archivo):
 ```
 Documentos/MetroCarpinteria/
   data/carpinteria.db
+  data/quote-images/
   backups/
   settings.json
 ```

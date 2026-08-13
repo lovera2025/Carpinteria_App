@@ -18,11 +18,16 @@ public sealed class QuoteService
 {
     private readonly DatabaseService _databaseService;
     private readonly SettingsService _settingsService;
+    private readonly QuoteImageService? _imageService;
 
-    public QuoteService(DatabaseService databaseService, SettingsService settingsService)
+    public QuoteService(
+        DatabaseService databaseService,
+        SettingsService settingsService,
+        QuoteImageService? imageService = null)
     {
         _databaseService = databaseService;
         _settingsService = settingsService;
+        _imageService = imageService;
     }
 
     // --- Lectura -------------------------------------------------------------
@@ -218,7 +223,8 @@ public sealed class QuoteService
             DailyRate = project.DailyRate,
             Rates = rates,
             Lines = lines,
-            Breakdown = breakdown
+            Breakdown = breakdown,
+            Images = _imageService?.List(projectId) ?? []
         };
     }
 
@@ -783,6 +789,7 @@ public sealed class QuoteService
     {
         using var context = _databaseService.CreateContext();
         using var transaction = context.Database.BeginTransaction();
+        int copyId;
 
         try
         {
@@ -861,14 +868,26 @@ public sealed class QuoteService
                 context.SaveChanges();
             }
 
+            copyId = copy.Id;
             transaction.Commit();
-            return copy.Id;
         }
         catch
         {
             transaction.Rollback();
             throw;
         }
+
+        try
+        {
+            _imageService?.CopyTo(projectId, copyId);
+        }
+        catch
+        {
+            _imageService?.DeleteFilesForProject(copyId);
+            throw;
+        }
+
+        return copyId;
     }
 
     public bool HasBudgetLines(int projectId)

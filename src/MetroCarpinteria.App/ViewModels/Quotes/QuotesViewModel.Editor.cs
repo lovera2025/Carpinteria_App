@@ -251,6 +251,7 @@ public partial class QuotesViewModel
                 Breakdown = null;
                 BreakdownLines.Clear();
                 SetMissingData(string.Empty);
+                ReloadImages();
                 return;
             }
 
@@ -286,6 +287,7 @@ public partial class QuotesViewModel
 
             LoadCommercialTerms(detail);
             PaymentsSection.Load(detail);
+            ReloadImages();
         }
         finally
         {

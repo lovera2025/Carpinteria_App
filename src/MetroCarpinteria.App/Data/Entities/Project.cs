@@ -63,4 +63,5 @@ public class Project
     public ICollection<ProjectAssignment> Assignments { get; set; } = [];
     public ICollection<ProjectBudgetLine> BudgetLines { get; set; } = [];
     public ICollection<ProjectPayment> Payments { get; set; } = [];
+    public ICollection<ProjectQuoteImage> QuoteImages { get; set; } = [];
 }

@@ -14,5 +14,8 @@ Desktop.ini
 ## Publish
 publish/
 
+## Generated previews
+artifacts/
+
 ## Velopack (paquetes e instaladores generados por vpk)
 Releases/

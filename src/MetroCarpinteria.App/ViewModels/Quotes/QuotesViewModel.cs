@@ -10,7 +10,7 @@ namespace MetroCarpinteria.App.ViewModels;
 
 /// <summary>
 /// Presupuestos. Es la pantalla más grande de la app, así que está partida en varios
-/// archivos por tema: lista, editor, materiales, calculadora y ciclo de vida.
+/// archivos por tema: lista, editor, materiales, fotos, calculadora y ciclo de vida.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -90,6 +90,7 @@ public partial class QuotesViewModel : ViewModelBase
 
         Quotes = [];
         Lines = [];
+        Images = [];
         BreakdownLines = [];
         Shortfalls = [];
         AvailableProducts = [];
@@ -131,6 +132,11 @@ public partial class QuotesViewModel : ViewModelBase
         PrintClientCommand = new RelayCommand(_ => PrintClient(), _ => CanPrintForClient);
         PrintCostSheetCommand = new RelayCommand(_ => PrintCostSheet(), _ => Detail is not null);
 
+        AddImagesCommand = new RelayCommand(_ => AddImages(), _ => CanAddImages);
+        PasteImageCommand = new RelayCommand(_ => PasteImage(), _ => CanAddImages);
+        RemoveImageCommand = new RelayCommand(RemoveImage, _ => CanEditImages);
+        SaveImageCaptionCommand = new RelayCommand(SaveImageCaption, _ => CanEditImages);
+
         _selectedVat = VatOptions[0];
         _selectedDiscountMode = DiscountModeOptions[0];
 
@@ -144,6 +150,7 @@ public partial class QuotesViewModel : ViewModelBase
 
     public ObservableCollection<QuoteListItem> Quotes { get; }
     public ObservableCollection<QuoteLineItem> Lines { get; }
+    public ObservableCollection<QuoteImageRow> Images { get; }
     public ObservableCollection<BudgetBreakdownLine> BreakdownLines { get; }
     public ObservableCollection<QuoteApprovalShortfall> Shortfalls { get; }
     public ObservableCollection<ProductListItem> AvailableProducts { get; }
@@ -189,6 +196,10 @@ public partial class QuotesViewModel : ViewModelBase
     public ICommand ApplyPendingCommand { get; }
     public ICommand PrintClientCommand { get; }
     public ICommand PrintCostSheetCommand { get; }
+    public ICommand AddImagesCommand { get; }
+    public ICommand PasteImageCommand { get; }
+    public ICommand RemoveImageCommand { get; }
+    public ICommand SaveImageCaptionCommand { get; }
 
     // --- Carga ----------------------------------------------------------------
 

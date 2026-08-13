@@ -80,6 +80,8 @@
 
                         <quotes:QuoteMaterialsPanel />
 
+                        <quotes:QuoteImagesPanel />
+
                         <quotes:QuoteCalculatorPanel />
 
                         <!-- El bloque de cobros trae su propio ViewModel, compartido con

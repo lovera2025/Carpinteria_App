@@ -143,10 +143,100 @@ internal static class DocumentRunner
             outputDirectory,
             "presupuesto-simple");
 
+        RenderPhotoExamples(outputDirectory, fixture, service);
+
         Console.WriteLine();
         Console.WriteLine($"Documentos generados en {outputDirectory}");
 
         Dispatcher.CurrentDispatcher.InvokeShutdown();
+    }
+
+    private static void RenderPhotoExamples(
+        string outputDirectory,
+        TestFixture fixture,
+        QuoteDocumentService service)
+    {
+        var samples = Path.Combine(outputDirectory, "_samples");
+        var photos = new[]
+        {
+            SampleJpeg.Write(samples, "cocina.jpg", Color.FromRgb(107, 68, 35), "Cocina similar"),
+            SampleJpeg.Write(samples, "placard.jpg", Color.FromRgb(196, 165, 116), "Placard blanco"),
+            SampleJpeg.Write(samples, "mesa.jpg", Color.FromRgb(61, 41, 20), "Mesa de roble"),
+            SampleJpeg.Write(samples, "estante.jpg", Color.FromRgb(122, 101, 85), "Estante a medida")
+        };
+
+        string[] captions =
+        [
+            "Cocina similar en melamina blanca",
+            "Placard de dos cuerpos",
+            "Mesa de roble macizo",
+            "Estante a medida para el living"
+        ];
+
+        SaveQuoteWithPhotos(
+            fixture,
+            service,
+            outputDirectory,
+            "presupuesto-sin-fotos",
+            "Control sin fotos",
+            photos.Take(0),
+            captions);
+
+        SaveQuoteWithPhotos(
+            fixture,
+            service,
+            outputDirectory,
+            "presupuesto-1-foto",
+            "Placard con una referencia",
+            photos.Take(1),
+            captions);
+
+        SaveQuoteWithPhotos(
+            fixture,
+            service,
+            outputDirectory,
+            "presupuesto-2-fotos",
+            "Cocina con dos referencias",
+            photos.Take(2),
+            captions);
+
+        var fourId = SaveQuoteWithPhotos(
+            fixture,
+            service,
+            outputDirectory,
+            "presupuesto-4-fotos",
+            "Living a medida",
+            photos,
+            captions);
+
+        var withFour = AppHost.QuoteService.GetDetail(fourId)!;
+        Save(service.BuildCostSheet(withFour), outputDirectory, "hoja-de-costos-con-4-fotos");
+    }
+
+    private static int SaveQuoteWithPhotos(
+        TestFixture fixture,
+        QuoteDocumentService service,
+        string outputDirectory,
+        string name,
+        string title,
+        IEnumerable<string> photoPaths,
+        IReadOnlyList<string> captions)
+    {
+        var id = AppHost.QuoteService.CreateQuote(title, "Cliente de muestra", "Trabajo ilustrado").Id;
+        AppHost.QuoteService.AddInventoryLine(id, fixture.BoardProductId, 6m, 1200m);
+        AppHost.QuoteService.SaveCalculation(id, 7200m, 2m, 30000m, BudgetRates.Defaults());
+
+        var index = 0;
+        foreach (var path in photoPaths)
+        {
+            AppHost.QuoteImageService.AddFromFile(id, path, captions[index]);
+            index++;
+        }
+
+        var detail = AppHost.QuoteService.GetDetail(id)!;
+        Console.WriteLine($"Presupuesto ilustrado: «{detail.Title}» — {detail.Images.Count} foto(s)");
+        Save(service.BuildClientQuote(detail, includeMaterialDetail: true), outputDirectory, name);
+        return id;
     }
 
     private static void Save(FlowDocument document, string directory, string name)
