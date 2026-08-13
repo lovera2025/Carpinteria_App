@@ -40,6 +40,7 @@ public sealed class EmployeeService
                 FullName = e.FullName,
                 Phone = e.Phone,
                 Role = e.Role,
+                DailyRate = e.DailyRate,
                 IsArchived = e.IsArchived,
                 ActiveAssignmentCount = context.ProjectAssignments.Count(a => a.EmployeeId == e.Id)
             })
@@ -67,9 +68,13 @@ public sealed class EmployeeService
             .ToList();
     }
 
-    public Employee Create(string fullName, string? phone, string? role)
+    /// <param name="dailyRate">
+    /// Lo que cobra por día. Null es «todavía no lo sé»: se puede dar de alta a alguien sin
+    /// haber arreglado el jornal, y al cotizarlo se escribe a mano.
+    /// </param>
+    public Employee Create(string fullName, string? phone, string? role, decimal? dailyRate = null)
     {
-        ValidateEmployee(fullName);
+        ValidateEmployee(fullName, dailyRate);
 
         using var context = _databaseService.CreateContext();
         var now = DateTime.UtcNow;
@@ -78,6 +83,7 @@ public sealed class EmployeeService
             FullName = fullName.Trim(),
             Phone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
             Role = string.IsNullOrWhiteSpace(role) ? null : role.Trim(),
+            DailyRate = dailyRate,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
@@ -87,9 +93,13 @@ public sealed class EmployeeService
         return employee;
     }
 
-    public void Update(int id, string fullName, string? phone, string? role)
+    /// <remarks>
+    /// Cambiar el jornal acá <b>no toca los presupuestos ya hechos</b>: cada línea de mano
+    /// de obra guarda el suyo congelado. Solo cambia lo que se propone de acá en adelante.
+    /// </remarks>
+    public void Update(int id, string fullName, string? phone, string? role, decimal? dailyRate = null)
     {
-        ValidateEmployee(fullName);
+        ValidateEmployee(fullName, dailyRate);
 
         using var context = _databaseService.CreateContext();
         var employee = context.Employees.FirstOrDefault(e => e.Id == id)
@@ -98,6 +108,7 @@ public sealed class EmployeeService
         employee.FullName = fullName.Trim();
         employee.Phone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
         employee.Role = string.IsNullOrWhiteSpace(role) ? null : role.Trim();
+        employee.DailyRate = dailyRate;
         employee.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
     }
@@ -154,11 +165,17 @@ public sealed class EmployeeService
               "Archivalo en su lugar.";
     }
 
-    private static void ValidateEmployee(string fullName)
+    private static void ValidateEmployee(string fullName, decimal? dailyRate)
     {
         if (string.IsNullOrWhiteSpace(fullName))
         {
             throw new InvalidOperationException("El nombre del empleado es obligatorio.");
+        }
+
+        if (dailyRate is <= 0)
+        {
+            throw new InvalidOperationException(
+                "El jornal tiene que ser mayor a cero. Dejalo vacío si todavía no lo arreglaste.");
         }
     }
 }

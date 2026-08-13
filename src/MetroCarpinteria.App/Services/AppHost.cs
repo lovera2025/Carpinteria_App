@@ -18,6 +18,7 @@ public static class AppHost
     public static PaymentService PaymentService { get; private set; } = null!;
     public static ClientService ClientService { get; private set; } = null!;
     public static QuoteDocumentService QuoteDocumentService { get; private set; } = null!;
+    public static PdfExportService PdfExportService { get; private set; } = null!;
     public static EmployeeService EmployeeService { get; private set; } = null!;
     public static ReportService ReportService { get; private set; } = null!;
     public static UpdateService UpdateService { get; private set; } = null!;
@@ -76,6 +77,7 @@ public static class AppHost
         PaymentService = new PaymentService(DatabaseService);
         ClientService = new ClientService(DatabaseService);
         QuoteDocumentService = new QuoteDocumentService();
+        PdfExportService = new PdfExportService();
         EmployeeService = new EmployeeService(DatabaseService);
         ReportService = new ReportService(DatabaseService);
         UpdateService = new UpdateService(SettingsService);
@@ -114,6 +116,7 @@ public static class AppHost
         PaymentService = null!;
         ClientService = null!;
         QuoteDocumentService = null!;
+        PdfExportService = null!;
         EmployeeService = null!;
         ReportService = null!;
         UpdateService = null!;

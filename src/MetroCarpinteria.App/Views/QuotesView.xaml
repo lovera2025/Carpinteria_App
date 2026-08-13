@@ -130,9 +130,15 @@
                                 <WrapPanel>
                                     <Button Content="Imprimir para el cliente" Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding PrintClientCommand}" Margin="0,0,10,8" />
+                                    <Button Content="Guardar PDF" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding SavePdfClientCommand}" Margin="0,0,10,8"
+                                            ToolTip="Guarda el presupuesto del cliente como archivo, para mandarlo por mensaje" />
                                     <Button Content="Hoja de costos" Style="{StaticResource SecondaryButtonStyle}"
                                             Command="{Binding PrintCostSheetCommand}" Margin="0,0,10,8"
                                             ToolTip="Uso interno: incluye desperdicio, gastos y ganancia" />
+                                    <Button Content="Hoja de costos PDF" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding SavePdfCostSheetCommand}" Margin="0,0,10,8"
+                                            ToolTip="Uso interno: no se lo mandes al cliente" />
 
                                     <!-- Aprobar y rechazar solo mientras el presupuesto sigue abierto. -->
                                     <Button Content="Aprobar" Style="{StaticResource PrimaryButtonStyle}"

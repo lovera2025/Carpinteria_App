@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Threading;
@@ -813,7 +815,7 @@ internal static class UiSmokeTests
 
         run("PDF: el documento del cliente NO muestra la ganancia", () =>
         {
-            var text = ToText(service.BuildClientQuote(quote, includeMaterialDetail: true));
+            var text = ToText(service.BuildClientQuote(quote));
             AssertNoInternalNumbers(text);
 
             foreach (var expected in new[] { "PRESUPUESTO", "Cliente de prueba", "Mesa de prueba", "TOTAL" })
@@ -834,7 +836,7 @@ internal static class UiSmokeTests
                 VatPercent = 21m
             });
 
-            var text = ToText(service.BuildClientQuote(commercial, includeMaterialDetail: true));
+            var text = ToText(service.BuildClientQuote(commercial));
 
             foreach (var expected in new[] { "Subtotal", "Descuento", "Neto gravado", "IVA", "TOTAL" })
             {
@@ -851,7 +853,7 @@ internal static class UiSmokeTests
         run("PDF: sin condiciones pactadas no aparece un pie comercial vacío", () =>
         {
             // Un «Descuento $ 0,00» o un subtotal repetido solo agregan ruido al papel.
-            var text = ToText(service.BuildClientQuote(quote, includeMaterialDetail: false));
+            var text = ToText(service.BuildClientQuote(quote));
 
             if (text.Contains("Neto gravado", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("Descuento", StringComparison.OrdinalIgnoreCase))
@@ -875,7 +877,7 @@ internal static class UiSmokeTests
                 }
             ]);
 
-            var text = ToText(service.BuildClientQuote(withDeposit, includeMaterialDetail: false));
+            var text = ToText(service.BuildClientQuote(withDeposit));
 
             foreach (var expected in new[] { "Entregado a cuenta", "SALDO A PAGAR" })
             {
@@ -914,7 +916,7 @@ internal static class UiSmokeTests
 
             (FlowDocument Document, string Name)[] documents =
             [
-                (service.BuildClientQuote(full, includeMaterialDetail: true), "presupuesto del cliente"),
+                (service.BuildClientQuote(full), "presupuesto del cliente"),
                 (service.BuildCostSheet(full), "hoja de costos")
             ];
 
@@ -965,13 +967,212 @@ internal static class UiSmokeTests
 
         run("PDF: el documento imprime la fecha de validez", () =>
         {
-            var text = ToText(service.BuildClientQuote(quote, includeMaterialDetail: false));
+            var text = ToText(service.BuildClientQuote(quote));
 
             if (!text.Contains("Válido hasta", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("El presupuesto debía indicar hasta cuándo vale el precio.");
             }
         });
+
+        run("PDF: el papel del cliente ya no lleva firmas, pero sí la descripción", () =>
+        {
+            var text = ToText(service.BuildClientQuote(quote));
+
+            foreach (var gone in new[] { "Firma del cliente", "Tabla de roble" })
+            {
+                if (text.Contains(gone, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"El documento del cliente no debía contener «{gone}».");
+                }
+            }
+
+            // Sacado el desglose, esto es lo único que le dice al cliente qué está comprando.
+            if (!text.Contains("Roble macizo", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Faltaba la descripción del trabajo.");
+            }
+        });
+
+        run("PDF: la descripción respeta los renglones que escribió el jefe", () =>
+        {
+            var multiline = BuildSampleQuote(
+                description: "Melamina blanca 18 mm.\nIncluye colocación y zócalo.\n\nEntrega en 3 semanas.");
+
+            var text = ToText(service.BuildClientQuote(multiline));
+
+            foreach (var line in new[] { "Melamina blanca 18 mm.", "Incluye colocación y zócalo.", "Entrega en 3 semanas." })
+            {
+                if (!text.Contains(line, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Faltaba el renglón «{line}» de la descripción.");
+                }
+            }
+
+            // Si los saltos se aplastaran, los renglones quedarían pegados sin separación.
+            if (text.Contains("18 mm.Incluye", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Los renglones de la descripción salieron pegados en un párrafo corrido.");
+            }
+        });
+
+        run("PDF: la hoja de costos desglosa la mano de obra por persona", () =>
+        {
+            var text = ToText(service.BuildCostSheet(BuildQuoteWithWorkers()));
+
+            foreach (var expected in new[]
+                     {
+                         "Mano de obra por persona", "Pesa en el precio",
+                         "Jefe", "Cristian Gómez", "Diego Ruiz"
+                     })
+            {
+                if (!text.Contains(expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Faltaba «{expected}» en la hoja de costos.");
+                }
+            }
+        });
+
+        run("PDF: sin operarios la hoja de costos no arma la tabla por persona", () =>
+        {
+            // Con el jefe solo no hay nada que desglosar, y el desglose de arriba ya lo dice.
+            var text = ToText(service.BuildCostSheet(quote));
+
+            if (text.Contains("Mano de obra por persona", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Con una sola persona no debía imprimirse la tabla por persona.");
+            }
+        });
+
+        run("PDF: con tres operarios la hoja de costos sigue entrando en una A4", () =>
+        {
+            // Cada operario suma un renglón, y la hoja completa ya venía pasando justo.
+            var crowded = BuildQuoteWithWorkers(
+                ("Cristian Gómez", 5m, 25000m),
+                ("Diego Ruiz", 3m, 22000m),
+                ("Marcela Ríos", 4m, 28000m),
+                ("Ayudante de obra", 2m, 18000m));
+
+            Assert.Equal(
+                CountA4Pages(service.BuildCostSheet(crowded)),
+                1,
+                "la hoja de costos con cuatro operarios tendría que entrar en una hoja");
+        });
+
+        run("PDF: se escribe un archivo que abre como PDF", () =>
+        {
+            var exporter = new PdfExportService();
+            var path = Path.Combine(Path.GetTempPath(), $"metro-pdf-{Guid.NewGuid():N}.pdf");
+
+            try
+            {
+                exporter.Export(service.BuildClientQuote(quote), path);
+
+                var bytes = File.ReadAllBytes(path);
+
+                if (bytes.Length < 1024)
+                {
+                    throw new InvalidOperationException($"El PDF salió sospechosamente chico ({bytes.Length} bytes).");
+                }
+
+                var head = Encoding.ASCII.GetString(bytes, 0, 8);
+                if (!head.StartsWith("%PDF-1.", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"El archivo no arranca con la firma de un PDF: «{head}».");
+                }
+
+                var tail = Encoding.ASCII.GetString(bytes, bytes.Length - 32, 32);
+                if (!tail.Contains("%%EOF", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Al PDF le faltaba el cierre %%EOF.");
+                }
+            }
+            finally
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        });
+
+        run("PDF: el nombre sugerido no lleva caracteres que Windows rechace", () =>
+        {
+            var name = PdfExportService.SuggestFileName("Presupuesto", 42, "Juan / Pérez: taller");
+
+            if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                throw new InvalidOperationException($"El nombre «{name}» todavía tiene caracteres inválidos.");
+            }
+
+            if (!name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) || !name.Contains("0042"))
+            {
+                throw new InvalidOperationException($"El nombre «{name}» no tiene la forma esperada.");
+            }
+        });
+    }
+
+    /// <summary>Un presupuesto con el jefe más los operarios que se le pasen.</summary>
+    private static QuoteDetail BuildQuoteWithWorkers(
+        params (string Name, decimal Days, decimal Rate)[] workers)
+    {
+        if (workers.Length == 0)
+        {
+            workers = [("Cristian Gómez", 5m, 25000m), ("Diego Ruiz", 3m, 22000m)];
+        }
+
+        var lines = workers
+            .Select((w, i) => new QuoteLaborLineItem
+            {
+                Id = i + 1,
+                Description = w.Name,
+                Days = w.Days,
+                DailyRate = w.Rate,
+                SortOrder = i + 1
+            })
+            .ToList();
+
+        var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
+        {
+            MaterialsCost = 100000m,
+            Days = 5m,
+            DailyRate = 40000m,
+            LaborLines = lines
+                .Select(l => new LaborLineInput
+                {
+                    Description = l.Description,
+                    Days = l.Days,
+                    DailyRate = l.DailyRate
+                })
+                .ToList(),
+            Rates = BudgetRates.Defaults()
+        });
+
+        var quote = BuildSampleQuote();
+
+        return new QuoteDetail
+        {
+            Id = quote.Id,
+            Title = quote.Title,
+            ClientName = quote.ClientName,
+            Description = quote.Description,
+            Status = quote.Status,
+            Budget = breakdown.FinalPrice,
+            Terms = quote.Terms,
+            Commercial = CommercialTermsService.Apply(breakdown.FinalPrice, quote.Terms),
+            Payments = quote.Payments,
+            QuotedAtLocal = quote.QuotedAtLocal,
+            ValidUntilLocal = quote.ValidUntilLocal,
+            QuotedMaterialsCost = 100000m,
+            EstimatedDays = 5m,
+            DailyRate = 40000m,
+            Rates = BudgetRates.Defaults(),
+            Breakdown = breakdown,
+            Lines = quote.Lines,
+            LaborLines = lines
+        };
     }
 
     /// <summary>
@@ -984,7 +1185,12 @@ internal static class UiSmokeTests
         string[] forbidden =
         [
             "Ganancia", "Desperdicio", "Desgaste", "Gastos adicionales",
-            "Margen efectivo", "a pérdida", "30%", "16%"
+            "Margen efectivo", "a pérdida", "30%", "16%",
+
+            // El presupuesto del cliente muestra el TOTAL y nada más. Ni el resumen que
+            // partía el precio en materiales y mano de obra, ni la lista de materiales, ni
+            // el reparto por persona, que además deja ver la ganancia.
+            "Detalle de materiales", "Resumen", "Mano de obra", "Pesa en el precio"
         ];
 
         foreach (var word in forbidden)
@@ -999,7 +1205,8 @@ internal static class UiSmokeTests
 
     private static QuoteDetail BuildSampleQuote(
         CommercialTerms? terms = null,
-        IReadOnlyList<ProjectPaymentItem>? payments = null)
+        IReadOnlyList<ProjectPaymentItem>? payments = null,
+        string? description = null)
     {
         var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
         {
@@ -1017,7 +1224,7 @@ internal static class UiSmokeTests
             Id = 42,
             Title = "Mesa de prueba",
             ClientName = "Cliente de prueba",
-            Description = "Roble macizo",
+            Description = description ?? "Roble macizo",
             Status = ProjectStatus.Quote,
             Budget = commercial.Total,
             Terms = terms,

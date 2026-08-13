@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<ProjectMaterial> ProjectMaterials => Set<ProjectMaterial>();
     public DbSet<ProjectAssignment> ProjectAssignments => Set<ProjectAssignment>();
     public DbSet<ProjectBudgetLine> ProjectBudgetLines => Set<ProjectBudgetLine>();
+    public DbSet<ProjectLaborLine> ProjectLaborLines => Set<ProjectLaborLine>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<ProjectPayment> ProjectPayments => Set<ProjectPayment>();
     public DbSet<ProjectQuoteImage> ProjectQuoteImages => Set<ProjectQuoteImage>();
@@ -140,6 +141,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.FullName).HasMaxLength(200).IsRequired();
             entity.Property(e => e.Phone).HasMaxLength(50);
             entity.Property(e => e.Role).HasMaxLength(100);
+            entity.Property(e => e.DailyRate).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<ProjectMaterial>(entity =>
@@ -174,6 +176,22 @@ public class AppDbContext : DbContext
             entity.Ignore(l => l.PendingQuantity);
             entity.HasOne(l => l.Project).WithMany(p => p.BudgetLines).HasForeignKey(l => l.ProjectId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(l => l.Product).WithMany().HasForeignKey(l => l.ProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProjectLaborLine>(entity =>
+        {
+            entity.HasIndex(l => l.ProjectId);
+            entity.HasIndex(l => l.EmployeeId);
+            entity.Property(l => l.Description).HasMaxLength(200).IsRequired();
+            entity.Property(l => l.Days).HasPrecision(18, 2);
+            entity.Property(l => l.DailyRate).HasPrecision(18, 2);
+            entity.Ignore(l => l.LineTotal);
+            entity.HasOne(l => l.Project).WithMany(p => p.LaborLines).HasForeignKey(l => l.ProjectId).OnDelete(DeleteBehavior.Cascade);
+
+            // SetNull y no Restrict: archivar o borrar a alguien de Personal no puede
+            // llevarse puestos los presupuestos donde se lo cotizó. El nombre queda en
+            // Description, que es lo que salió impreso.
+            entity.HasOne(l => l.Employee).WithMany().HasForeignKey(l => l.EmployeeId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<ProjectQuoteImage>(entity =>

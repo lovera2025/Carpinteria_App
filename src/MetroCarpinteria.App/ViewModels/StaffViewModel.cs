@@ -22,6 +22,7 @@ public class StaffViewModel : ViewModelBase
     private string _formFullName = string.Empty;
     private string _formPhone = string.Empty;
     private string _formRole = string.Empty;
+    private string _formDailyRate = string.Empty;
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
 
@@ -141,6 +142,16 @@ public class StaffViewModel : ViewModelBase
         set => SetProperty(ref _formRole, value);
     }
 
+    /// <summary>
+    /// Lo que cobra por día. Vacío es válido: se puede dar de alta a alguien sin haber
+    /// arreglado el jornal todavía, y se escribe a mano al cotizarlo.
+    /// </summary>
+    public string FormDailyRate
+    {
+        get => _formDailyRate;
+        set => SetProperty(ref _formDailyRate, value);
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -218,6 +229,7 @@ public class StaffViewModel : ViewModelBase
         FormFullName = string.Empty;
         FormPhone = string.Empty;
         FormRole = string.Empty;
+        FormDailyRate = string.Empty;
         IsCreating = true;
         IsFormOpen = true;
         ClearStatus();
@@ -233,6 +245,9 @@ public class StaffViewModel : ViewModelBase
         FormFullName = SelectedEmployee.FullName;
         FormPhone = SelectedEmployee.Phone ?? string.Empty;
         FormRole = SelectedEmployee.Role ?? string.Empty;
+        FormDailyRate = SelectedEmployee.DailyRate.HasValue
+            ? NumberInput.Format(SelectedEmployee.DailyRate.Value)
+            : string.Empty;
         IsCreating = false;
         IsFormOpen = true;
         ClearStatus();
@@ -242,15 +257,17 @@ public class StaffViewModel : ViewModelBase
     {
         try
         {
+            var dailyRate = ReadDailyRate();
+
             if (IsCreating)
             {
-                var employee = AppHost.EmployeeService.Create(FormFullName, FormPhone, FormRole);
+                var employee = AppHost.EmployeeService.Create(FormFullName, FormPhone, FormRole, dailyRate);
                 SetStatus($"Empleado «{employee.FullName}» creado.", isError: false);
             }
             else if (SelectedEmployee is not null)
             {
                 AppHost.EmployeeService.Update(
-                    SelectedEmployee.Id, FormFullName, FormPhone, FormRole);
+                    SelectedEmployee.Id, FormFullName, FormPhone, FormRole, dailyRate);
                 SetStatus($"Empleado «{FormFullName.Trim()}» actualizado.", isError: false);
             }
 
@@ -261,6 +278,17 @@ public class StaffViewModel : ViewModelBase
         {
             SetStatus(ex.Message, isError: true);
         }
+    }
+
+    /// <summary>El jornal tipeado, o null si está vacío. Un valor ilegible sí es un error.</summary>
+    private decimal? ReadDailyRate()
+    {
+        if (string.IsNullOrWhiteSpace(FormDailyRate))
+        {
+            return null;
+        }
+
+        return NumberInput.ParseMoneyOrThrow(FormDailyRate, "Jornal por día");
     }
 
     private void CloseForm() => IsFormOpen = false;

@@ -38,7 +38,11 @@ public class Project
     // los importes permite reconstruir el desglose entero sin que se mueva si mañana
     // cambian los porcentajes por defecto del taller.
     public decimal? QuotedMaterialsCost { get; set; }
+
+    /// <summary>Días que le lleva el trabajo al jefe. Los operarios traen los suyos en <see cref="LaborLines"/>.</summary>
     public decimal? EstimatedDays { get; set; }
+
+    /// <summary>Jornal del jefe. Cada operario tiene el suyo en su <see cref="ProjectLaborLine"/>.</summary>
     public decimal? DailyRate { get; set; }
     public decimal? WastePercent { get; set; }
     public decimal? ToolWearPercent { get; set; }
@@ -62,6 +66,7 @@ public class Project
     public ICollection<ProjectMaterial> Materials { get; set; } = [];
     public ICollection<ProjectAssignment> Assignments { get; set; } = [];
     public ICollection<ProjectBudgetLine> BudgetLines { get; set; } = [];
+    public ICollection<ProjectLaborLine> LaborLines { get; set; } = [];
     public ICollection<ProjectPayment> Payments { get; set; } = [];
     public ICollection<ProjectQuoteImage> QuoteImages { get; set; } = [];
 }

@@ -109,6 +109,10 @@ internal static class DocumentRunner
         using var fixture = TestFixture.CreateSeeded();
         var service = AppHost.QuoteDocumentService;
 
+        // Dos operarios además del jefe, para que la vista previa muestre el desglose por
+        // persona de la hoja de costos, que es lo que hay que mirar a ojo.
+        AddQuotedWorkers(fixture.QuoteId);
+
         var quote = AppHost.QuoteService.GetDetail(fixture.QuoteId)
             ?? throw new InvalidOperationException("No se encontró el presupuesto sembrado.");
 
@@ -119,7 +123,7 @@ internal static class DocumentRunner
         Console.WriteLine();
 
         Save(
-            service.BuildClientQuote(quote, includeMaterialDetail: true),
+            service.BuildClientQuote(quote),
             outputDirectory,
             "presupuesto-cliente");
 
@@ -139,7 +143,7 @@ internal static class DocumentRunner
         Console.WriteLine($"Presupuesto simple: «{plain.Title}» — {plain.BudgetDisplay}");
 
         Save(
-            service.BuildClientQuote(plain, includeMaterialDetail: true),
+            service.BuildClientQuote(plain),
             outputDirectory,
             "presupuesto-simple");
 
@@ -149,6 +153,25 @@ internal static class DocumentRunner
         Console.WriteLine($"Documentos generados en {outputDirectory}");
 
         Dispatcher.CurrentDispatcher.InvokeShutdown();
+    }
+
+    /// <summary>Carga dos operarios de Personal en el presupuesto y recalcula el precio.</summary>
+    private static void AddQuotedWorkers(int quoteId)
+    {
+        var cristian = AppHost.EmployeeService.Create("Cristian Gómez", null, "Oficial carpintero", 25000m);
+        var diego = AppHost.EmployeeService.Create("Diego Ruiz", null, "Ayudante", 22000m);
+
+        AppHost.QuoteService.AddLaborLine(quoteId, cristian.Id, cristian.FullName, 5m, 25000m);
+        AppHost.QuoteService.AddLaborLine(quoteId, diego.Id, diego.FullName, 3m, 22000m);
+
+        var detail = AppHost.QuoteService.GetDetail(quoteId)!;
+
+        AppHost.QuoteService.SaveCalculation(
+            quoteId,
+            detail.CalculationMaterials,
+            detail.EstimatedDays ?? 1m,
+            detail.DailyRate ?? 0m,
+            detail.Rates ?? BudgetRates.Defaults());
     }
 
     private static void RenderPhotoExamples(
@@ -235,7 +258,7 @@ internal static class DocumentRunner
 
         var detail = AppHost.QuoteService.GetDetail(id)!;
         Console.WriteLine($"Presupuesto ilustrado: «{detail.Title}» — {detail.Images.Count} foto(s)");
-        Save(service.BuildClientQuote(detail, includeMaterialDetail: true), outputDirectory, name);
+        Save(service.BuildClientQuote(detail), outputDirectory, name);
         return id;
     }
 

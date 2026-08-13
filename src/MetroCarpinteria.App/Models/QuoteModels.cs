@@ -159,6 +159,36 @@ public sealed class QuoteLineItem
         : "No está en el inventario";
 }
 
+/// <summary>Un operario cotizado en el presupuesto, tal como se ve en la calculadora.</summary>
+public sealed class QuoteLaborLineItem
+{
+    public int Id { get; init; }
+
+    /// <summary>Ficha en Personal. Null cuando se cargó a alguien suelto.</summary>
+    public int? EmployeeId { get; init; }
+
+    /// <summary>Nombre congelado al agregarlo.</summary>
+    public string Description { get; init; } = string.Empty;
+
+    public decimal Days { get; init; }
+    public decimal DailyRate { get; init; }
+    public int SortOrder { get; init; }
+
+    /// <summary>Rol de la ficha, si sigue existiendo. Solo para mostrar.</summary>
+    public string? Role { get; init; }
+
+    public decimal LineTotal => Math.Round(Days * DailyRate, 2, MidpointRounding.AwayFromZero);
+
+    public string DaysDisplay => Days == 1m ? "1 día" : $"{AppCulture.Quantity(Days)} días";
+    public string RateDisplay => $"{DaysDisplay} × {AppCulture.Money(DailyRate)}";
+    public string LineTotalDisplay => AppCulture.Money(LineTotal);
+
+    /// <summary>«5 días × $ 25.000 · Oficial carpintero», sin el punto si no hay rol.</summary>
+    public string SummaryDisplay => string.IsNullOrWhiteSpace(Role)
+        ? RateDisplay
+        : $"{RateDisplay}  ·  {Role}";
+}
+
 public sealed class QuoteApprovalShortfall
 {
     public string Description { get; init; } = string.Empty;
@@ -211,6 +241,12 @@ public sealed class QuoteDetail
     public decimal? DailyRate { get; init; }
     public BudgetRates? Rates { get; init; }
     public IReadOnlyList<QuoteLineItem> Lines { get; init; } = [];
+
+    /// <summary>
+    /// Los operarios cotizados. Vacío es «lo hace el jefe solo», que es como quedan todos
+    /// los presupuestos anteriores a que esto existiera.
+    /// </summary>
+    public IReadOnlyList<QuoteLaborLineItem> LaborLines { get; init; } = [];
 
     /// <summary>Desglose reconstruido desde las entradas congeladas. Null si nunca se calculó.</summary>
     public BudgetBreakdown? Breakdown { get; init; }

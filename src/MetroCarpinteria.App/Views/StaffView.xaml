@@ -68,6 +68,7 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Nombre" Binding="{Binding FullName}" Width="*" />
                             <DataGridTextColumn Header="Rol" Binding="{Binding Role}" Width="120" />
+                            <DataGridTextColumn Header="Jornal" Binding="{Binding DailyRateDisplay}" Width="100" />
                             <DataGridTextColumn Header="Teléfono" Binding="{Binding Phone}" Width="110" />
                             <DataGridTextColumn Header="Proyectos" Binding="{Binding ActiveAssignmentCount}" Width="70" />
                         </DataGrid.Columns>
@@ -89,7 +90,14 @@
                                          Padding="10,8" Margin="0,0,0,12" />
                                 <TextBlock Text="Rol / especialidad" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                                 <TextBox Text="{Binding FormRole, UpdateSourceTrigger=PropertyChanged}"
-                                         Padding="10,8" Margin="0,0,0,16" />
+                                         Padding="10,8" Margin="0,0,0,12" />
+                                <TextBlock Text="Jornal por día" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                <TextBox Text="{Binding FormDailyRate, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="10,8" Margin="0,0,0,4"
+                                         ToolTip="Se usa para prellenar la mano de obra al cotizarlo" />
+                                <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" Margin="0,0,0,16"
+                                           TextWrapping="Wrap"
+                                           Text="Opcional. Cambiarlo no toca los presupuestos ya hechos." />
                                 <WrapPanel>
                                     <Button Content="Guardar" Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding SaveEmployeeCommand}" Margin="0,0,10,0" />

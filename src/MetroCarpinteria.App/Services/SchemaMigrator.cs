@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 8;
+    public const int LatestVersion = 9;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -77,7 +77,8 @@ public sealed class SchemaMigrator
         new(5, "Ficha de clientes", ApplyClients, TransformsData: true),
         new(6, "Señas y pagos a cuenta", ApplyProjectPayments),
         new(7, "Afinidad de las columnas de dinero", ApplyMoneyColumnAffinity, TransformsData: true),
-        new(8, "Fotos de referencia en presupuestos", ApplyQuoteImages)
+        new(8, "Fotos de referencia en presupuestos", ApplyQuoteImages),
+        new(9, "Mano de obra por operario", ApplyLaborLines)
     ];
 
     /// <summary>
@@ -313,6 +314,46 @@ public sealed class SchemaMigrator
 
         Execute(connection, transaction,
             "CREATE INDEX IF NOT EXISTS IX_ProjectQuoteImages_ProjectId ON ProjectQuoteImages (ProjectId);");
+    }
+
+    /// <summary>
+    /// Mano de obra de los operarios, uno por fila, y el jornal en la ficha de Personal.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// El jefe no se toca: sigue en <c>Projects.EstimatedDays</c> y <c>Projects.DailyRate</c>,
+    /// que ya significaban eso. Por eso este paso no reescribe ni una fila y todo presupuesto
+    /// existente se sigue leyendo como «el jefe, sin operarios», dando el mismo precio.
+    /// </para>
+    /// <para>
+    /// <c>Days</c>, <c>DailyRate</c> y el jornal del empleado van <c>TEXT</c> por lo que
+    /// explica la nota de la clase: con afinidad REAL, SQLite pasa los importes a punto
+    /// flotante y las sumas empiezan a diferir en centavos.
+    /// </para>
+    /// </remarks>
+    private static void ApplyLaborLines(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        Execute(connection, transaction, """
+            CREATE TABLE IF NOT EXISTS ProjectLaborLines (
+                Id INTEGER NOT NULL CONSTRAINT PK_ProjectLaborLines PRIMARY KEY AUTOINCREMENT,
+                ProjectId INTEGER NOT NULL,
+                EmployeeId INTEGER NULL,
+                Description TEXT NOT NULL,
+                Days TEXT NOT NULL,
+                DailyRate TEXT NOT NULL,
+                SortOrder INTEGER NOT NULL,
+                CreatedAtUtc TEXT NOT NULL,
+                CONSTRAINT FK_ProjectLaborLines_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE,
+                CONSTRAINT FK_ProjectLaborLines_Employees_EmployeeId FOREIGN KEY (EmployeeId) REFERENCES Employees (Id) ON DELETE SET NULL
+            );
+            """);
+
+        Execute(connection, transaction,
+            "CREATE INDEX IF NOT EXISTS IX_ProjectLaborLines_ProjectId ON ProjectLaborLines (ProjectId);");
+        Execute(connection, transaction,
+            "CREATE INDEX IF NOT EXISTS IX_ProjectLaborLines_EmployeeId ON ProjectLaborLines (EmployeeId);");
+
+        AddColumnIfMissing(connection, transaction, "Employees", "DailyRate", "TEXT NULL");
     }
 
     /// <summary>

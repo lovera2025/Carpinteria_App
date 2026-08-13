@@ -52,6 +52,12 @@ public partial class QuotesViewModel : ViewModelBase
     private bool _saveToCatalog;
     private QuoteLineItem? _editingLine;
 
+    private bool _isLaborFormOpen;
+    private EmployeeListItem? _selectedWorker;
+    private string _looseWorkerName = string.Empty;
+    private string _workerDays = "1";
+    private string _workerDailyRate = string.Empty;
+
     private string _calcMaterials = "0";
     private string _calcDays = "1";
     private string _calcDailyRate = string.Empty;
@@ -90,6 +96,8 @@ public partial class QuotesViewModel : ViewModelBase
 
         Quotes = [];
         Lines = [];
+        LaborLines = [];
+        AvailableWorkers = [];
         Images = [];
         BreakdownLines = [];
         Shortfalls = [];
@@ -114,6 +122,11 @@ public partial class QuotesViewModel : ViewModelBase
         EditLineCommand = new RelayCommand(EditLine, _ => CanEditSelected);
         RemoveLineCommand = new RelayCommand(RemoveLine, _ => CanEditSelected);
 
+        AddLaborLineCommand = new RelayCommand(_ => OpenLaborForm(), _ => CanEditSelected);
+        ConfirmWorkerCommand = new RelayCommand(_ => ConfirmWorker(), _ => CanConfirmWorker);
+        CancelWorkerCommand = new RelayCommand(_ => CloseLaborForm());
+        RemoveLaborLineCommand = new RelayCommand(RemoveLaborLine, _ => CanEditSelected);
+
         CalculateCommand = new RelayCommand(_ => Calculate());
         SaveDefaultRatesCommand = new RelayCommand(_ => SaveDefaultRates());
         RestoreDefaultRatesCommand = new RelayCommand(_ => RestoreDefaultRates());
@@ -131,6 +144,8 @@ public partial class QuotesViewModel : ViewModelBase
         // puede sacar a medio hacer, es de uso interno y sirve para revisar los materiales.
         PrintClientCommand = new RelayCommand(_ => PrintClient(), _ => CanPrintForClient);
         PrintCostSheetCommand = new RelayCommand(_ => PrintCostSheet(), _ => Detail is not null);
+        SavePdfClientCommand = new RelayCommand(_ => SavePdfClient(), _ => CanPrintForClient);
+        SavePdfCostSheetCommand = new RelayCommand(_ => SavePdfCostSheet(), _ => Detail is not null);
 
         AddImagesCommand = new RelayCommand(_ => AddImages(), _ => CanAddImages);
         PasteImageCommand = new RelayCommand(_ => PasteImage(), _ => CanAddImages);
@@ -150,6 +165,8 @@ public partial class QuotesViewModel : ViewModelBase
 
     public ObservableCollection<QuoteListItem> Quotes { get; }
     public ObservableCollection<QuoteLineItem> Lines { get; }
+    public ObservableCollection<QuoteLaborLineItem> LaborLines { get; }
+    public ObservableCollection<EmployeeListItem> AvailableWorkers { get; }
     public ObservableCollection<QuoteImageRow> Images { get; }
     public ObservableCollection<BudgetBreakdownLine> BreakdownLines { get; }
     public ObservableCollection<QuoteApprovalShortfall> Shortfalls { get; }
@@ -184,6 +201,10 @@ public partial class QuotesViewModel : ViewModelBase
     public ICommand CancelMaterialCommand { get; }
     public ICommand EditLineCommand { get; }
     public ICommand RemoveLineCommand { get; }
+    public ICommand AddLaborLineCommand { get; }
+    public ICommand ConfirmWorkerCommand { get; }
+    public ICommand CancelWorkerCommand { get; }
+    public ICommand RemoveLaborLineCommand { get; }
     public ICommand CalculateCommand { get; }
     public ICommand SaveDefaultRatesCommand { get; }
     public ICommand RestoreDefaultRatesCommand { get; }
@@ -196,6 +217,8 @@ public partial class QuotesViewModel : ViewModelBase
     public ICommand ApplyPendingCommand { get; }
     public ICommand PrintClientCommand { get; }
     public ICommand PrintCostSheetCommand { get; }
+    public ICommand SavePdfClientCommand { get; }
+    public ICommand SavePdfCostSheetCommand { get; }
     public ICommand AddImagesCommand { get; }
     public ICommand PasteImageCommand { get; }
     public ICommand RemoveImageCommand { get; }

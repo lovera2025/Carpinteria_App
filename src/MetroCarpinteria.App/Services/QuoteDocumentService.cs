@@ -38,13 +38,21 @@ public sealed class QuoteDocumentService
     public const double ContentWidth = 694;
     private const double VerticalMargin = 44;
 
-    /// <summary>Documento para entregarle al cliente. Sin porcentajes internos.</summary>
+    /// <summary>
+    /// Documento para entregarle al cliente: el trabajo, las fotos y un solo número.
+    /// </summary>
+    /// <remarks>
+    /// No lleva desglose de ningún tipo —ni el resumen de materiales y mano de obra, ni la
+    /// lista de materiales—: el cliente ve el TOTAL y nada más. Lo que explica qué está
+    /// comprando es la descripción del trabajo, y por eso acá pesa más que en cualquier
+    /// otro lado.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Si el presupuesto no tiene precio o desglose. Los botones ya no lo permiten, pero
     /// esto se llama también desde Proyectos y desde los tests: un presupuesto impreso con
     /// el TOTAL en un guión llega al cliente y no hay forma de arreglarlo después.
     /// </exception>
-    public FlowDocument BuildClientQuote(QuoteDetail quote, bool includeMaterialDetail)
+    public FlowDocument BuildClientQuote(QuoteDetail quote)
     {
         ArgumentNullException.ThrowIfNull(quote);
 
@@ -66,22 +74,11 @@ public sealed class QuoteDocumentService
         document.Blocks.Add(BuildTitleRow("PRESUPUESTO", quote));
         document.Blocks.Add(BuildClientBlock(quote));
 
-        if (includeMaterialDetail && quote.Lines.Count > 0)
-        {
-            document.Blocks.Add(SectionTitle("Detalle de materiales"));
-            document.Blocks.Add(BuildMaterialsTable(quote, showUnitCost: false));
-        }
-
         AddReferenceSection(document, quote);
 
-        document.Blocks.Add(SectionTitle("Resumen"));
-
-        // Sin la línea de total: el bloque destacado de abajo ya la muestra.
-        document.Blocks.Add(BuildSummaryTable(
-            quote.Breakdown.ClientLines.Where(l => !l.IsTotal).ToList()));
-
-        // El pie comercial solo aparece si se pactó algo. Un presupuesto sin IVA ni
-        // descuento no tiene por qué mostrar «Descuento $ 0» ni un subtotal repetido.
+        // El pie comercial solo aparece si se pactó algo. Un descuento que el cliente
+        // negoció tiene que figurar en el papel, y el IVA discriminado es una condición
+        // comercial y no un costo interno: por eso sobreviven al recorte.
         if (quote.Commercial is { IsPlain: false } commercial)
         {
             document.Blocks.Add(BuildSummaryTable(commercial.Lines.Where(l => !l.IsTotal).ToList()));
@@ -96,12 +93,11 @@ public sealed class QuoteDocumentService
         }
 
         document.Blocks.Add(BuildValidityNote(quote));
-        document.Blocks.Add(BuildSignature());
         document.Blocks.Add(BuildFooter());
 
-        // Total, saldo, vigencia, firma y pie viajan juntos: partirlos deja al cliente
-        // firmando una hoja sin el número que está firmando.
-        KeepClosingParagraphsTogether(document, quote.HasPayments ? 5 : 4);
+        // Total, saldo, vigencia y pie viajan juntos: partirlos deja al cliente con una
+        // hoja sin el número.
+        KeepClosingParagraphsTogether(document, quote.HasPayments ? 4 : 3);
 
         return document;
     }
@@ -114,7 +110,7 @@ public sealed class QuoteDocumentService
     {
         var document = CreateDocument();
 
-        document.Blocks.Add(BuildHeaderBand());
+        document.Blocks.Add(BuildHeaderBand(compact: true));
         document.Blocks.Add(BuildTitleRow("HOJA DE COSTOS", quote));
 
         document.Blocks.Add(new Paragraph(new Run("Uso interno del taller — no entregar al cliente."))
@@ -123,8 +119,8 @@ public sealed class QuoteDocumentService
             FontWeight = FontWeights.SemiBold,
             Foreground = OnBrownBrush,
             Background = BrownBrush,
-            Padding = new Thickness(10, 6, 10, 6),
-            Margin = new Thickness(0, 0, 0, 14)
+            Padding = new Thickness(10, 5, 10, 5),
+            Margin = new Thickness(0, 0, 0, 8)
         });
 
         document.Blocks.Add(BuildClientBlock(quote));
@@ -132,7 +128,7 @@ public sealed class QuoteDocumentService
         if (quote.Lines.Count > 0)
         {
             document.Blocks.Add(SectionTitle("Materiales"));
-            document.Blocks.Add(BuildMaterialsTable(quote, showUnitCost: true));
+            document.Blocks.Add(BuildMaterialsTable(quote));
         }
 
         document.Blocks.Add(SectionTitle("Desglose del cálculo"));
@@ -144,6 +140,14 @@ public sealed class QuoteDocumentService
         else
         {
             document.Blocks.Add(Muted("Este presupuesto todavía no tiene un cálculo guardado."));
+        }
+
+        // Con un solo renglón —el jefe— no hay nada que desglosar: el desglose de arriba
+        // ya lo dice todo.
+        if (quote.Breakdown is { HasWorkers: true } withWorkers)
+        {
+            document.Blocks.Add(SectionTitle("Mano de obra por persona"));
+            document.Blocks.Add(BuildLaborTable(withWorkers));
         }
 
         if (quote.Commercial is { IsPlain: false } commercial)
@@ -192,8 +196,8 @@ public sealed class QuoteDocumentService
         var paragraph = new Paragraph
         {
             Background = margin.Value < 0 ? BandBrush : CreamBrush,
-            Padding = new Thickness(14, 10, 14, 10),
-            Margin = new Thickness(0, 10, 0, 0)
+            Padding = new Thickness(14, 8, 14, 8),
+            Margin = new Thickness(0, 6, 0, 0)
         };
 
         paragraph.Inlines.Add(new Run("Margen efectivo:  ")
@@ -279,8 +283,15 @@ public sealed class QuoteDocumentService
     /// Banda de cabecera del mismo crema que el fondo del logo, así el cuadrado del
     /// JPEG desaparece dentro de la banda en vez de verse pegoteado sobre el papel.
     /// </summary>
-    private static Block BuildHeaderBand()
+    /// <param name="compact">
+    /// Banda más baja, para la hoja de costos. Es un papel de trabajo del taller y no algo
+    /// que se entrega: el logo grande ahí no aporta nada y cuesta los píxeles que deciden si
+    /// el documento entra en una A4.
+    /// </param>
+    private static Block BuildHeaderBand(bool compact = false)
     {
+        var logoSize = compact ? 50 : 68;
+
         var table = NoBorderTable();
         table.Columns.Add(Column(96, BandBrush));
         table.Columns.Add(Column(ContentWidth - 96, BandBrush));
@@ -288,23 +299,25 @@ public sealed class QuoteDocumentService
         var brand = new Paragraph { Margin = new Thickness(0) };
         brand.Inlines.Add(new Run(BrandName)
         {
-            FontSize = 21,
+            FontSize = compact ? 17 : 21,
             FontWeight = FontWeights.Bold,
             Foreground = BrownBrush
         });
         brand.Inlines.Add(new LineBreak());
         brand.Inlines.Add(new Run(BrandTagline) { FontSize = 11, Foreground = MutedBrush });
 
+        var vertical = compact ? 8 : 12;
+
         var row = new TableRow();
-        row.Cells.Add(new TableCell(BuildLogoBlock())
+        row.Cells.Add(new TableCell(BuildLogoBlock(logoSize))
         {
             Background = BandBrush,
-            Padding = new Thickness(14, 12, 4, 12)
+            Padding = new Thickness(14, vertical, 4, vertical)
         });
         row.Cells.Add(new TableCell(brand)
         {
             Background = BandBrush,
-            Padding = new Thickness(6, 14, 18, 12),
+            Padding = new Thickness(6, vertical + 2, 18, vertical),
             TextAlignment = TextAlignment.Right
         });
 
@@ -316,7 +329,7 @@ public sealed class QuoteDocumentService
         return table;
     }
 
-    private static Block BuildLogoBlock()
+    private static Block BuildLogoBlock(double size)
     {
         var image = LoadLogo();
 
@@ -330,15 +343,15 @@ public sealed class QuoteDocumentService
         return new Paragraph(new InlineUIContainer(new Image
         {
             Source = image,
-            Width = 68,
-            Height = 68,
+            Width = size,
+            Height = size,
             Stretch = Stretch.Uniform
         }))
         {
             Margin = new Thickness(0),
             // Un poco más que el alto de la imagen: con la altura justa el renglón la
             // recorta abajo por el espacio de descendentes.
-            LineHeight = 76,
+            LineHeight = size + 8,
             LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             TextAlignment = TextAlignment.Left
         };
@@ -415,8 +428,8 @@ public sealed class QuoteDocumentService
         }
 
         var row = new TableRow();
-        row.Cells.Add(new TableCell(left) { Padding = new Thickness(0, 18, 0, 10) });
-        row.Cells.Add(new TableCell(right) { Padding = new Thickness(0, 18, 0, 10) });
+        row.Cells.Add(new TableCell(left) { Padding = new Thickness(0, 10, 0, 6) });
+        row.Cells.Add(new TableCell(right) { Padding = new Thickness(0, 10, 0, 6) });
 
         var group = new TableRowGroup();
         group.Rows.Add(row);
@@ -430,8 +443,8 @@ public sealed class QuoteDocumentService
         var paragraph = new Paragraph
         {
             Background = CreamBrush,
-            Padding = new Thickness(14, 12, 14, 12),
-            Margin = new Thickness(0, 0, 0, 6),
+            Padding = new Thickness(14, 10, 14, 10),
+            Margin = new Thickness(0, 0, 0, 4),
             BorderBrush = GoldBrush,
             BorderThickness = new Thickness(0, 0, 0, 2)
         };
@@ -442,13 +455,45 @@ public sealed class QuoteDocumentService
         paragraph.Inlines.Add(Label("Trabajo: "));
         paragraph.Inlines.Add(new Run(quote.Title) { FontWeight = FontWeights.SemiBold });
 
+        // Al cuerpo del documento y no en gris chico: sacado el desglose, la descripción es
+        // lo único que le dice al cliente qué está comprando, y es lo que justifica el
+        // número. Como nota al pie quedaba pareja con la fecha de vencimiento.
         if (!string.IsNullOrWhiteSpace(quote.Description))
         {
             paragraph.Inlines.Add(new LineBreak());
-            paragraph.Inlines.Add(new Run(quote.Description) { FontSize = 11, Foreground = MutedBrush });
+            AddMultiline(paragraph.Inlines, quote.Description);
         }
 
         return paragraph;
+    }
+
+    /// <summary>
+    /// Agrega un texto respetando los saltos de línea que haya escrito el usuario.
+    /// </summary>
+    /// <remarks>
+    /// El campo de descripción del editor acepta varios renglones, y en el papel tienen que
+    /// verse como renglones y no como un párrafo corrido. Las líneas vacías se saltean para
+    /// que un Enter de más no abra un agujero en la hoja.
+    /// </remarks>
+    private static void AddMultiline(InlineCollection inlines, string text)
+    {
+        var lines = text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0)
+            .ToList();
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (i > 0)
+            {
+                inlines.Add(new LineBreak());
+            }
+
+            inlines.Add(new Run(lines[i]));
+        }
     }
 
     /// <summary>
@@ -567,30 +612,30 @@ public sealed class QuoteDocumentService
         }
     }
 
-    private static Block BuildMaterialsTable(QuoteDetail quote, bool showUnitCost)
+    /// <summary>
+    /// Los materiales con su precio unitario. Solo la hoja de costos: el papel del cliente
+    /// no lleva ninguna lista.
+    /// </summary>
+    /// <remarks>
+    /// Sin fila de subtotal a propósito. El desglose empieza justo abajo con
+    /// «Materiales $ 14.000», que es exactamente el mismo número: repetirlo dos renglones
+    /// después no agregaba nada y costaba los píxeles que hacen que la hoja entre en una A4.
+    /// </remarks>
+    private static Block BuildMaterialsTable(QuoteDetail quote)
     {
         var table = NoBorderTable();
-        table.Columns.Add(Column(showUnitCost ? ContentWidth - 360 : ContentWidth - 120));
+        table.Columns.Add(Column(ContentWidth - 360));
         table.Columns.Add(Column(120));
-
-        if (showUnitCost)
-        {
-            table.Columns.Add(Column(120));
-            table.Columns.Add(Column(120));
-        }
+        table.Columns.Add(Column(120));
+        table.Columns.Add(Column(120));
 
         var group = new TableRowGroup();
 
         var header = new TableRow();
         header.Cells.Add(HeaderCell("Detalle", TextAlignment.Left));
         header.Cells.Add(HeaderCell("Cantidad", TextAlignment.Right));
-
-        if (showUnitCost)
-        {
-            header.Cells.Add(HeaderCell("P. unitario", TextAlignment.Right));
-            header.Cells.Add(HeaderCell("Total", TextAlignment.Right));
-        }
-
+        header.Cells.Add(HeaderCell("P. unitario", TextAlignment.Right));
+        header.Cells.Add(HeaderCell("Total", TextAlignment.Right));
         group.Rows.Add(header);
 
         var alternate = false;
@@ -601,52 +646,100 @@ public sealed class QuoteDocumentService
 
             row.Cells.Add(BodyCell(line.Description, TextAlignment.Left, shade));
             row.Cells.Add(BodyCell(line.QuantityDisplay, TextAlignment.Right, shade));
-
-            if (showUnitCost)
-            {
-                row.Cells.Add(BodyCell(line.UnitCostDisplay, TextAlignment.Right, shade));
-                row.Cells.Add(BodyCell(line.LineTotalDisplay, TextAlignment.Right, shade));
-            }
+            row.Cells.Add(BodyCell(line.UnitCostDisplay, TextAlignment.Right, shade));
+            row.Cells.Add(BodyCell(line.LineTotalDisplay, TextAlignment.Right, shade));
 
             group.Rows.Add(row);
             alternate = !alternate;
         }
 
-        if (showUnitCost)
+        table.RowGroups.Add(group);
+        table.Margin = new Thickness(0, 0, 0, 10);
+        return table;
+    }
+
+    /// <summary>
+    /// Qué cobra cada uno y qué le suma al precio final.
+    /// </summary>
+    /// <remarks>
+    /// La segunda columna es el punto de la tabla: un ayudante de $ 22.000 por día durante
+    /// tres días cobra $ 66.000, pero arrastra su parte de gastos y ganancia y le suma
+    /// $ 118.800 al presupuesto. Ese es el número que sirve para decidir a quién poner en un
+    /// trabajo, y como incluye la ganancia <b>solo puede salir en la hoja interna</b>.
+    /// </remarks>
+    private static Block BuildLaborTable(BudgetBreakdown breakdown)
+    {
+        const double amountWidth = 140;
+        const double loadedWidth = 150;
+
+        var table = NoBorderTable();
+        table.Columns.Add(Column(ContentWidth - amountWidth - loadedWidth));
+        table.Columns.Add(Column(amountWidth));
+        table.Columns.Add(Column(loadedWidth));
+
+        var group = new TableRowGroup();
+
+        var header = new TableRow();
+        header.Cells.Add(HeaderCell("Persona", TextAlignment.Left));
+        header.Cells.Add(HeaderCell("Jornal", TextAlignment.Right));
+        header.Cells.Add(HeaderCell("Pesa en el precio", TextAlignment.Right));
+        group.Rows.Add(header);
+
+        var alternate = false;
+        foreach (var share in breakdown.LaborShares)
         {
-            var totals = new TableRow();
-            totals.Cells.Add(new TableCell(new Paragraph(new Run("Subtotal de materiales")
+            var shade = alternate ? CreamBrush : null;
+
+            // Nombre y jornada en un solo renglón. Con el detalle en una segunda línea, la
+            // hoja de costos con cuatro operarios se pasaba a una segunda página.
+            var who = new Paragraph { Margin = new Thickness(0) };
+            who.Inlines.Add(new Run(share.Description) { FontSize = 11 });
+            who.Inlines.Add(new Run($"   {share.RateDisplay}") { FontSize = 10, Foreground = MutedBrush });
+
+            var row = new TableRow();
+            row.Cells.Add(new TableCell(who)
             {
+                Background = shade,
+                Padding = new Thickness(8, 5, 8, 5)
+            });
+            row.Cells.Add(BodyCell(share.AmountDisplay, TextAlignment.Right, shade));
+            row.Cells.Add(new TableCell(new Paragraph(new Run(share.LoadedDisplay)
+            {
+                FontSize = 11,
                 FontWeight = FontWeights.SemiBold
             })
             { Margin = new Thickness(0) })
             {
-                ColumnSpan = 3,
-                Padding = new Thickness(8, 8, 8, 8),
-                TextAlignment = TextAlignment.Right,
-                BorderBrush = GoldBrush,
-                BorderThickness = new Thickness(0, 1, 0, 0)
+                Background = shade,
+                Padding = new Thickness(8, 5, 8, 5),
+                TextAlignment = TextAlignment.Right
             });
 
-            totals.Cells.Add(new TableCell(new Paragraph(new Run(quote.MaterialsTotalDisplay)
-            {
-                FontWeight = FontWeights.Bold
-            })
-            { Margin = new Thickness(0) })
-            {
-                Padding = new Thickness(8, 8, 8, 8),
-                TextAlignment = TextAlignment.Right,
-                BorderBrush = GoldBrush,
-                BorderThickness = new Thickness(0, 1, 0, 0)
-            });
-
-            group.Rows.Add(totals);
+            group.Rows.Add(row);
+            alternate = !alternate;
         }
 
+        var totals = new TableRow();
+        totals.Cells.Add(TotalCell("Total", TextAlignment.Left));
+        totals.Cells.Add(TotalCell(AppCulture.Money(breakdown.Labor), TextAlignment.Right));
+        totals.Cells.Add(TotalCell(
+            AppCulture.Money(breakdown.Labor + breakdown.Overhead + breakdown.Profit),
+            TextAlignment.Right));
+        group.Rows.Add(totals);
+
         table.RowGroups.Add(group);
-        table.Margin = new Thickness(0, 0, 0, 16);
+        table.Margin = new Thickness(0, 0, 0, 14);
         return table;
     }
+
+    private static TableCell TotalCell(string text, TextAlignment alignment) =>
+        new(new Paragraph(new Run(text) { FontWeight = FontWeights.Bold }) { Margin = new Thickness(0) })
+        {
+            Padding = new Thickness(8, 7, 8, 7),
+            TextAlignment = alignment,
+            BorderBrush = GoldBrush,
+            BorderThickness = new Thickness(0, 1, 0, 0)
+        };
 
     private static Block BuildSummaryTable(IReadOnlyList<BudgetBreakdownLine> lines)
     {
@@ -667,10 +760,10 @@ public sealed class QuoteDocumentService
             }
 
             var row = new TableRow();
-            row.Cells.Add(new TableCell(label) { Padding = new Thickness(0, 5, 8, 5) });
+            row.Cells.Add(new TableCell(label) { Padding = new Thickness(0, 3, 8, 3) });
             row.Cells.Add(new TableCell(new Paragraph(new Run(line.AmountDisplay)) { Margin = new Thickness(0) })
             {
-                Padding = new Thickness(8, 5, 0, 5),
+                Padding = new Thickness(8, 3, 0, 3),
                 TextAlignment = TextAlignment.Right
             });
 
@@ -678,7 +771,7 @@ public sealed class QuoteDocumentService
         }
 
         table.RowGroups.Add(group);
-        table.Margin = new Thickness(0, 0, 0, 14);
+        table.Margin = new Thickness(0, 0, 0, 10);
         return table;
     }
 
@@ -702,7 +795,7 @@ public sealed class QuoteDocumentService
         group.Rows.Add(BalanceRow("SALDO A PAGAR", quote.BalanceDisplay, emphasis: true));
 
         table.RowGroups.Add(group);
-        table.Margin = new Thickness(0, 8, 0, 10);
+        table.Margin = new Thickness(0, 6, 0, 8);
         return table;
     }
 
@@ -723,7 +816,7 @@ public sealed class QuoteDocumentService
         { Margin = new Thickness(0) })
         {
             Background = background,
-            Padding = new Thickness(16, 9, 8, 9)
+            Padding = new Thickness(16, 7, 8, 7)
         });
 
         row.Cells.Add(new TableCell(new Paragraph(new Run(amount)
@@ -735,7 +828,7 @@ public sealed class QuoteDocumentService
         { Margin = new Thickness(0) })
         {
             Background = background,
-            Padding = new Thickness(8, 9, 16, 9),
+            Padding = new Thickness(8, 7, 16, 7),
             TextAlignment = TextAlignment.Right
         });
 
@@ -778,7 +871,7 @@ public sealed class QuoteDocumentService
         var group = new TableRowGroup();
         group.Rows.Add(row);
         table.RowGroups.Add(group);
-        table.Margin = new Thickness(0, 4, 0, 18);
+        table.Margin = new Thickness(0, 4, 0, 12);
 
         return table;
     }
@@ -793,44 +886,15 @@ public sealed class QuoteDocumentService
         return Muted(text);
     }
 
-    private static Block BuildSignature()
-    {
-        var table = NoBorderTable();
-        table.Columns.Add(Column((ContentWidth - 60) / 2));
-        table.Columns.Add(Column(60));
-        table.Columns.Add(Column((ContentWidth - 60) / 2));
-
-        var row = new TableRow();
-        row.Cells.Add(SignatureCell("Firma del cliente"));
-        row.Cells.Add(new TableCell(new Paragraph { Margin = new Thickness(0) }));
-        row.Cells.Add(SignatureCell("Metro Carpintería"));
-
-        var group = new TableRowGroup();
-        group.Rows.Add(row);
-        table.RowGroups.Add(group);
-        table.Margin = new Thickness(0, 40, 0, 0);
-
-        return table;
-    }
-
-    private static TableCell SignatureCell(string caption) =>
-        new(new Paragraph(new Run(caption) { FontSize = 10, Foreground = MutedBrush })
-        {
-            Margin = new Thickness(0, 6, 0, 0),
-            TextAlignment = TextAlignment.Center
-        })
-        {
-            BorderBrush = MutedBrush,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(0, 4, 0, 0)
-        };
-
     /// <remarks>
     /// El margen superior es contenido: cada píxel de aire acá empuja el pie hacia la hoja
-    /// siguiente. La hoja de costos completa —con materiales, desglose, condiciones, saldo
-    /// y margen— se pasaba de A4 <b>por seis píxeles</b>, y esos seis píxeles costaban una
-    /// hoja entera con nada más que esta línea impresa. La raya dorada ya separa lo
-    /// suficiente como para no necesitar tanto espacio.
+    /// siguiente. La hoja de costos completa —materiales, desglose, mano de obra por persona,
+    /// condiciones, saldo y margen— entra en A4 con unos 30 píxeles de sobra, así que este
+    /// espaciado no es negociable: aflojarlo cuesta una hoja entera impresa con nada más que
+    /// esta línea. La raya dorada ya separa lo suficiente.
+    /// <para>
+    /// Lo mide <c>--documents</c> del smoke test, que imprime cuántos píxeles sobran o faltan.
+    /// </para>
     /// </remarks>
     private static Block BuildFooter() =>
         new Paragraph(new Run($"{BrandName} · {BrandTagline}"))
@@ -838,10 +902,10 @@ public sealed class QuoteDocumentService
             FontSize = 10,
             Foreground = MutedBrush,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 14, 0, 0),
+            Margin = new Thickness(0, 10, 0, 0),
             BorderBrush = GoldBrush,
             BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(0, 8, 0, 0)
+            Padding = new Thickness(0, 6, 0, 0)
         };
 
     /// <summary>
@@ -883,6 +947,10 @@ public sealed class QuoteDocumentService
         Margin = new Thickness(0)
     };
 
+    /// <remarks>
+    /// El aire de acá es contenido: cada título de sección se repite cuatro o cinco veces en
+    /// la hoja de costos, y ahí los píxeles deciden si el documento entra en una A4.
+    /// </remarks>
     private static Block SectionTitle(string text) =>
         new Paragraph(new Run(text.ToUpperInvariant())
         {
@@ -891,10 +959,10 @@ public sealed class QuoteDocumentService
             Foreground = BrownBrush
         })
         {
-            Margin = new Thickness(0, 14, 0, 8),
+            Margin = new Thickness(0, 8, 0, 5),
             BorderBrush = GoldBrush,
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(0, 0, 0, 4)
+            Padding = new Thickness(0, 0, 0, 3)
         };
 
     private static Block Muted(string text) =>
@@ -917,7 +985,7 @@ public sealed class QuoteDocumentService
         { Margin = new Thickness(0) })
         {
             Background = BandBrush,
-            Padding = new Thickness(8, 7, 8, 7),
+            Padding = new Thickness(8, 5, 8, 5),
             TextAlignment = alignment
         };
 
@@ -925,7 +993,7 @@ public sealed class QuoteDocumentService
         new(new Paragraph(new Run(text) { FontSize = 11 }) { Margin = new Thickness(0) })
         {
             Background = background,
-            Padding = new Thickness(8, 6, 8, 6),
+            Padding = new Thickness(8, 5, 8, 5),
             TextAlignment = alignment
         };
 

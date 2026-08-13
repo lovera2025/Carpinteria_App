@@ -168,8 +168,7 @@ public partial class QuotesViewModel
         try
         {
             var document = AppHost.QuoteDocumentService.BuildClientQuote(
-                AppHost.QuoteService.GetDetail(Detail.Id) ?? Detail,
-                includeMaterialDetail: true);
+                AppHost.QuoteService.GetDetail(Detail.Id) ?? Detail);
 
             if (AppHost.QuoteDocumentService.Print(document, $"Presupuesto {Detail.Id:0000}"))
             {
@@ -197,6 +196,62 @@ public partial class QuotesViewModel
             {
                 SetStatus("Hoja de costos enviada a la impresora.", isError: false);
             }
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private void SavePdfClient()
+    {
+        if (Detail is null)
+        {
+            return;
+        }
+
+        // Se relee de la base, igual que al imprimir: lo que se manda por mensaje tiene que
+        // ser lo guardado y no lo que quedó en pantalla.
+        var fresh = AppHost.QuoteService.GetDetail(Detail.Id) ?? Detail;
+
+        SavePdf(
+            () => AppHost.QuoteDocumentService.BuildClientQuote(fresh),
+            PdfExportService.SuggestFileName("Presupuesto", fresh.Id, fresh.ClientName),
+            "Presupuesto");
+    }
+
+    private void SavePdfCostSheet()
+    {
+        if (Detail is null)
+        {
+            return;
+        }
+
+        var detail = Detail;
+
+        SavePdf(
+            () => AppHost.QuoteDocumentService.BuildCostSheet(detail),
+            PdfExportService.SuggestFileName("Hoja de costos", detail.Id, detail.ClientName),
+            "Hoja de costos");
+    }
+
+    /// <param name="build">
+    /// Perezoso a propósito: armar el documento puede tirar —un presupuesto sin precio no se
+    /// imprime— y ese error tiene que salir por el cartel de estado y no como excepción suelta.
+    /// </param>
+    private void SavePdf(Func<System.Windows.Documents.FlowDocument> build, string suggestedName, string what)
+    {
+        try
+        {
+            var path = AppHost.PdfExportService.SaveAs(build(), suggestedName);
+
+            if (path is null)
+            {
+                return;
+            }
+
+            SetStatus($"{what} guardado en {Path.GetFileName(path)}.", isError: false);
+            PdfExportService.OpenInDefaultApp(path);
         }
         catch (Exception ex)
         {

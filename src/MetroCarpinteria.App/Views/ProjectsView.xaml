@@ -156,9 +156,15 @@
                                                Foreground="{DynamicResource PrimaryBrownBrush}" />
                                 </Grid>
 
-                                <Button Content="Imprimir presupuesto" Style="{StaticResource SecondaryButtonStyle}"
-                                        HorizontalAlignment="Left" Padding="12,6" FontSize="12" Margin="0,14,0,0"
-                                        Command="{Binding PrintQuoteCommand}" />
+                                <WrapPanel Margin="0,14,0,0">
+                                    <Button Content="Imprimir presupuesto" Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="12,6" FontSize="12" Margin="0,0,10,0"
+                                            Command="{Binding PrintQuoteCommand}" />
+                                    <Button Content="Guardar PDF" Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="12,6" FontSize="12"
+                                            Command="{Binding SaveQuotePdfCommand}"
+                                            ToolTip="Guarda el presupuesto como archivo, para mandarlo por mensaje" />
+                                </WrapPanel>
                             </StackPanel>
                         </Border>
 

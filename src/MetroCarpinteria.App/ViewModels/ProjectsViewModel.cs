@@ -71,6 +71,7 @@ public class ProjectsViewModel : ViewModelBase
         RemoveMaterialCommand = new AsyncRelayCommand(RemoveMaterialAsync, () => CanAssignToProject);
         RemoveAssignmentCommand = new AsyncRelayCommand(RemoveAssignmentAsync, () => SelectedProject is not null);
         PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => CanPrintQuote);
+        SaveQuotePdfCommand = new RelayCommand(_ => SaveQuotePdf(), _ => CanPrintQuote);
         CancelProjectCommand = new AsyncRelayCommand(CancelSelectedAsync, () => CanCancelSelected);
 
         // El mismo bloque que Presupuestos: la seña se toma al cotizar, pero el saldo se
@@ -277,6 +278,7 @@ public class ProjectsViewModel : ViewModelBase
     public ICommand RemoveMaterialCommand { get; }
     public ICommand RemoveAssignmentCommand { get; }
     public ICommand PrintQuoteCommand { get; }
+    public ICommand SaveQuotePdfCommand { get; }
     public ICommand CancelProjectCommand { get; }
 
     /// <summary>Señas y pagos. El mismo bloque que usa Presupuestos.</summary>
@@ -729,13 +731,42 @@ public class ProjectsViewModel : ViewModelBase
         try
         {
             var document = AppHost.QuoteDocumentService.BuildClientQuote(
-                AppHost.QuoteService.GetDetail(Quote.Id) ?? Quote,
-                includeMaterialDetail: true);
+                AppHost.QuoteService.GetDetail(Quote.Id) ?? Quote);
 
             if (AppHost.QuoteDocumentService.Print(document, $"Presupuesto {Quote.Id:0000}"))
             {
                 SetStatus("Presupuesto enviado a la impresora.", isError: false);
             }
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private void SaveQuotePdf()
+    {
+        if (Quote is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var fresh = AppHost.QuoteService.GetDetail(Quote.Id) ?? Quote;
+            var document = AppHost.QuoteDocumentService.BuildClientQuote(fresh);
+
+            var path = AppHost.PdfExportService.SaveAs(
+                document,
+                PdfExportService.SuggestFileName("Presupuesto", fresh.Id, fresh.ClientName));
+
+            if (path is null)
+            {
+                return;
+            }
+
+            SetStatus($"Presupuesto guardado en {Path.GetFileName(path)}.", isError: false);
+            PdfExportService.OpenInDefaultApp(path);
         }
         catch (Exception ex)
         {

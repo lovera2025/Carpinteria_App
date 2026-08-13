@@ -137,7 +137,7 @@ internal static class QuoteImageTests
                 detail.PrintableImages.Any(i => i.Id == first.Id),
                 "una foto sin archivo no se imprime.");
 
-            var client = AppHost.QuoteDocumentService.BuildClientQuote(detail, includeMaterialDetail: true);
+            var client = AppHost.QuoteDocumentService.BuildClientQuote(detail);
             var text = new TextRange(client.ContentStart, client.ContentEnd).Text;
             if (!text.Contains("Referencias", StringComparison.OrdinalIgnoreCase))
             {
@@ -153,7 +153,7 @@ internal static class QuoteImageTests
         run("Fotos: el documento del cliente las muestra y la hoja de costos no", () =>
         {
             var withPhotos = quotes.GetDetail(quoteId)!;
-            var client = ToText(AppHost.QuoteDocumentService.BuildClientQuote(withPhotos, true));
+            var client = ToText(AppHost.QuoteDocumentService.BuildClientQuote(withPhotos));
             var cost = ToText(AppHost.QuoteDocumentService.BuildCostSheet(withPhotos));
 
             if (!client.Contains("Referencias", StringComparison.OrdinalIgnoreCase))
@@ -174,14 +174,14 @@ internal static class QuoteImageTests
             quotes.SaveCalculation(plainId, quotes.GetDetail(plainId)!.MaterialsTotal, 2m, 30000m, BudgetRates.Defaults());
 
             var plain = quotes.GetDetail(plainId)!;
-            var text = ToText(AppHost.QuoteDocumentService.BuildClientQuote(plain, includeMaterialDetail: true));
+            var text = ToText(AppHost.QuoteDocumentService.BuildClientQuote(plain));
 
             if (text.Contains("Referencias", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("Sin fotos no debía aparecer la sección Referencias.");
             }
 
-            QuoteDocumentService.LayOut(AppHost.QuoteDocumentService.BuildClientQuote(plain, true), 794, 1123);
+            QuoteDocumentService.LayOut(AppHost.QuoteDocumentService.BuildClientQuote(plain), 794, 1123);
         });
 
         run("Fotos: aprobar un presupuesto con fotos sigue descontando stock", () =>

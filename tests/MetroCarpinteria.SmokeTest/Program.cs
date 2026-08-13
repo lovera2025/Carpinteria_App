@@ -483,9 +483,6 @@ internal static class Program
 
             var shown = breakdown.Lines.Where(l => !l.IsTotal).Sum(l => l.Amount);
             Expect(shown, breakdown.FinalPrice, "suma de las líneas mostradas");
-
-            var client = breakdown.ClientLines.Where(l => !l.IsTotal).Sum(l => l.Amount);
-            Expect(client, breakdown.FinalPrice, "suma del resumen del cliente");
         });
 
         Run("Cálculo: caso de redondeo que la fórmula simplificada erra", () =>
@@ -539,7 +536,126 @@ internal static class Program
                 () => BudgetCalculatorService.Calculate(new BudgetInput { Rates = rates }),
                 "desperdicio");
         });
+
+        // --- Mano de obra con operarios ---------------------------------------
+
+        Run("Mano de obra: el jefe más dos operarios ($ 828.800)", () =>
+        {
+            var breakdown = CalculateWithWorkers();
+
+            Expect(breakdown.Labor, 391000m, "mano de obra: 200.000 + 125.000 + 66.000");
+            Expect(breakdown.Overhead, 195500m, "gastos 50% sobre la mano de obra completa");
+            Expect(breakdown.Profit, 117300m, "ganancia 30% sobre la mano de obra completa");
+            Expect(breakdown.FinalPrice, 828800m, "precio final");
+        });
+
+        Run("Mano de obra: sin operarios el resultado no se mueve", () =>
+        {
+            // Es la garantía de que ningún presupuesto ya entregado cambia de precio.
+            var before = Calculate(100000m, 3m, 30000m);
+
+            var after = BudgetCalculatorService.Calculate(new BudgetInput
+            {
+                MaterialsCost = 100000m,
+                Days = 3m,
+                DailyRate = 30000m,
+                LaborLines = [],
+                Rates = BudgetRates.Defaults()
+            });
+
+            Expect(after.FinalPrice, before.FinalPrice, "precio final sin operarios");
+            Expect(after.FinalPrice, 287000m, "el ejemplo de referencia de siempre");
+
+            if (after.HasWorkers)
+            {
+                throw new InvalidOperationException("Sin operarios no debía haber desglose por persona.");
+            }
+
+            // Y el renglón del desglose sigue diciendo lo mismo que antes.
+            var labor = after.Lines.Single(l => l.Label == "Mano de obra");
+            if (labor.Detail?.Contains("por día", StringComparison.Ordinal) != true)
+            {
+                throw new InvalidOperationException($"El detalle cambió de forma: «{labor.Detail}».");
+            }
+        });
+
+        Run("Mano de obra: lo que pesa cada persona suma exactamente el total cargado", () =>
+        {
+            // Números feos a propósito: si el reparto se hiciera reaplicando los
+            // porcentajes en vez de repartir el total, acá diferiría en centavos.
+            var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
+            {
+                MaterialsCost = 33333.33m,
+                Days = 2.5m,
+                DailyRate = 27777.77m,
+                LaborLines =
+                [
+                    new LaborLineInput { Description = "Uno", Days = 1.5m, DailyRate = 19999.99m },
+                    new LaborLineInput { Description = "Otro", Days = 3.5m, DailyRate = 11111.11m }
+                ],
+                Rates = BudgetRates.Defaults()
+            });
+
+            Expect(
+                breakdown.LaborShares.Sum(s => s.Amount),
+                breakdown.Labor,
+                "suma de los jornales por persona");
+
+            Expect(
+                breakdown.LaborShares.Sum(s => s.Loaded),
+                breakdown.Labor + breakdown.Overhead + breakdown.Profit,
+                "suma de la columna «pesa en el precio»");
+        });
+
+        Run("Mano de obra: el jefe siempre encabeza el desglose por persona", () =>
+        {
+            var breakdown = CalculateWithWorkers();
+
+            Assert.Equal(breakdown.LaborShares.Count, 3, "el jefe más los dos operarios");
+
+            if (!breakdown.LaborShares[0].IsForeman)
+            {
+                throw new InvalidOperationException("El jefe tenía que ir primero.");
+            }
+
+            Expect(breakdown.LaborShares[0].Amount, 200000m, "jornal del jefe");
+            Expect(breakdown.LaborShares[0].Loaded, 360000m, "lo que pesa el jefe");
+
+            // El punto de la columna: Diego cobra 66.000 pero cuesta 118.800.
+            var diego = breakdown.LaborShares.Single(s => s.Description == "Diego Ruiz");
+            Expect(diego.Amount, 66000m, "jornal de Diego");
+            Expect(diego.Loaded, 118800m, "lo que Diego le suma al precio");
+        });
+
+        Run("Mano de obra: validación (un operario con valores negativos)", () =>
+        {
+            ExpectThrows(
+                () => BudgetCalculatorService.Calculate(new BudgetInput
+                {
+                    Days = 1m,
+                    DailyRate = 1m,
+                    LaborLines = [new LaborLineInput { Description = "Diego Ruiz", Days = -1m, DailyRate = 1m }],
+                    Rates = BudgetRates.Defaults()
+                }),
+                // El mensaje nombra a la persona: con tres cargados hay que saber cuál.
+                "Diego Ruiz");
+        });
     }
+
+    /// <summary>El ejemplo del jefe con dos operarios que se usa en varios tests.</summary>
+    private static BudgetBreakdown CalculateWithWorkers() =>
+        BudgetCalculatorService.Calculate(new BudgetInput
+        {
+            MaterialsCost = 100000m,
+            Days = 5m,
+            DailyRate = 40000m,
+            LaborLines =
+            [
+                new LaborLineInput { Description = "Cristian Gómez", Days = 5m, DailyRate = 25000m },
+                new LaborLineInput { Description = "Diego Ruiz", Days = 3m, DailyRate = 22000m }
+            ],
+            Rates = BudgetRates.Defaults()
+        });
 
     private static BudgetBreakdown Calculate(decimal materials, decimal days, decimal dailyRate) =>
         BudgetCalculatorService.Calculate(new BudgetInput
@@ -1147,11 +1263,16 @@ internal static class Program
             "Presupuestos: armar uno con ítems del inventario y uno suelto",
             "Presupuestos: verificar en Inventario que el stock NO se movió",
             "Presupuestos: calcular con 100000 / 3 días / 30000 y ver $ 287.000,00",
-            "Presupuestos: imprimir para el cliente y revisar que NO diga ganancia",
+            "Presupuestos: agregar dos operarios y ver que el precio final sube",
+            "Presupuestos: imprimir para el cliente y revisar que solo muestre el TOTAL",
+            "Presupuestos: «Guardar PDF» — elegir carpeta, y que el archivo se abra solo",
             "Presupuestos: imprimir la hoja de costos y revisar que SÍ traiga el desglose",
+            "Presupuestos: en la hoja de costos, que «Pesa en el precio» sume mano de obra + gastos + ganancia",
+            "Presupuestos: abrir uno viejo (sin operarios) y confirmar que el precio no se movió",
             "Presupuestos: aprobar y confirmar que descuenta stock y aparece en Proyectos",
+            "Proyectos: que los operarios cotizados hayan quedado asignados solos",
             "Proyectos: crear, asignar material y empleado",
-            "Personal: alta de empleado y asignación",
+            "Personal: alta de empleado con jornal, y que prellene la mano de obra al cotizarlo",
             "Reportes: revisar que los números coinciden con los módulos",
             "Configuración: respaldar y restaurar un backup de prueba",
             "Proyectos: quitar material y verificar que vuelve el stock"

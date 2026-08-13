@@ -52,9 +52,9 @@ también se puede buscar una actualización a mano.
 
 - **Inventario** — productos, stock, precio de costo, alertas, movimientos
 - **Caja** — apertura, ingresos/egresos, cierre
-- **Presupuestos** — cotización con materiales, fotos de referencia, calculadora, vigencia e impresión
+- **Presupuestos** — cotización con materiales, mano de obra por persona, fotos de referencia, calculadora, vigencia, impresión y PDF
 - **Proyectos** — trabajos, materiales (descuenta stock), estados
-- **Personal** — empleados y asignación a proyectos
+- **Personal** — empleados con su jornal y asignación a proyectos
 - **Reportes** — resumen de inventario, caja y proyectos
 - **Configuración** — respaldos y rutas de datos
 - **Acerca de** — marca Metro Carpintería
@@ -77,7 +77,7 @@ sigue dando lo mismo aunque después cambien los precios o el margen del taller.
 ```
 desperdicio          = materiales × 16 %
 desgasteHerramientas = materiales ×  9 %
-manoDeObra           = valorDia × cantidadDias
+manoDeObra           = (jornalJefe × díasJefe) + Σ (jornalOperario × díasOperario)
 gastosAdicionales    = manoDeObra × 50 %
 ganancia             = manoDeObra × 30 %
 precioFinal          = suma de los seis
@@ -86,6 +86,22 @@ precioFinal          = suma de los seis
 Los porcentajes se editan en *Ajustes avanzados* y se pueden guardar como valores
 por defecto. Cada concepto se redondea por separado para que el desglose sume
 exactamente el precio final.
+
+### Mano de obra
+
+El jefe son los campos *Días del jefe* y *Jornal del jefe*. Los operarios se agregan
+de a uno en la tarjeta **Operarios**, cada uno con sus días y su jornal: no todos
+cobran lo mismo ni están la misma cantidad de días.
+
+Los operarios se eligen de **Personal**, y el jornal viene de la ficha —se carga una
+sola vez ahí— pero se puede pisar para ese presupuesto sin tocarle el legajo a nadie.
+También se puede escribir un nombre a mano para alguien que no está dado de alta.
+
+**Al aprobar, los operarios cotizados quedan asignados al proyecto solos.** Los que se
+escribieron a mano no, porque no hay ficha a la que engancharlos.
+
+Un presupuesto sin operarios es «lo hace el jefe solo» y da exactamente el mismo
+precio de siempre: los presupuestos anteriores a esto no se movieron ni un peso.
 
 ### Vigencia
 
@@ -99,14 +115,32 @@ Pasa el trabajo a *En curso* y descuenta del inventario el stock disponible de c
 material cotizado. Si falta, descuenta lo que hay y deja la lista de lo que falta
 comprar; el botón **Descontar pendientes** salda el resto cuando llega el material.
 
-### Impresión
+### Imprimir y guardar en PDF
 
-Dos documentos distintos, y se imprimen con el diálogo de Windows (con *Microsoft
-Print to PDF* sale el archivo):
+Dos documentos distintos, cada uno con su botón de imprimir y su botón de **Guardar
+PDF**. El PDF pregunta dónde guardarlo, con el nombre ya puesto
+—`Presupuesto 0042 - Juan Perez.pdf`— y lo abre al terminar, listo para mandar.
 
-- **Presupuesto para el cliente** — materiales, mano de obra y total. Sin los
-  porcentajes internos.
-- **Hoja de costos** — uso interno, con desperdicio, desgaste, gastos y ganancia.
+- **Presupuesto para el cliente** — el trabajo, la descripción, las fotos de
+  referencia y el TOTAL. Un solo número: sin lista de materiales y sin desglose.
+- **Hoja de costos** — uso interno, con desperdicio, desgaste, gastos, ganancia,
+  margen efectivo y la mano de obra persona por persona.
+
+En la hoja de costos, la columna **Pesa en el precio** muestra cuánto le suma cada
+persona al presupuesto una vez repartidos los gastos y la ganancia: un ayudante de
+$ 22.000 por día durante tres días cobra $ 66.000 pero cuesta $ 118.800. Es el número
+que sirve para decidir a quién poner en un trabajo, y por eso nunca sale del taller.
+
+El PDF se arma sin librerías externas: cada hoja se dibuja tal como saldría impresa.
+El texto no se puede seleccionar ni buscar —es una imagen de la hoja—, pero se ve e
+imprime igual que el papel, que es para lo que se usa.
+
+Los dos documentos entran en **una sola hoja A4**. La hoja de costos completa lo hace
+con unos 30 píxeles de sobra, así que hay que medirla al tocar el diseño:
+
+```bash
+dotnet run --project tests/MetroCarpinteria.SmokeTest -- --documents artifacts/quote-preview
+```
 
 ## Datos locales
 

@@ -48,11 +48,11 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Días estimados" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="Días del jefe" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                         <TextBox Text="{Binding CalcDays, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
                     </StackPanel>
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="Valor del jornal" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="Jornal del jefe" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                         <TextBox Text="{Binding CalcDailyRate, UpdateSourceTrigger=LostFocus}" Padding="10,8" />
                     </StackPanel>
                 </Grid>
@@ -109,6 +109,145 @@
                 <Button Content="Recalcular" Style="{StaticResource SecondaryButtonStyle}"
                         HorizontalAlignment="Left" Command="{Binding CalculateCommand}"
                         ToolTip="El precio ya se actualiza solo. Esto lo fuerza a mano." />
+            </StackPanel>
+        </Border>
+
+        <!-- Operarios: quiénes trabajan además del jefe. Cada uno con sus días y su jornal,
+             porque no todos cobran lo mismo ni están la misma cantidad de días. -->
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel>
+                <Grid Margin="0,0,0,4">
+                    <TextBlock Text="OPERARIOS" FontSize="15" FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <Button Content="+ Agregar operario" HorizontalAlignment="Right"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Padding="12,6" FontSize="12"
+                            Command="{Binding AddLaborLineCommand}" />
+                </Grid>
+
+                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Text="Se eligen de Personal. El jornal viene de la ficha y se puede cambiar solo para este presupuesto." />
+
+                <ItemsControl ItemsSource="{Binding LaborLines}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:QuoteLaborLineItem}">
+                            <Border Padding="0,8" BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding Description}" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        <TextBlock Text="{Binding SummaryDisplay}" FontSize="12" Margin="0,2,0,0"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Column="1" Text="{Binding LineTotalDisplay}"
+                                               FontWeight="SemiBold" VerticalAlignment="Center"
+                                               Margin="12,0,8,0"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                                    <Button Grid.Column="2" Content="✕" Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="8,4" FontSize="11" VerticalAlignment="Center"
+                                            ToolTip="Quitar de la mano de obra"
+                                            Command="{Binding DataContext.RemoveLaborLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="12" Margin="0,8,0,0"
+                           TextWrapping="Wrap"
+                           Text="Todavía no cargaste operarios: la mano de obra es solo la del jefe."
+                           Visibility="{Binding HasLaborLines, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+
+                <Grid Margin="0,12,0,0">
+                    <TextBlock Text="Mano de obra total" Style="{StaticResource SubtitleStyle}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding LaborTotalDisplay}" HorizontalAlignment="Right"
+                               FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Alta de operario -->
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding IsLaborFormOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel>
+                <TextBlock Text="Agregar operario" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12" />
+
+                <TextBlock Text="Operario" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                <ComboBox ItemsSource="{Binding AvailableWorkers}" SelectedItem="{Binding SelectedWorker}"
+                          DisplayMemberPath="PickerDisplay" Padding="8,8" Margin="0,0,0,4"
+                          ToolTip="Elegí a alguien de Personal, o dejalo vacío y escribí el nombre abajo" />
+
+                <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" Margin="0,0,0,12"
+                           TextWrapping="Wrap"
+                           Text="No hay nadie cargado en Personal todavía. Escribí el nombre abajo."
+                           Visibility="{Binding HasAvailableWorkers, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+
+                <!-- Alguien que no está dado de alta: un changarín por una semana no
+                     obliga a crearle un legajo. -->
+                <StackPanel Visibility="{Binding IsLooseWorker, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Nombre" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding LooseWorkerName, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="10,8" Margin="0,0,0,4" />
+                    <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" Margin="0,0,0,12"
+                               TextWrapping="Wrap"
+                               Text="Al no estar en Personal, no queda asignado al proyecto cuando aprobás." />
+                </StackPanel>
+
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Días" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding WorkerDays, UpdateSourceTrigger=PropertyChanged}" Padding="10,8" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Jornal" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding WorkerDailyRate, UpdateSourceTrigger=PropertyChanged}" Padding="10,8" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Total de la línea antes de confirmar, para no cargar a ciegas. -->
+                <Border Background="{DynamicResource BrandAccentSubtleBrush}" CornerRadius="8"
+                        Padding="12,10" Margin="0,0,0,14">
+                    <Grid>
+                        <TextBlock Text="Total de esta línea" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" />
+                        <TextBlock Text="{Binding WorkerLineTotalDisplay}" HorizontalAlignment="Right"
+                                   FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PrimaryBrownBrush}" />
+                    </Grid>
+                </Border>
+
+                <WrapPanel>
+                    <Button Content="Agregar" Style="{StaticResource PrimaryButtonStyle}"
+                            Command="{Binding ConfirmWorkerCommand}" Margin="0,0,10,0" />
+                    <Button Content="Cancelar" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding CancelWorkerCommand}" />
+                </WrapPanel>
+
+                <TextBlock Text="Elegí a alguien de la lista o escribí un nombre para poder agregarlo."
+                           FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Visibility="{Binding CanConfirmWorker, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
             </StackPanel>
         </Border>
 

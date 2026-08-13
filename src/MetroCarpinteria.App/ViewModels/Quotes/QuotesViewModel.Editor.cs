@@ -244,12 +244,14 @@ public partial class QuotesViewModel
         {
             Lines.Clear();
             Shortfalls.Clear();
+            CloseLaborForm();
 
             if (SelectedQuote is null)
             {
                 Detail = null;
                 Breakdown = null;
                 BreakdownLines.Clear();
+                ReloadLaborLines(null);
                 SetMissingData(string.Empty);
                 ReloadImages();
                 return;
@@ -267,6 +269,8 @@ public partial class QuotesViewModel
             {
                 Lines.Add(line);
             }
+
+            ReloadLaborLines(detail);
 
             CalcMaterials = NumberInput.Format(detail.CalculationMaterials);
             CalcDays = detail.EstimatedDays.HasValue ? NumberInput.Format(detail.EstimatedDays.Value) : "1";

@@ -47,8 +47,19 @@ public sealed class EmployeeListItem
     public string FullName { get; init; } = string.Empty;
     public string? Phone { get; init; }
     public string? Role { get; init; }
+
+    /// <summary>Cuánto cobra por día. Prellena la mano de obra al cotizarlo.</summary>
+    public decimal? DailyRate { get; init; }
+
     public bool IsArchived { get; init; }
     public int ActiveAssignmentCount { get; init; }
+
+    public string DailyRateDisplay => AppCulture.Money(DailyRate);
+
+    /// <summary>«Cristian Gómez — Oficial carpintero», para el desplegable de operarios.</summary>
+    public string PickerDisplay => string.IsNullOrWhiteSpace(Role)
+        ? FullName
+        : $"{FullName} — {Role}";
 }
 
 public sealed class ProjectStatusOption

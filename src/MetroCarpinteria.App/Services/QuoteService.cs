@@ -196,9 +196,10 @@ public sealed class QuoteService
             })
             .ToList();
 
+        var laborLines = ReadLaborLines(context, projectId);
         var rates = ReadRates(project);
         var materialsTotal = lines.Sum(l => l.LineTotal);
-        var breakdown = RebuildBreakdown(project, rates, materialsTotal);
+        var breakdown = RebuildBreakdown(project, rates, materialsTotal, laborLines);
         var terms = ReadTerms(project);
 
         return new QuoteDetail
@@ -223,6 +224,7 @@ public sealed class QuoteService
             DailyRate = project.DailyRate,
             Rates = rates,
             Lines = lines,
+            LaborLines = laborLines,
             Breakdown = breakdown,
             Images = _imageService?.List(projectId) ?? []
         };
@@ -470,6 +472,108 @@ public sealed class QuoteService
         context.SaveChanges();
     }
 
+    // --- Mano de obra ---------------------------------------------------------
+
+    /// <summary>
+    /// Suma un operario al presupuesto. El jefe no pasa por acá: sigue siendo el par
+    /// días/jornal del proyecto.
+    /// </summary>
+    /// <param name="employeeId">
+    /// Ficha de Personal, o null para alguien suelto que no está dado de alta.
+    /// </param>
+    public void AddLaborLine(int projectId, int? employeeId, string description, decimal days, decimal dailyRate)
+    {
+        var name = ValidateLaborLine(description, days, dailyRate);
+
+        using var context = _databaseService.CreateContext();
+        var project = RequireEditableQuote(context, projectId);
+
+        if (employeeId.HasValue && !context.Employees.Any(e => e.Id == employeeId.Value))
+        {
+            throw new InvalidOperationException("El empleado elegido ya no existe.");
+        }
+
+        var nextOrder = context.ProjectLaborLines
+            .Where(l => l.ProjectId == projectId)
+            .Select(l => (int?)l.SortOrder)
+            .Max() ?? 0;
+
+        context.ProjectLaborLines.Add(new ProjectLaborLine
+        {
+            ProjectId = projectId,
+            EmployeeId = employeeId,
+            Description = name,
+            Days = days,
+            DailyRate = dailyRate,
+            SortOrder = nextOrder + 1,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    /// <summary>
+    /// Corrige los días y el jornal de un operario ya cargado. De quién se trata no se
+    /// cambia: para eso se quita la línea y se carga de nuevo, igual que los materiales.
+    /// </summary>
+    public void UpdateLaborLine(int lineId, decimal days, decimal dailyRate)
+    {
+        using var context = _databaseService.CreateContext();
+        var line = context.ProjectLaborLines.FirstOrDefault(l => l.Id == lineId)
+            ?? throw new InvalidOperationException("Línea de mano de obra no encontrada.");
+
+        ValidateLaborLine(line.Description, days, dailyRate);
+
+        var project = RequireEditableQuote(context, line.ProjectId);
+
+        line.Days = days;
+        line.DailyRate = dailyRate;
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    public void RemoveLaborLine(int lineId)
+    {
+        using var context = _databaseService.CreateContext();
+        var line = context.ProjectLaborLines.FirstOrDefault(l => l.Id == lineId)
+            ?? throw new InvalidOperationException("Línea de mano de obra no encontrada.");
+
+        var project = RequireEditableQuote(context, line.ProjectId);
+
+        context.ProjectLaborLines.Remove(line);
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    /// <returns>El nombre ya recortado, que es el que se guarda.</returns>
+    private static string ValidateLaborLine(string description, decimal days, decimal dailyRate)
+    {
+        var name = description?.Trim() ?? string.Empty;
+
+        if (name.Length == 0)
+        {
+            throw new InvalidOperationException("Poné de quién es la mano de obra.");
+        }
+
+        if (name.Length > 200)
+        {
+            throw new InvalidOperationException("El nombre es demasiado largo.");
+        }
+
+        if (days <= 0)
+        {
+            throw new InvalidOperationException("Los días tienen que ser mayores a cero.");
+        }
+
+        if (dailyRate <= 0)
+        {
+            throw new InvalidOperationException("El jornal tiene que ser mayor a cero.");
+        }
+
+        return name;
+    }
+
     // --- Cálculo -------------------------------------------------------------
 
     /// <summary>
@@ -484,16 +588,20 @@ public sealed class QuoteService
         decimal dailyRate,
         BudgetRates rates)
     {
+        using var context = _databaseService.CreateContext();
+        var project = RequireEditableQuote(context, projectId);
+
+        // Los operarios se leen, no se escriben: los administra AddLaborLine y compañía.
+        // Esto corre en cada LostFocus de la calculadora y no puede andar borrando y
+        // recreando filas por cada tecla.
         var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
         {
             MaterialsCost = materialsCost,
             Days = days,
             DailyRate = dailyRate,
+            LaborLines = ToCalculatorInput(ReadLaborLines(context, projectId)),
             Rates = rates
         });
-
-        using var context = _databaseService.CreateContext();
-        var project = RequireEditableQuote(context, projectId);
 
         project.QuotedMaterialsCost = breakdown.MaterialsCost;
         project.EstimatedDays = breakdown.Days;
@@ -537,7 +645,9 @@ public sealed class QuoteService
             .AsEnumerable()
             .Sum(l => l.LineTotal);
 
-        var breakdown = RebuildBreakdown(project, ReadRates(project), lines);
+        var breakdown = RebuildBreakdown(
+            project, ReadRates(project), lines, ReadLaborLines(context, projectId));
+
         var commercial = CommercialTermsService.Apply(breakdown?.FinalPrice ?? 0m, terms);
 
         // Sin cálculo todavía no hay precio que ajustar: las condiciones quedan guardadas
@@ -630,6 +740,7 @@ public sealed class QuoteService
             }
 
             var result = ApplyLinesToStock(context, project);
+            AssignQuotedWorkers(context, project);
 
             project.Status = ProjectStatus.InProgress;
             project.UpdatedAtUtc = DateTime.UtcNow;
@@ -803,6 +914,13 @@ public sealed class QuoteService
                 .OrderBy(l => l.SortOrder)
                 .ToList();
 
+            var sourceLabor = context.ProjectLaborLines
+                .AsNoTracking()
+                .Include(l => l.Employee)
+                .Where(l => l.ProjectId == projectId)
+                .OrderBy(l => l.SortOrder)
+                .ToList();
+
             var now = DateTime.UtcNow;
             var copy = new Project
             {
@@ -845,6 +963,23 @@ public sealed class QuoteService
                 });
             }
 
+            foreach (var line in sourceLabor)
+            {
+                // Mismo criterio que los materiales: quien está en Personal se recotiza con
+                // el jornal de hoy, y el que se cargó suelto conserva el suyo porque no hay
+                // de dónde refrescarlo.
+                context.ProjectLaborLines.Add(new ProjectLaborLine
+                {
+                    ProjectId = copy.Id,
+                    EmployeeId = line.EmployeeId,
+                    Description = line.Employee?.FullName ?? line.Description,
+                    Days = line.Days,
+                    DailyRate = line.Employee?.DailyRate ?? line.DailyRate,
+                    SortOrder = line.SortOrder,
+                    CreatedAtUtc = now
+                });
+            }
+
             context.SaveChanges();
 
             var rates = ReadRates(copy);
@@ -860,6 +995,7 @@ public sealed class QuoteService
                     MaterialsCost = materials,
                     Days = copy.EstimatedDays.Value,
                     DailyRate = copy.DailyRate.Value,
+                    LaborLines = ToCalculatorInput(ReadLaborLines(context, copy.Id)),
                     Rates = rates
                 });
 
@@ -1011,6 +1147,55 @@ public sealed class QuoteService
         project.UpdatedAtUtc = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// Deja asignados al proyecto los operarios que se cotizaron, para no cargarlos dos veces.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Solo los que salieron de Personal: al que se escribió suelto no hay a quién
+    /// engancharlo. Las asignaciones que ya existan se respetan —hay un índice único por
+    /// (proyecto, empleado)— y no se pisa la nota de una asignación hecha a mano.
+    /// </para>
+    /// <para>
+    /// No falla si algo no cierra: aprobar tiene que descontar el stock y arrancar el
+    /// trabajo. Que además quede la asignación es una comodidad, no una condición.
+    /// </para>
+    /// </remarks>
+    private static void AssignQuotedWorkers(AppDbContext context, Project project)
+    {
+        var quoted = context.ProjectLaborLines
+            .Where(l => l.ProjectId == project.Id && l.EmployeeId != null)
+            .Select(l => l.EmployeeId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (quoted.Count == 0)
+        {
+            return;
+        }
+
+        var already = context.ProjectAssignments
+            .Where(a => a.ProjectId == project.Id)
+            .Select(a => a.EmployeeId)
+            .ToHashSet();
+
+        var alive = context.Employees
+            .Where(e => quoted.Contains(e.Id))
+            .Select(e => e.Id)
+            .ToHashSet();
+
+        foreach (var employeeId in quoted.Where(id => !already.Contains(id) && alive.Contains(id)))
+        {
+            context.ProjectAssignments.Add(new ProjectAssignment
+            {
+                ProjectId = project.Id,
+                EmployeeId = employeeId,
+                Notes = "Cotizado en el presupuesto",
+                AssignedAtUtc = DateTime.UtcNow
+            });
+        }
+    }
+
     private static Project RequireEditableQuote(AppDbContext context, int projectId)
     {
         var project = context.Projects.FirstOrDefault(p => p.Id == projectId)
@@ -1049,7 +1234,47 @@ public sealed class QuoteService
         };
     }
 
-    private static BudgetBreakdown? RebuildBreakdown(Project project, BudgetRates? rates, decimal materialsFromLines)
+    /// <summary>
+    /// Los operarios cotizados, en orden. El rol sale de la ficha solo para mostrarlo: el
+    /// nombre y el jornal salen de la línea, que los tiene congelados.
+    /// </summary>
+    private static List<QuoteLaborLineItem> ReadLaborLines(AppDbContext context, int projectId) =>
+        context.ProjectLaborLines
+            .AsNoTracking()
+            .Include(l => l.Employee)
+            .Where(l => l.ProjectId == projectId)
+            .OrderBy(l => l.SortOrder)
+            .ThenBy(l => l.Id)
+            // AsEnumerable antes de tocar los decimales: en las bases viejas son TEXT y
+            // cualquier orden o comparación que quede en SQL se resuelve como texto.
+            .AsEnumerable()
+            .Select(l => new QuoteLaborLineItem
+            {
+                Id = l.Id,
+                EmployeeId = l.EmployeeId,
+                Description = l.Description,
+                Days = l.Days,
+                DailyRate = l.DailyRate,
+                SortOrder = l.SortOrder,
+                Role = l.Employee?.Role
+            })
+            .ToList();
+
+    private static List<LaborLineInput> ToCalculatorInput(IEnumerable<QuoteLaborLineItem> lines) =>
+        lines
+            .Select(l => new LaborLineInput
+            {
+                Description = l.Description,
+                Days = l.Days,
+                DailyRate = l.DailyRate
+            })
+            .ToList();
+
+    private static BudgetBreakdown? RebuildBreakdown(
+        Project project,
+        BudgetRates? rates,
+        decimal materialsFromLines,
+        IReadOnlyList<QuoteLaborLineItem> laborLines)
     {
         if (rates is null || project.EstimatedDays is null || project.DailyRate is null)
         {
@@ -1061,6 +1286,7 @@ public sealed class QuoteService
             MaterialsCost = project.QuotedMaterialsCost ?? materialsFromLines,
             Days = project.EstimatedDays.Value,
             DailyRate = project.DailyRate.Value,
+            LaborLines = ToCalculatorInput(laborLines),
             Rates = rates
         });
     }

@@ -25,6 +25,7 @@ public partial class QuotesViewModel
         }
     }
 
+    /// <summary>Días del jefe. Los de cada operario van en su línea.</summary>
     public string CalcDays
     {
         get => _calcDays;
@@ -32,11 +33,13 @@ public partial class QuotesViewModel
         {
             if (SetProperty(ref _calcDays, value))
             {
+                NotifyLaborTotal();
                 AutoCalculate();
             }
         }
     }
 
+    /// <summary>Jornal del jefe. El de cada operario va en su línea.</summary>
     public string CalcDailyRate
     {
         get => _calcDailyRate;
@@ -44,6 +47,7 @@ public partial class QuotesViewModel
         {
             if (SetProperty(ref _calcDailyRate, value))
             {
+                NotifyLaborTotal();
                 AutoCalculate();
             }
         }
@@ -222,6 +226,18 @@ public partial class QuotesViewModel
             MaterialsCost = materials,
             Days = days,
             DailyRate = dailyRate,
+
+            // Los operarios salen de la colección y no de los campos: se cargan de a uno
+            // por su formulario y ya están guardados cuando llegan acá.
+            LaborLines = LaborLines
+                .Select(l => new LaborLineInput
+                {
+                    Description = l.Description,
+                    Days = l.Days,
+                    DailyRate = l.DailyRate
+                })
+                .ToList(),
+
             Rates = rates
         };
 
