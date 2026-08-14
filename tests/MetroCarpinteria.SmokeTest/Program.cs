@@ -635,6 +635,32 @@ internal static class Program
             Expect(diego.Loaded, 66000m, "lo que Diego le suma al precio");
         });
 
+        Run("Mano de obra: con operarios el desglose lista a cada uno", () =>
+        {
+            var breakdown = CalculateWithWorkers();
+            var labels = breakdown.Lines.Select(l => l.Label).ToList();
+
+            foreach (var expected in new[] { "Jefe", "Cristian Gómez", "Diego Ruiz" })
+            {
+                if (!labels.Contains(expected))
+                {
+                    throw new InvalidOperationException($"Faltaba «{expected}» en el desglose.");
+                }
+            }
+
+            if (labels.Contains("Mano de obra"))
+            {
+                throw new InvalidOperationException(
+                    "Con operarios no debía quedar el renglón unificado de mano de obra.");
+            }
+
+            var compact = breakdown.CompactLines.Single(l => l.Label == "Mano de obra");
+            if (compact.Detail?.Contains("jefe +", StringComparison.Ordinal) != true)
+            {
+                throw new InvalidOperationException($"El compacto tenía que resumir: «{compact.Detail}».");
+            }
+        });
+
         Run("Mano de obra: validación (un operario con valores negativos)", () =>
         {
             ExpectThrows(
@@ -985,6 +1011,64 @@ internal static class Program
 
             // El original no se toca.
             Expect(RequireQuote(quotes, id).Lines.Single().UnitCost, 1000m, "precio del original");
+        });
+
+        Run("Presupuesto: adjuntar solo deja pasar al mismo cliente", () =>
+        {
+            var mesa = quotes.CreateQuote("Mesa adjunto", "Marcos Adjunto", "Comedor").Id;
+            var placard = quotes.CreateQuote("Placard adjunto", "Marcos Adjunto", "Dormitorio").Id;
+            var silla = quotes.CreateQuote("Silla ajena", "Juan Otro", null).Id;
+
+            quotes.AttachQuote(mesa, placard);
+
+            var detail = RequireQuote(quotes, mesa);
+            Assert.Equal(detail.Attachments.Count, 1, "un adjunto");
+            Assert.Equal(detail.Attachments[0].Title, "Placard adjunto", "título del anexo");
+
+            ExpectThrows(() => quotes.AttachQuote(mesa, mesa), "sí mismo");
+            ExpectThrows(() => quotes.AttachQuote(mesa, silla), "mismo cliente");
+            ExpectThrows(() => quotes.AttachQuote(mesa, placard), "ya está adjunto");
+        });
+
+        Run("Presupuesto: otro trabajo del mismo cliente nace vacío y enganchado", () =>
+        {
+            var parent = quotes.CreateQuote("Cocina principal", "Cliente hermano", null);
+            var siblingId = quotes.CreateSiblingQuote(parent.Id, "Alacena");
+
+            var sibling = RequireQuote(quotes, siblingId);
+            Assert.Equal(sibling.ClientName, "Cliente hermano", "mismo cliente");
+            Assert.Equal(sibling.Lines.Count, 0, "sin materiales");
+            Assert.Equal(sibling.Status, ProjectStatus.Quote, "presupuesto nuevo");
+
+            var fromParent = RequireQuote(quotes, parent.Id);
+            Assert.Equal(fromParent.Attachments.Single().ProjectId, siblingId, "enganchado al principal");
+        });
+
+        Run("Presupuesto: el aviso de seña es opt-in", () =>
+        {
+            var id = quotes.CreateQuote("Mesa seña", "Cliente seña", null).Id;
+            quotes.AddLooseLine(id, "Tabla", "Metro", 1m, 1000m, saveToCatalog: false);
+            quotes.SaveCalculation(id, 1000m, 1m, 40000m, BudgetRates.Defaults());
+
+            var before = RequireQuote(quotes, id);
+            if (before.HasCommitmentNote)
+            {
+                throw new InvalidOperationException("Sin marcar el aviso no debía aparecer.");
+            }
+
+            quotes.SaveCommitmentNote(id, true, 100000m, null);
+            var after = RequireQuote(quotes, id);
+
+            if (!after.HasCommitmentNote)
+            {
+                throw new InvalidOperationException("Con tilde e importe el aviso tenía que prenderse.");
+            }
+
+            if (!after.CommitmentNoteDisplay.Contains("100.000", StringComparison.Ordinal)
+                && !after.CommitmentNoteDisplay.Contains("100000", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"El aviso no nombraba el importe: «{after.CommitmentNoteDisplay}».");
+            }
         });
 
         Run("Presupuesto: contador de pendientes", () =>

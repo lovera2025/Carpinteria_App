@@ -78,9 +78,9 @@
 
                         <quotes:QuoteEditorPanel />
 
-                        <quotes:QuoteMaterialsPanel />
-
                         <quotes:QuoteImagesPanel />
+
+                        <quotes:QuoteMaterialsPanel />
 
                         <quotes:QuoteCalculatorPanel />
 
@@ -176,6 +176,10 @@
                                        TextWrapping="Wrap" Opacity="0.8"
                                        Foreground="{DynamicResource TextOnDarkBrush}"
                                        Visibility="{Binding HasMissingData, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding CommitmentNoteDisplay}" FontSize="11" Margin="0,4,80,0"
+                                       TextWrapping="Wrap" Opacity="0.9"
+                                       Foreground="{DynamicResource TextOnDarkBrush}"
+                                       Visibility="{Binding ShowCommitmentOnTotal, Converter={StaticResource BoolToVisibilityConverter}}" />
                         </StackPanel>
                         <TextBlock Text="{Binding FinalPriceOrPlaceholder}" HorizontalAlignment="Right"
                                    VerticalAlignment="Center" FontSize="24" FontWeight="Bold"

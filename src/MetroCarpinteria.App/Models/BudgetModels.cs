@@ -111,6 +111,7 @@ public sealed class BudgetBreakdownLine
 public sealed class BudgetBreakdown
 {
     private IReadOnlyList<BudgetBreakdownLine>? _lines;
+    private IReadOnlyList<BudgetBreakdownLine>? _compactLines;
 
     public decimal MaterialsCost { get; init; }
     public decimal Waste { get; init; }
@@ -143,65 +144,92 @@ public sealed class BudgetBreakdown
     /// <summary>Hay alguien además del jefe, así que el desglose por persona dice algo.</summary>
     public bool HasWorkers => LaborShares.Count > 1;
 
-    /// <summary>
-    /// La aclaración del renglón «Mano de obra» del desglose.
-    /// </summary>
-    /// <remarks>
-    /// Con operarios no puede seguir diciendo «5 × $ 40.000 por día», que describiría a una
-    /// sola persona. Resume quiénes y cuántas jornadas; el detalle uno por uno va en su
-    /// propia tabla. Sin operarios queda la frase de siempre, así que un presupuesto viejo
-    /// se imprime idéntico.
-    /// </remarks>
-    private string LaborDetail
-    {
-        get
-        {
-            if (!HasWorkers)
-            {
-                return $"{AppCulture.Quantity(Days)} × {AppCulture.Money(DailyRate)} por día";
-            }
-
-            var workdays = LaborShares.Sum(s => s.Days);
-
-            return $"jefe + {Phrases.Count(LaborShares.Count - 1, "operario", "operarios")} · " +
-                   $"{AppCulture.Quantity(workdays)} jornadas";
-        }
-    }
-
     /// <summary>Desglose completo. Uso interno del taller: incluye ganancia y merma.</summary>
-    public IReadOnlyList<BudgetBreakdownLine> Lines => _lines ??=
-    [
-        new() { Label = "Materiales", Amount = MaterialsCost },
-        new()
+    /// <remarks>
+    /// Con operarios, la mano de obra se parte persona por persona para que el desglose
+    /// de la calculadora no junte a todos en un bloque. La hoja de costos usa
+    /// <see cref="CompactLines"/>, que sigue llevando un solo renglón: abajo ya tiene
+    /// la tabla por persona y repetirla hacía saltar de A4.
+    /// </remarks>
+    public IReadOnlyList<BudgetBreakdownLine> Lines => _lines ??= BuildLines(splitLabor: true);
+
+    /// <summary>Igual que <see cref="Lines"/>, pero la mano de obra va en un renglón.</summary>
+    public IReadOnlyList<BudgetBreakdownLine> CompactLines => _compactLines ??= BuildLines(splitLabor: false);
+
+    private IReadOnlyList<BudgetBreakdownLine> BuildLines(bool splitLabor)
+    {
+        var lines = new List<BudgetBreakdownLine>
         {
-            Label = "Desperdicio",
-            Amount = Waste,
-            Detail = AppCulture.Percent(Rates.WastePercent) + " de materiales"
-        },
-        new()
+            new() { Label = "Materiales", Amount = MaterialsCost },
+            new()
+            {
+                Label = "Desperdicio",
+                Amount = Waste,
+                Detail = AppCulture.Percent(Rates.WastePercent) + " de materiales"
+            },
+            new()
+            {
+                Label = "Desgaste de herramientas",
+                Amount = ToolWear,
+                Detail = AppCulture.Percent(Rates.ToolWearPercent) + " de materiales"
+            }
+        };
+
+        if (!HasWorkers || !splitLabor)
         {
-            Label = "Desgaste de herramientas",
-            Amount = ToolWear,
-            Detail = AppCulture.Percent(Rates.ToolWearPercent) + " de materiales"
-        },
-        new()
+            var laborDetail = HasWorkers
+                ? $"jefe + {Phrases.Count(LaborShares.Count - 1, "operario", "operarios")} · " +
+                  $"{AppCulture.Quantity(LaborShares.Sum(s => s.Days))} jornadas"
+                : $"{AppCulture.Quantity(Days)} × {AppCulture.Money(DailyRate)} por día";
+
+            lines.Add(new()
+            {
+                Label = "Mano de obra",
+                Amount = Labor,
+                Detail = laborDetail
+            });
+        }
+        else
         {
-            Label = "Mano de obra",
-            Amount = Labor,
-            Detail = LaborDetail
-        },
-        new()
+            foreach (var share in LaborShares)
+            {
+                if (share.IsForeman)
+                {
+                    lines.Add(new()
+                    {
+                        Label = share.Description,
+                        Amount = share.Amount,
+                        Detail = $"{share.RateDisplay} · gastos {AppCulture.Percent(Rates.OverheadPercent)} · " +
+                                 $"ganancia {AppCulture.Percent(Rates.ProfitPercent)}"
+                    });
+                }
+                else
+                {
+                    var name = string.IsNullOrWhiteSpace(share.Description) ? "Operario" : share.Description;
+                    lines.Add(new()
+                    {
+                        Label = name,
+                        Amount = share.Amount,
+                        Detail = share.RateDisplay
+                    });
+                }
+            }
+        }
+
+        lines.Add(new()
         {
             Label = "Gastos adicionales",
             Amount = Overhead,
             Detail = AppCulture.Percent(Rates.OverheadPercent) + " del jornal del jefe"
-        },
-        new()
+        });
+        lines.Add(new()
         {
             Label = "Ganancia",
             Amount = Profit,
             Detail = AppCulture.Percent(Rates.ProfitPercent) + " del jornal del jefe"
-        },
-        new() { Label = "PRECIO FINAL", Amount = FinalPrice, IsTotal = true }
-    ];
+        });
+        lines.Add(new() { Label = "PRECIO FINAL", Amount = FinalPrice, IsTotal = true });
+
+        return lines;
+    }
 }

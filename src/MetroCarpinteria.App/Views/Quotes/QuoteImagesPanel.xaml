@@ -3,85 +3,206 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:MetroCarpinteria.App.Models"
              xmlns:vm="clr-namespace:MetroCarpinteria.App.ViewModels"
              mc:Ignorable="d"
              d:DesignHeight="400"
              d:DesignWidth="520">
 
-    <!-- Fotos de referencia para el cliente. Van entre materiales y el precio: primero
-         qué se usa, después cómo puede quedar, después cuánto sale. -->
-    <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-            Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
-        <StackPanel>
-            <Grid Margin="0,0,0,4">
-                <TextBlock Text="FOTOS PARA EL CLIENTE" FontSize="15" FontWeight="Bold"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextPrimaryBrush}" />
-                <WrapPanel HorizontalAlignment="Right">
-                    <Button Content="Pegar" Style="{StaticResource SecondaryButtonStyle}"
-                            Padding="12,6" FontSize="12" Margin="0,0,8,0"
-                            Command="{Binding PasteImageCommand}"
-                            ToolTip="Pega una imagen copiada (por ejemplo desde WhatsApp)" />
-                    <Button Content="+ Agregar" Style="{StaticResource SecondaryButtonStyle}"
-                            Padding="12,6" FontSize="12"
-                            Command="{Binding AddImagesCommand}"
-                            ToolTip="Hasta 4 fotos. Se copian al presupuesto; el original no se toca." />
-                </WrapPanel>
-            </Grid>
+    <!-- Fotos de referencia para el cliente. Van arriba de materiales y precio, para
+         que cotizar (qué se usa y cuánto sale) quede junto. Los adjuntos viven acá
+         porque en el papel salen en esta misma zona. -->
+    <StackPanel>
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel>
+                <Grid Margin="0,0,0,4">
+                    <TextBlock Text="FOTOS PARA EL CLIENTE" FontSize="15" FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <WrapPanel HorizontalAlignment="Right">
+                        <Button Content="Pegar" Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,6" FontSize="12" Margin="0,0,8,0"
+                                Command="{Binding PasteImageCommand}"
+                                ToolTip="Pega una imagen copiada (por ejemplo desde WhatsApp)" />
+                        <Button Content="+ Agregar" Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,6" FontSize="12"
+                                Command="{Binding AddImagesCommand}"
+                                ToolTip="Hasta 4 fotos. Se copian al presupuesto; el original no se toca." />
+                    </WrapPanel>
+                </Grid>
 
-            <TextBlock Text="{Binding ImagesSummary}" Margin="0,0,0,12"
-                       FontSize="13" FontWeight="SemiBold"
-                       Foreground="{DynamicResource PrimaryBrownBrush}" />
+                <TextBlock Text="{Binding ImagesSummary}" Margin="0,0,0,12"
+                           FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryBrownBrush}" />
 
-            <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
-                       Text="Salen en el presupuesto impreso, no en la hoja de costos. Máximo 4." />
+                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Text="Salen en el presupuesto impreso, no en la hoja de costos. Máximo 4." />
 
-            <ItemsControl ItemsSource="{Binding Images}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type vm:QuoteImageRow}">
-                        <Border Padding="0,8" BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,0,0,1">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="96" />
-                                    <ColumnDefinition Width="12" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
+                <ItemsControl ItemsSource="{Binding Images}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:QuoteImageRow}">
+                            <Border Padding="0,8" BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
 
-                                <Border Grid.Column="0" Width="96" Height="72"
-                                        Background="{DynamicResource BrandAccentSubtleBrush}"
-                                        CornerRadius="6" ClipToBounds="True">
-                                    <Grid>
-                                        <TextBlock Text="Sin archivo" FontSize="10"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource AlertBrush}"
-                                                   Visibility="{Binding IsMissing, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
-                                               Visibility="{Binding IsMissing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
-                                    </Grid>
-                                </Border>
+                                    <Border Grid.Column="0" Width="96" Height="72"
+                                            Background="{DynamicResource BrandAccentSubtleBrush}"
+                                            CornerRadius="6" ClipToBounds="True">
+                                        <Grid>
+                                            <TextBlock Text="Sin archivo" FontSize="10"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource AlertBrush}"
+                                                       Visibility="{Binding IsMissing, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
+                                                   Visibility="{Binding IsMissing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+                                        </Grid>
+                                    </Border>
 
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                    <TextBlock Text="Pie de foto (opcional)" Style="{StaticResource SubtitleStyle}"
-                                               Margin="0,0,0,4" />
-                                    <TextBox Text="{Binding Caption, UpdateSourceTrigger=LostFocus}"
-                                             Padding="8,6"
-                                             IsEnabled="{Binding DataContext.CanEditImages, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                             LostFocus="OnCaptionLostFocus"
-                                             ToolTip="Ejemplo: Placard similar en melamina blanca" />
-                                </StackPanel>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                        <TextBlock Text="Pie de foto (opcional)" Style="{StaticResource SubtitleStyle}"
+                                                   Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding Caption, UpdateSourceTrigger=LostFocus}"
+                                                 Padding="8,6"
+                                                 IsEnabled="{Binding DataContext.CanEditImages, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                 LostFocus="OnCaptionLostFocus"
+                                                 ToolTip="Ejemplo: Placard similar en melamina blanca" />
+                                    </StackPanel>
 
-                                <Button Grid.Column="3" Content="Quitar"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Padding="10,6" FontSize="12" Margin="8,0,0,0"
-                                        VerticalAlignment="Center"
-                                        Command="{Binding DataContext.RemoveImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
-    </Border>
+                                    <Button Grid.Column="3" Content="Quitar"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="10,6" FontSize="12" Margin="8,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding DataContext.RemoveImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel>
+                <Grid Margin="0,0,0,4">
+                    <TextBlock Text="OTROS TRABAJOS" FontSize="15" FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <WrapPanel HorizontalAlignment="Right">
+                        <Button Content="Adjuntar presupuesto a este"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,6" FontSize="12" Margin="0,0,8,0"
+                                Command="{Binding OpenAttachmentPickerCommand}"
+                                ToolTip="Elige otro presupuesto del mismo cliente. No se suma al total." />
+                        <Button Content="+ Otro trabajo de este cliente"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,6" FontSize="12"
+                                Command="{Binding OpenSiblingFormCommand}"
+                                ToolTip="Crea un presupuesto vacío con el mismo cliente y lo adjunta." />
+                    </WrapPanel>
+                </Grid>
+
+                <TextBlock Text="{Binding AttachmentsSummary}" Margin="0,0,0,12"
+                           FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryBrownBrush}" />
+
+                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Text="Salen en el PDF de este presupuesto, cada uno con su descripción y su total. El TOTAL grande sigue siendo solo el de este trabajo." />
+
+                <Border BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,1,0,0"
+                        Padding="0,14,0,8" Margin="0,0,0,8"
+                        Visibility="{Binding IsSiblingFormOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <TextBlock Text="Título del nuevo trabajo" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding SiblingTitle, UpdateSourceTrigger=PropertyChanged}"
+                                 Padding="10,8" Margin="0,0,0,12" />
+                        <WrapPanel>
+                            <Button Content="Crear y adjuntar" Style="{StaticResource PrimaryButtonStyle}"
+                                    Command="{Binding CreateSiblingQuoteCommand}" Margin="0,0,10,0" />
+                            <Button Content="Cancelar" Style="{StaticResource SecondaryButtonStyle}"
+                                    Command="{Binding CancelSiblingFormCommand}" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,1,0,0"
+                        Padding="0,14,0,8" Margin="0,0,0,8"
+                        Visibility="{Binding IsAttachmentPickerOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,8">
+                            <TextBlock Text="Presupuestos de este cliente" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <Button Content="Cerrar" HorizontalAlignment="Right"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="10,4" FontSize="11"
+                                    Command="{Binding CloseAttachmentPickerCommand}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="No hay otros presupuestos de este cliente."
+                                   Visibility="{Binding HasAttachableQuotes, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}" />
+                        <ItemsControl ItemsSource="{Binding AttachableQuotes}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:QuoteListItem}">
+                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="10,8" Margin="0,0,0,6"
+                                            Command="{Binding DataContext.AttachQuoteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <Grid>
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                       TextWrapping="Wrap" Margin="0,0,90,0" />
+                                            <TextBlock Text="{Binding BudgetDisplay}" HorizontalAlignment="Right"
+                                                       FontWeight="SemiBold" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <ItemsControl ItemsSource="{Binding Attachments}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:QuoteAttachmentItem}">
+                            <Border Padding="0,8" BorderBrush="{DynamicResource BorderBrushToken}"
+                                    BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Description}" FontSize="11" Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Visibility="{Binding Description, Converter={StaticResource StringToVisibilityConverter}}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding BudgetDisplay}"
+                                               FontWeight="SemiBold" VerticalAlignment="Center"
+                                               Margin="12,0,8,0"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <Button Grid.Column="2" Content="Quitar"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="10,6" FontSize="12" VerticalAlignment="Center"
+                                            Command="{Binding DataContext.DetachQuoteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </StackPanel>
 </UserControl>

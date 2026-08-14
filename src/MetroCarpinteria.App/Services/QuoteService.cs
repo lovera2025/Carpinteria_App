@@ -226,7 +226,11 @@ public sealed class QuoteService
             Lines = lines,
             LaborLines = laborLines,
             Breakdown = breakdown,
-            Images = _imageService?.List(projectId) ?? []
+            Images = _imageService?.List(projectId) ?? [],
+            Attachments = ReadAttachments(context, projectId),
+            ShowCommitmentNote = project.ShowCommitmentNote,
+            CommitmentAmount = project.CommitmentAmount,
+            CommitmentText = project.CommitmentText
         };
     }
 
@@ -254,6 +258,50 @@ public sealed class QuoteService
                 IsLinkedToCash = p.CashMovementId.HasValue
             })
             .ToList();
+
+    private List<QuoteAttachmentItem> ReadAttachments(AppDbContext context, int parentId)
+    {
+        var rows = context.ProjectQuoteAttachments
+            .AsNoTracking()
+            .Where(a => a.ParentProjectId == parentId)
+            .OrderBy(a => a.SortOrder)
+            .ThenBy(a => a.Id)
+            .Select(a => new { a.Id, a.AttachedProjectId })
+            .ToList();
+
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = rows.Select(r => r.AttachedProjectId).ToList();
+        var projects = context.Projects
+            .AsNoTracking()
+            .Where(p => ids.Contains(p.Id) && !p.IsArchived)
+            .ToDictionary(p => p.Id);
+
+        var items = new List<QuoteAttachmentItem>(rows.Count);
+
+        foreach (var row in rows)
+        {
+            if (!projects.TryGetValue(row.AttachedProjectId, out var project))
+            {
+                continue;
+            }
+
+            items.Add(new QuoteAttachmentItem
+            {
+                AttachmentId = row.Id,
+                ProjectId = project.Id,
+                Title = project.Title,
+                Description = project.Description,
+                Budget = project.Budget,
+                Images = _imageService?.List(project.Id) ?? []
+            });
+        }
+
+        return items;
+    }
 
     public QuotePendingSummary GetPendingSummary()
     {
@@ -352,6 +400,224 @@ public sealed class QuoteService
 
         project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
+    }
+
+    /// <summary>
+    /// Aviso de seña debajo del TOTAL. Vacío o importe cero apaga el aviso aunque el
+    /// tilde esté prendido: no tiene sentido imprimir «entregando $ 0».
+    /// </summary>
+    public void SaveCommitmentNote(int projectId, bool show, decimal? amount, string? text)
+    {
+        if (amount is < 0)
+        {
+            throw new InvalidOperationException("El importe de la seña no puede ser negativo.");
+        }
+
+        using var context = _databaseService.CreateContext();
+        var project = RequireEditableQuote(context, projectId);
+
+        project.ShowCommitmentNote = show;
+        project.CommitmentAmount = amount is > 0 ? amount : null;
+        project.CommitmentText = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    /// <summary>
+    /// Presupuestos del mismo cliente que se pueden colgar de éste: no archivados, no
+    /// él mismo, y que todavía no están en la lista.
+    /// </summary>
+    public IReadOnlyList<QuoteListItem> GetAttachableQuotes(int parentId)
+    {
+        using var context = _databaseService.CreateContext();
+        var parent = context.Projects.AsNoTracking().FirstOrDefault(p => p.Id == parentId)
+            ?? throw new InvalidOperationException("Presupuesto no encontrado.");
+
+        var attachedIds = context.ProjectQuoteAttachments
+            .AsNoTracking()
+            .Where(a => a.ParentProjectId == parentId)
+            .Select(a => a.AttachedProjectId)
+            .ToHashSet();
+
+        var candidates = context.Projects
+            .AsNoTracking()
+            .Where(p => p.Id != parentId && !p.IsArchived)
+            .OrderByDescending(p => p.UpdatedAtUtc)
+            .Select(p => new
+            {
+                p.Id,
+                p.Title,
+                p.ClientName,
+                p.ClientId,
+                p.Status,
+                p.Budget,
+                p.IsArchived,
+                p.QuotedAtUtc,
+                p.QuoteValidUntilUtc,
+                LineCount = context.ProjectBudgetLines.Count(l => l.ProjectId == p.Id)
+            })
+            .ToList();
+
+        return candidates
+            .Where(p => !attachedIds.Contains(p.Id) && SameClient(parent.ClientId, parent.ClientName, p.ClientId, p.ClientName))
+            .Select(p => new QuoteListItem
+            {
+                Id = p.Id,
+                Title = p.Title,
+                ClientName = p.ClientName,
+                Status = p.Status,
+                Budget = p.Budget,
+                IsArchived = p.IsArchived,
+                LineCount = p.LineCount,
+                QuotedAtLocal = ToLocalDate(p.QuotedAtUtc),
+                ValidUntilLocal = ToLocalDate(p.QuoteValidUntilUtc)
+            })
+            .ToList();
+    }
+
+    public void AttachQuote(int parentId, int attachedId)
+    {
+        if (parentId == attachedId)
+        {
+            throw new InvalidOperationException("Un presupuesto no se puede adjuntar a sí mismo.");
+        }
+
+        using var context = _databaseService.CreateContext();
+        var parent = context.Projects.FirstOrDefault(p => p.Id == parentId)
+            ?? throw new InvalidOperationException("Presupuesto no encontrado.");
+        var attached = context.Projects.FirstOrDefault(p => p.Id == attachedId)
+            ?? throw new InvalidOperationException("El presupuesto a adjuntar no existe.");
+
+        if (parent.IsArchived || attached.IsArchived)
+        {
+            throw new InvalidOperationException("No se puede adjuntar un presupuesto archivado.");
+        }
+
+        if (!SameClient(parent.ClientId, parent.ClientName, attached.ClientId, attached.ClientName))
+        {
+            throw new InvalidOperationException(
+                "Solo se pueden adjuntar presupuestos del mismo cliente.");
+        }
+
+        if (context.ProjectQuoteAttachments.Any(a => a.ParentProjectId == parentId && a.AttachedProjectId == attachedId))
+        {
+            throw new InvalidOperationException("Ese presupuesto ya está adjunto a éste.");
+        }
+
+        var sort = context.ProjectQuoteAttachments
+            .Where(a => a.ParentProjectId == parentId)
+            .Select(a => (int?)a.SortOrder)
+            .Max() ?? 0;
+
+        context.ProjectQuoteAttachments.Add(new ProjectQuoteAttachment
+        {
+            ParentProjectId = parentId,
+            AttachedProjectId = attachedId,
+            SortOrder = sort + 1,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        parent.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    public void DetachQuote(int parentId, int attachmentId)
+    {
+        using var context = _databaseService.CreateContext();
+        var row = context.ProjectQuoteAttachments
+            .FirstOrDefault(a => a.Id == attachmentId && a.ParentProjectId == parentId)
+            ?? throw new InvalidOperationException("Ese adjunto ya no está en este presupuesto.");
+
+        context.ProjectQuoteAttachments.Remove(row);
+
+        var parent = context.Projects.FirstOrDefault(p => p.Id == parentId);
+        if (parent is not null)
+        {
+            parent.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        context.SaveChanges();
+    }
+
+    /// <summary>
+    /// Crea un presupuesto vacío del mismo cliente, lo cuelga del abierto y lo devuelve
+    /// para cargarle materiales y precio.
+    /// </summary>
+    public int CreateSiblingQuote(int parentId, string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new InvalidOperationException("El título del presupuesto es obligatorio.");
+        }
+
+        using var context = _databaseService.CreateContext();
+        using var transaction = context.Database.BeginTransaction();
+
+        try
+        {
+            var parent = context.Projects.FirstOrDefault(p => p.Id == parentId)
+                ?? throw new InvalidOperationException("Presupuesto no encontrado.");
+
+            if (parent.IsArchived)
+            {
+                throw new InvalidOperationException("No se puede adjuntar un presupuesto archivado.");
+            }
+
+            ValidateHeader(title.Trim(), parent.ClientName);
+
+            var now = DateTime.UtcNow;
+            var validity = DateTime.Today.AddDays(Math.Max(0, _settingsService.Current.DefaultQuoteValidityDays));
+
+            var sibling = new Project
+            {
+                Title = title.Trim(),
+                ClientName = parent.ClientName,
+                ClientId = parent.ClientId,
+                Status = ProjectStatus.Quote,
+                QuotedAtUtc = now,
+                QuoteValidUntilUtc = ToUtcFromLocalDate(validity),
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+
+            context.Projects.Add(sibling);
+            context.SaveChanges();
+
+            var sort = context.ProjectQuoteAttachments
+                .Where(a => a.ParentProjectId == parentId)
+                .Select(a => (int?)a.SortOrder)
+                .Max() ?? 0;
+
+            context.ProjectQuoteAttachments.Add(new ProjectQuoteAttachment
+            {
+                ParentProjectId = parentId,
+                AttachedProjectId = sibling.Id,
+                SortOrder = sort + 1,
+                CreatedAtUtc = now
+            });
+
+            parent.UpdatedAtUtc = now;
+            context.SaveChanges();
+            transaction.Commit();
+            return sibling.Id;
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    private static bool SameClient(int? leftId, string leftName, int? rightId, string rightName)
+    {
+        if (leftId is int left && rightId is int right)
+        {
+            return left == right;
+        }
+
+        var a = ClientRules.Normalize(leftName);
+        var b = ClientRules.Normalize(rightName);
+        return a.Length > 0 && string.Equals(a, b, StringComparison.Ordinal);
     }
 
     public void AddInventoryLine(int projectId, int productId, decimal quantity, decimal? unitCost = null)

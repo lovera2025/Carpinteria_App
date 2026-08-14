@@ -1000,6 +1000,105 @@ internal static class UiSmokeTests
             }
         });
 
+        run("PDF: el presupuesto del cliente no lleva número de referencia", () =>
+        {
+            var text = ToText(service.BuildClientQuote(quote));
+
+            if (text.Contains("N.º", StringComparison.Ordinal) || text.Contains("N.o", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("El título no debía llevar el N.º interno.");
+            }
+        });
+
+        run("PDF: el aviso de seña solo sale si está prendido", () =>
+        {
+            var plain = ToText(service.BuildClientQuote(quote));
+            if (plain.Contains("Entregando", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Sin el tilde no debía imprimirse el aviso de seña.");
+            }
+
+            var withNote = BuildSampleQuote(showCommitment: true, commitmentAmount: 100000m);
+            var text = ToText(service.BuildClientQuote(withNote));
+
+            if (!text.Contains("Entregando", StringComparison.OrdinalIgnoreCase)
+                || !text.Contains("100.000", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Con el aviso prendido tenía que salir el importe debajo del TOTAL.");
+            }
+
+            AssertNoInternalNumbers(text);
+        });
+
+        run("PDF: los adjuntos se listan y no cambian el TOTAL", () =>
+        {
+            var withAttachments = BuildSampleQuote(attachments:
+            [
+                new QuoteAttachmentItem
+                {
+                    AttachmentId = 1,
+                    ProjectId = 99,
+                    Title = "Placard de dormitorio",
+                    Description = "Frentes de 2,40 m",
+                    Budget = 185000m
+                }
+            ]);
+
+            var text = ToText(service.BuildClientQuote(withAttachments));
+
+            foreach (var expected in new[] { "Otros trabajos", "Placard de dormitorio", "185.000" })
+            {
+                if (!text.Contains(expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Faltaba «{expected}» entre los adjuntos.");
+                }
+            }
+
+            if (!text.Contains("no está incluido", StringComparison.OrdinalIgnoreCase)
+                && !text.Contains("no están incluidos", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Tenía que aclarar que el anexo no entra en este total.");
+            }
+
+            // El TOTAL del principal sigue siendo el de la mesa de prueba (287.000).
+            if (!text.Contains("287.000", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("El TOTAL del principal no tenía que cambiar al adjuntar.");
+            }
+
+            AssertNoInternalNumbers(text);
+        });
+
+        run("PDF: el recibo muestra el cobro y no el margen", () =>
+        {
+            var payment = new ProjectPaymentItem
+            {
+                Id = 1,
+                Kind = PaymentKind.Deposit,
+                Amount = 100000m,
+                Method = PaymentMethod.Cash,
+                CreatedAtLocal = DateTime.Today
+            };
+
+            var withDeposit = BuildSampleQuote(payments: [payment]);
+            var text = ToText(service.BuildReceipt(withDeposit, payment));
+
+            foreach (var expected in new[] { "RECIBO", "Seña", "RECIBIDO", "SALDO A PAGAR" })
+            {
+                if (!text.Contains(expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Faltaba «{expected}» en el recibo.");
+                }
+            }
+
+            if (text.Contains("N.º", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("El recibo no debía llevar N.º.");
+            }
+
+            AssertNoInternalNumbers(text);
+        });
+
         run("PDF: el papel del cliente ya no lleva firmas, pero sí la descripción", () =>
         {
             var text = ToText(service.BuildClientQuote(quote));
@@ -1231,7 +1330,10 @@ internal static class UiSmokeTests
     private static QuoteDetail BuildSampleQuote(
         CommercialTerms? terms = null,
         IReadOnlyList<ProjectPaymentItem>? payments = null,
-        string? description = null)
+        string? description = null,
+        IReadOnlyList<QuoteAttachmentItem>? attachments = null,
+        bool showCommitment = false,
+        decimal? commitmentAmount = null)
     {
         var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
         {
@@ -1255,6 +1357,9 @@ internal static class UiSmokeTests
             Terms = terms,
             Commercial = commercial,
             Payments = payments ?? [],
+            Attachments = attachments ?? [],
+            ShowCommitmentNote = showCommitment,
+            CommitmentAmount = commitmentAmount,
             QuotedAtLocal = DateTime.Today,
             ValidUntilLocal = DateTime.Today.AddDays(15),
             QuotedMaterialsCost = 100000m,

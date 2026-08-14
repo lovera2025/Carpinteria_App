@@ -72,6 +72,14 @@ public partial class QuotesViewModel : ViewModelBase
     private string _missingDataMessage = string.Empty;
     private string _adjustedPrice = string.Empty;
 
+    private bool _showCommitmentNote;
+    private string _commitmentAmount = string.Empty;
+    private string _commitmentText = string.Empty;
+
+    private bool _isAttachmentPickerOpen;
+    private bool _isSiblingFormOpen;
+    private string _siblingTitle = string.Empty;
+
     /// <summary>
     /// Mientras se carga un presupuesto se asignan los tres campos de cálculo de una.
     /// Sin esta guarda, cada asignación dispararía un cálculo y una escritura a la base.
@@ -101,6 +109,8 @@ public partial class QuotesViewModel : ViewModelBase
         LaborLines = [];
         AvailableWorkers = [];
         Images = [];
+        Attachments = [];
+        AttachableQuotes = [];
         BreakdownLines = [];
         Shortfalls = [];
         AvailableProducts = [];
@@ -154,6 +164,14 @@ public partial class QuotesViewModel : ViewModelBase
         RemoveImageCommand = new RelayCommand(RemoveImage, _ => CanEditImages);
         SaveImageCaptionCommand = new RelayCommand(SaveImageCaption, _ => CanEditImages);
 
+        OpenAttachmentPickerCommand = new RelayCommand(_ => OpenAttachmentPicker(), _ => CanManageAttachments);
+        CloseAttachmentPickerCommand = new RelayCommand(_ => IsAttachmentPickerOpen = false);
+        AttachQuoteCommand = new RelayCommand(AttachQuote, _ => CanManageAttachments);
+        DetachQuoteCommand = new RelayCommand(DetachQuote, _ => CanManageAttachments);
+        OpenSiblingFormCommand = new RelayCommand(_ => OpenSiblingForm(), _ => CanManageAttachments);
+        CancelSiblingFormCommand = new RelayCommand(_ => CloseSiblingForm());
+        CreateSiblingQuoteCommand = new RelayCommand(_ => CreateSiblingQuote(), _ => CanCreateSibling);
+
         _selectedVat = VatOptions[0];
         _selectedDiscountMode = DiscountModeOptions[0];
 
@@ -170,6 +188,8 @@ public partial class QuotesViewModel : ViewModelBase
     public ObservableCollection<QuoteLaborLineItem> LaborLines { get; }
     public ObservableCollection<EmployeeListItem> AvailableWorkers { get; }
     public ObservableCollection<QuoteImageRow> Images { get; }
+    public ObservableCollection<QuoteAttachmentItem> Attachments { get; }
+    public ObservableCollection<QuoteListItem> AttachableQuotes { get; }
     public ObservableCollection<BudgetBreakdownLine> BreakdownLines { get; }
     public ObservableCollection<QuoteApprovalShortfall> Shortfalls { get; }
     public ObservableCollection<ProductListItem> AvailableProducts { get; }
@@ -225,6 +245,13 @@ public partial class QuotesViewModel : ViewModelBase
     public ICommand PasteImageCommand { get; }
     public ICommand RemoveImageCommand { get; }
     public ICommand SaveImageCaptionCommand { get; }
+    public ICommand OpenAttachmentPickerCommand { get; }
+    public ICommand CloseAttachmentPickerCommand { get; }
+    public ICommand AttachQuoteCommand { get; }
+    public ICommand DetachQuoteCommand { get; }
+    public ICommand OpenSiblingFormCommand { get; }
+    public ICommand CancelSiblingFormCommand { get; }
+    public ICommand CreateSiblingQuoteCommand { get; }
 
     // --- Carga ----------------------------------------------------------------
 

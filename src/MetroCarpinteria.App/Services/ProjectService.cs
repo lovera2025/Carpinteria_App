@@ -179,6 +179,11 @@ public sealed class ProjectService
                 "No se puede eliminar un proyecto con materiales, personal o presupuesto cargado. Archivalo.");
         }
 
+        // Esta fila es el adjunto de otro presupuesto: Restrict no deja borrar el proyecto
+        // si queda el enganche. El anexo del padre se cae con el trabajo.
+        context.ProjectQuoteAttachments.RemoveRange(
+            context.ProjectQuoteAttachments.Where(a => a.AttachedProjectId == id));
+
         context.Projects.Remove(project);
         context.SaveChanges();
         _imageService?.DeleteFilesForProject(id);

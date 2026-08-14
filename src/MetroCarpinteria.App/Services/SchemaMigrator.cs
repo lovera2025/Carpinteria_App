@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 9;
+    public const int LatestVersion = 10;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -78,7 +78,8 @@ public sealed class SchemaMigrator
         new(6, "Señas y pagos a cuenta", ApplyProjectPayments),
         new(7, "Afinidad de las columnas de dinero", ApplyMoneyColumnAffinity, TransformsData: true),
         new(8, "Fotos de referencia en presupuestos", ApplyQuoteImages),
-        new(9, "Mano de obra por operario", ApplyLaborLines)
+        new(9, "Mano de obra por operario", ApplyLaborLines),
+        new(10, "Aviso de seña y presupuestos adjuntos", ApplyCommitmentAndAttachments)
     ];
 
     /// <summary>
@@ -354,6 +355,36 @@ public sealed class SchemaMigrator
             "CREATE INDEX IF NOT EXISTS IX_ProjectLaborLines_EmployeeId ON ProjectLaborLines (EmployeeId);");
 
         AddColumnIfMissing(connection, transaction, "Employees", "DailyRate", "TEXT NULL");
+    }
+
+    /// <summary>
+    /// Aviso opcional de seña en el papel, y la tabla que engancha varios presupuestos
+    /// del mismo cliente sin fusionarlos.
+    /// </summary>
+    private static void ApplyCommitmentAndAttachments(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        AddColumnIfMissing(connection, transaction, "Projects", "ShowCommitmentNote", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(connection, transaction, "Projects", "CommitmentAmount", "TEXT NULL");
+        AddColumnIfMissing(connection, transaction, "Projects", "CommitmentText", "TEXT NULL");
+
+        Execute(connection, transaction, """
+            CREATE TABLE IF NOT EXISTS ProjectQuoteAttachments (
+                Id INTEGER NOT NULL CONSTRAINT PK_ProjectQuoteAttachments PRIMARY KEY AUTOINCREMENT,
+                ParentProjectId INTEGER NOT NULL,
+                AttachedProjectId INTEGER NOT NULL,
+                SortOrder INTEGER NOT NULL,
+                CreatedAtUtc TEXT NOT NULL,
+                CONSTRAINT FK_ProjectQuoteAttachments_Parent FOREIGN KEY (ParentProjectId) REFERENCES Projects (Id) ON DELETE CASCADE,
+                CONSTRAINT FK_ProjectQuoteAttachments_Attached FOREIGN KEY (AttachedProjectId) REFERENCES Projects (Id) ON DELETE RESTRICT
+            );
+            """);
+
+        Execute(connection, transaction,
+            "CREATE INDEX IF NOT EXISTS IX_ProjectQuoteAttachments_ParentProjectId ON ProjectQuoteAttachments (ParentProjectId);");
+        Execute(connection, transaction,
+            "CREATE INDEX IF NOT EXISTS IX_ProjectQuoteAttachments_AttachedProjectId ON ProjectQuoteAttachments (AttachedProjectId);");
+        Execute(connection, transaction,
+            "CREATE UNIQUE INDEX IF NOT EXISTS IX_ProjectQuoteAttachments_Parent_Attached ON ProjectQuoteAttachments (ParentProjectId, AttachedProjectId);");
     }
 
     /// <summary>

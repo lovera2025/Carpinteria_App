@@ -74,7 +74,8 @@ public sealed class QuoteDocumentService
         document.Blocks.Add(BuildTitleRow("PRESUPUESTO", quote));
         document.Blocks.Add(BuildClientBlock(quote));
 
-        AddReferenceSection(document, quote);
+        AddReferenceSection(document, quote.PrintableImages, "Referencias");
+        AddAttachedQuotesSection(document, quote);
 
         // El pie comercial solo aparece si se pactó algo. Un descuento que el cliente
         // negoció tiene que figurar en el papel, y el IVA discriminado es una condición
@@ -85,6 +86,11 @@ public sealed class QuoteDocumentService
         }
 
         document.Blocks.Add(BuildTotalBlock(quote));
+
+        if (quote.HasCommitmentNote)
+        {
+            document.Blocks.Add(BuildCommitmentNote(quote));
+        }
 
         // Si el cliente ya adelantó plata, lo que necesita ver es cuánto falta.
         if (quote.HasPayments)
@@ -97,7 +103,18 @@ public sealed class QuoteDocumentService
 
         // Total, saldo, vigencia y pie viajan juntos: partirlos deja al cliente con una
         // hoja sin el número.
-        KeepClosingParagraphsTogether(document, quote.HasPayments ? 4 : 3);
+        var closing = 3;
+        if (quote.HasPayments)
+        {
+            closing++;
+        }
+
+        if (quote.HasCommitmentNote)
+        {
+            closing++;
+        }
+
+        KeepClosingParagraphsTogether(document, closing);
 
         return document;
     }
@@ -135,7 +152,7 @@ public sealed class QuoteDocumentService
 
         if (quote.Breakdown is not null)
         {
-            document.Blocks.Add(BuildSummaryTable(quote.Breakdown.Lines.Where(l => !l.IsTotal).ToList()));
+            document.Blocks.Add(BuildSummaryTable(quote.Breakdown.CompactLines.Where(l => !l.IsTotal).ToList()));
         }
         else
         {
@@ -169,6 +186,90 @@ public sealed class QuoteDocumentService
         KeepClosingParagraphsTogether(document, quote.HasPayments ? 4 : 3);
 
         return document;
+    }
+
+    /// <summary>
+    /// Recibo de un cobro: seña, pago a cuenta o saldo. Mismo estilo que el presupuesto,
+    /// sin desglose interno.
+    /// </summary>
+    public FlowDocument BuildReceipt(QuoteDetail quote, ProjectPaymentItem payment)
+    {
+        ArgumentNullException.ThrowIfNull(quote);
+        ArgumentNullException.ThrowIfNull(payment);
+
+        var document = CreateDocument();
+
+        document.Blocks.Add(BuildHeaderBand());
+        document.Blocks.Add(BuildTitleRow("RECIBO", payment.CreatedAtLocal, validUntilLocal: null));
+        document.Blocks.Add(BuildClientBlock(quote));
+
+        var concept = new Paragraph
+        {
+            Background = CreamBrush,
+            Padding = new Thickness(14, 10, 14, 10),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        concept.Inlines.Add(Label("Concepto: "));
+        concept.Inlines.Add(new Run(payment.KindLabel) { FontWeight = FontWeights.SemiBold });
+        concept.Inlines.Add(new LineBreak());
+        concept.Inlines.Add(Label("Medio: "));
+        concept.Inlines.Add(new Run(payment.MethodLabel) { FontWeight = FontWeights.SemiBold });
+
+        if (!string.IsNullOrWhiteSpace(payment.Notes))
+        {
+            concept.Inlines.Add(new LineBreak());
+            concept.Inlines.Add(Label("Notas: "));
+            concept.Inlines.Add(new Run(payment.Notes));
+        }
+
+        document.Blocks.Add(concept);
+        document.Blocks.Add(BuildReceivedBlock(payment.AmountDisplay));
+        document.Blocks.Add(BuildBalanceBlock(quote));
+        document.Blocks.Add(BuildFooter());
+
+        KeepClosingParagraphsTogether(document, 2);
+        return document;
+    }
+
+    private static Block BuildReceivedBlock(string amount)
+    {
+        var table = NoBorderTable();
+        table.Columns.Add(Column(ContentWidth - 210, BrownBrush));
+        table.Columns.Add(Column(210, BrownBrush));
+
+        var row = new TableRow();
+
+        row.Cells.Add(new TableCell(new Paragraph(new Run("RECIBIDO")
+        {
+            FontSize = 15,
+            FontWeight = FontWeights.Bold,
+            Foreground = OnBrownBrush
+        })
+        { Margin = new Thickness(0) })
+        {
+            Background = BrownBrush,
+            Padding = new Thickness(16, 13, 8, 13)
+        });
+
+        row.Cells.Add(new TableCell(new Paragraph(new Run(amount)
+        {
+            FontSize = 19,
+            FontWeight = FontWeights.Bold,
+            Foreground = OnBrownBrush
+        })
+        { Margin = new Thickness(0) })
+        {
+            Background = BrownBrush,
+            Padding = new Thickness(8, 10, 16, 10),
+            TextAlignment = TextAlignment.Right
+        });
+
+        var group = new TableRowGroup();
+        group.Rows.Add(row);
+        table.RowGroups.Add(group);
+        table.Margin = new Thickness(0, 4, 0, 8);
+
+        return table;
     }
 
     /// <summary>
@@ -397,7 +498,10 @@ public sealed class QuoteDocumentService
         return null;
     }
 
-    private static Block BuildTitleRow(string documentTitle, QuoteDetail quote)
+    private static Block BuildTitleRow(string documentTitle, QuoteDetail quote) =>
+        BuildTitleRow(documentTitle, quote.QuotedAtLocal ?? DateTime.Today, quote.ValidUntilLocal);
+
+    private static Block BuildTitleRow(string documentTitle, DateTime issued, DateTime? validUntilLocal)
     {
         var table = NoBorderTable();
         table.Columns.Add(Column(ContentWidth / 2));
@@ -410,17 +514,14 @@ public sealed class QuoteDocumentService
             FontWeight = FontWeights.Bold,
             Foreground = BrownBrush
         });
-        left.Inlines.Add(new LineBreak());
-        left.Inlines.Add(new Run($"N.º {quote.Id:0000}") { FontSize = 12, Foreground = MutedBrush });
 
-        var issued = quote.QuotedAtLocal ?? DateTime.Today;
         var right = new Paragraph { Margin = new Thickness(0), TextAlignment = TextAlignment.Right };
         right.Inlines.Add(new Run($"Fecha: {AppCulture.ShortDate(issued)}") { FontSize = 11 });
 
-        if (quote.ValidUntilLocal.HasValue)
+        if (validUntilLocal.HasValue)
         {
             right.Inlines.Add(new LineBreak());
-            right.Inlines.Add(new Run($"Válido hasta: {AppCulture.ShortDate(quote.ValidUntilLocal.Value)}")
+            right.Inlines.Add(new Run($"Válido hasta: {AppCulture.ShortDate(validUntilLocal.Value)}")
             {
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold
@@ -500,17 +601,92 @@ public sealed class QuoteDocumentService
     /// Fotos de referencia. Si no hay ninguna usable no agrega bloques: el presupuesto
     /// sin fotos tiene que seguir cabiendo en una hoja A4.
     /// </summary>
-    private static void AddReferenceSection(FlowDocument document, QuoteDetail quote)
+    private static void AddReferenceSection(
+        FlowDocument document,
+        IReadOnlyList<QuoteImageItem> images,
+        string title)
     {
-        var images = quote.PrintableImages;
         if (images.Count == 0)
         {
             return;
         }
 
-        document.Blocks.Add(SectionTitle("Referencias"));
+        document.Blocks.Add(SectionTitle(title));
         document.Blocks.Add(BuildReferencesTable(images));
     }
+
+    /// <summary>
+    /// Anexos del mismo cliente: cada uno con su descripción y su total. El TOTAL de
+    /// este papel no los suma.
+    /// </summary>
+    private static void AddAttachedQuotesSection(FlowDocument document, QuoteDetail quote)
+    {
+        if (!quote.HasAttachments)
+        {
+            return;
+        }
+
+        document.Blocks.Add(SectionTitle("Otros trabajos"));
+        document.Blocks.Add(BuildAttachmentsTable(quote.Attachments));
+
+        var names = quote.Attachments.Select(a => a.Title).ToList();
+        document.Blocks.Add(Muted(
+            $"{Phrases.JoinWithAnd(names)} " +
+            (names.Count == 1
+                ? "es otro trabajo del mismo cliente y no está incluido en este total."
+                : "son otros trabajos del mismo cliente y no están incluidos en este total.")));
+
+        var photos = quote.Attachments.SelectMany(a => a.PrintableImages).ToList();
+        AddReferenceSection(document, photos, "Fotos de los adjuntos");
+    }
+
+    private static Block BuildAttachmentsTable(IReadOnlyList<QuoteAttachmentItem> attachments)
+    {
+        var table = NoBorderTable();
+        table.Columns.Add(Column(ContentWidth - 160));
+        table.Columns.Add(Column(160));
+
+        var group = new TableRowGroup();
+
+        foreach (var item in attachments)
+        {
+            var label = new Paragraph { Margin = new Thickness(0) };
+            label.Inlines.Add(new Run(item.Title) { FontWeight = FontWeights.SemiBold });
+
+            if (!string.IsNullOrWhiteSpace(item.Description))
+            {
+                label.Inlines.Add(new LineBreak());
+                label.Inlines.Add(new Run(item.Description) { FontSize = 10, Foreground = MutedBrush });
+            }
+
+            var row = new TableRow();
+            row.Cells.Add(new TableCell(label) { Padding = new Thickness(0, 5, 8, 5) });
+            row.Cells.Add(new TableCell(new Paragraph(new Run(item.BudgetDisplay)
+            {
+                FontWeight = FontWeights.SemiBold
+            })
+            { Margin = new Thickness(0) })
+            {
+                Padding = new Thickness(8, 5, 0, 5),
+                TextAlignment = TextAlignment.Right
+            });
+
+            group.Rows.Add(row);
+        }
+
+        table.RowGroups.Add(group);
+        table.Margin = new Thickness(0, 0, 0, 6);
+        return table;
+    }
+
+    private static Block BuildCommitmentNote(QuoteDetail quote) =>
+        new Paragraph(new Run(quote.CommitmentNoteDisplay))
+        {
+            FontSize = 11,
+            FontStyle = FontStyles.Italic,
+            Foreground = TextBrush,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
 
     private static Block BuildReferencesTable(IReadOnlyList<QuoteImageItem> images)
     {

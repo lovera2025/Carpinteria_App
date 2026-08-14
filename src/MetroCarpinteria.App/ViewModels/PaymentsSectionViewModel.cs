@@ -53,6 +53,7 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         CancelFormCommand = new RelayCommand(_ => IsFormOpen = false);
         ConfirmCommand = new AsyncRelayCommand(ConfirmAsync, () => CanRegisterPayment);
         RemoveCommand = new AsyncRelayCommand(RemoveAsync);
+        PrintReceiptCommand = new RelayCommand(PrintReceipt, _ => HasSelection);
     }
 
     /// <summary>
@@ -77,6 +78,7 @@ public sealed class PaymentsSectionViewModel : ObservableObject
     public ICommand CancelFormCommand { get; }
     public ICommand ConfirmCommand { get; }
     public ICommand RemoveCommand { get; }
+    public ICommand PrintReceiptCommand { get; }
 
     // --- Estado ---------------------------------------------------------------
 
@@ -219,7 +221,7 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         {
             var amount = NumberInput.ParseMoneyOrThrow(Amount, "Importe del cobro");
 
-            AppHost.PaymentService.RegisterPayment(
+            var payment = AppHost.PaymentService.RegisterPayment(
                 _detail.Id, PaymentKind.Kind, amount, PaymentMethod.Method, Notes);
 
             IsFormOpen = false;
@@ -227,6 +229,8 @@ public sealed class PaymentsSectionViewModel : ObservableObject
 
             AppHost.NotificationService.Success(
                 $"{PaymentKind.Label} de {AppCulture.Money(amount)} registrada. Saldo: {BalanceDisplay}");
+
+            OfferReceipt(payment);
         }
         catch (CashRegisterClosedException)
         {
@@ -299,5 +303,72 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         {
             AppHost.NotificationService.Error(ex.Message, ex);
         }
+    }
+
+    private void PrintReceipt(object? parameter)
+    {
+        if (parameter is not ProjectPaymentItem payment)
+        {
+            return;
+        }
+
+        OfferReceipt(payment);
+    }
+
+    /// <summary>
+    /// Arma el PDF, lo deja en la carpeta de recibos y lo abre. El cobro ya está
+    /// guardado: si esto falla, se avisa y nada más.
+    /// </summary>
+    private void OfferReceipt(ProjectPaymentItem payment)
+    {
+        if (_detail is null || !AppHost.IsReady)
+        {
+            return;
+        }
+
+        try
+        {
+            var document = AppHost.QuoteDocumentService.BuildReceipt(_detail, payment);
+            Directory.CreateDirectory(AppHost.Paths.ReceiptsDirectory);
+
+            var suggested = PdfExportService.SuggestFileName(
+                $"Recibo {payment.KindLabel}", _detail.Id, _detail.ClientName);
+            var path = UniquePath(Path.Combine(AppHost.Paths.ReceiptsDirectory, suggested));
+
+            AppHost.PdfExportService.Export(document, path);
+
+            if (AppHost.DialogService.HasHost)
+            {
+                PdfExportService.OpenInDefaultApp(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppHost.NotificationService.Warning(
+                $"El cobro quedó registrado, pero no se pudo armar el recibo: {ex.Message}");
+        }
+    }
+
+    private static string UniquePath(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return path;
+        }
+
+        var directory = Path.GetDirectoryName(path) ?? ".";
+        var name = Path.GetFileNameWithoutExtension(path);
+        var extension = Path.GetExtension(path);
+
+        for (var i = 2; i < 100; i++)
+        {
+            var candidate = Path.Combine(directory, $"{name} ({i}){extension}");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return Path.Combine(directory, $"{name} {Guid.NewGuid():N}{extension}");
     }
 }

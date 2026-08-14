@@ -264,4 +264,76 @@ public partial class QuotesViewModel
             DiscountValue = discount
         };
     }
+
+    // --- Aviso de seña bajo el TOTAL ------------------------------------------
+
+    public bool ShowCommitmentOnTotal => Detail is { HasCommitmentNote: true };
+
+    public string CommitmentNoteDisplay => Detail?.CommitmentNoteDisplay ?? string.Empty;
+
+    public bool ShowCommitmentNote
+    {
+        get => _showCommitmentNote;
+        set
+        {
+            if (SetProperty(ref _showCommitmentNote, value))
+            {
+                SaveCommitmentNote();
+            }
+        }
+    }
+
+    public string CommitmentAmount
+    {
+        get => _commitmentAmount;
+        set => SetProperty(ref _commitmentAmount, value);
+    }
+
+    public string CommitmentText
+    {
+        get => _commitmentText;
+        set => SetProperty(ref _commitmentText, value);
+    }
+
+    private void LoadCommitmentNote(QuoteDetail detail)
+    {
+        _showCommitmentNote = detail.ShowCommitmentNote;
+        _commitmentAmount = NumberInput.Format(detail.CommitmentAmount);
+        _commitmentText = detail.CommitmentText ?? string.Empty;
+
+        OnPropertyChanged(nameof(ShowCommitmentNote));
+        OnPropertyChanged(nameof(CommitmentAmount));
+        OnPropertyChanged(nameof(CommitmentText));
+        OnPropertyChanged(nameof(ShowCommitmentOnTotal));
+        OnPropertyChanged(nameof(CommitmentNoteDisplay));
+    }
+
+    /// <summary>Guarda el aviso. Corre al marcar el tilde y al salir de los campos.</summary>
+    public void SaveCommitmentNote()
+    {
+        if (_isLoadingDetail || Detail is not { IsEditable: true })
+        {
+            return;
+        }
+
+        try
+        {
+            decimal? amount = null;
+            if (!string.IsNullOrWhiteSpace(CommitmentAmount))
+            {
+                amount = NumberInput.ParseMoneyOrThrow(CommitmentAmount, "Importe de la seña");
+            }
+
+            AppHost.QuoteService.SaveCommitmentNote(
+                Detail.Id, ShowCommitmentNote, amount, CommitmentText);
+
+            RefreshDetailAfterCalculation();
+            OnPropertyChanged(nameof(ShowCommitmentOnTotal));
+            OnPropertyChanged(nameof(CommitmentNoteDisplay));
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
 }

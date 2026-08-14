@@ -29,6 +29,7 @@ internal static class MigrationTests
         RunBackupGuardTests(run);
         RunNormalizationTests(run);
         RunQuoteImageMigrationTests(run);
+        RunCommitmentAndAttachmentMigrationTests(run);
     }
 
     // --- v7: afinidad de las columnas de dinero -------------------------------
@@ -389,6 +390,31 @@ internal static class MigrationTests
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ProjectQuoteImages';"),
                 1,
                 "tabla presente tras el segundo arranque");
+        });
+    }
+
+    // --- v10: aviso de seña y presupuestos adjuntos ---------------------------
+
+    private static void RunCommitmentAndAttachmentMigrationTests(Action<string, Action> run)
+    {
+        run("Migración v10: aparecen el aviso de seña y la tabla de adjuntos", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+            var projects = legacy.Count("Projects");
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "versión del esquema");
+            Assert.Equal(legacy.ReadAffinity("Projects", "ShowCommitmentNote"), "INTEGER", "tipo del tilde");
+            Assert.Equal(legacy.ReadAffinity("Projects", "CommitmentAmount"), "TEXT", "afinidad del importe");
+            Assert.Equal(
+                legacy.ReadInt(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ProjectQuoteAttachments';"),
+                1,
+                "tabla ProjectQuoteAttachments");
+            Assert.Equal(legacy.Count("Projects"), projects, "proyectos preservados");
+            Assert.Equal(legacy.Count("ProjectQuoteAttachments"), 0, "adjuntos al migrar");
+            legacy.AssertIntegrity();
         });
     }
 

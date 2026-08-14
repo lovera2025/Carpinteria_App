@@ -32,6 +32,8 @@ public partial class QuotesViewModel
                 OnPropertyChanged(nameof(ShowPendingStockNotice));
                 OnPropertyChanged(nameof(ShowManualAdjustNotice));
                 OnPropertyChanged(nameof(IsRejectedSelected));
+                OnPropertyChanged(nameof(ShowCommitmentOnTotal));
+                OnPropertyChanged(nameof(CommitmentNoteDisplay));
                 NotifyStepSummaries();
             }
         }
@@ -270,6 +272,7 @@ public partial class QuotesViewModel
                 ReloadLaborLines(null);
                 SetMissingData(string.Empty);
                 ReloadImages();
+                ReloadAttachments();
                 return;
             }
 
@@ -306,8 +309,10 @@ public partial class QuotesViewModel
             AdjustedPrice = NumberInput.Format(detail.Budget);
 
             LoadCommercialTerms(detail);
+            LoadCommitmentNote(detail);
             PaymentsSection.Load(detail);
             ReloadImages();
+            ReloadAttachments();
         }
         finally
         {

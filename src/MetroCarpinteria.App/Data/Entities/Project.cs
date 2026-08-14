@@ -63,10 +63,26 @@ public class Project
     /// <summary>Se lee según <see cref="DiscountMode"/>: porcentaje o importe.</summary>
     public decimal? DiscountValue { get; set; }
 
+    /// <summary>
+    /// Si el aviso de seña sale debajo del TOTAL en el presupuesto del cliente.
+    /// No se prende solo al cobrar: el jefe lo marca cuando quiere que vaya.
+    /// </summary>
+    public bool ShowCommitmentNote { get; set; }
+
+    /// <summary>Importe que se nombra en el aviso. Null o cero es «no hay aviso».</summary>
+    public decimal? CommitmentAmount { get; set; }
+
+    /// <summary>
+    /// Texto libre del aviso. Vacío usa la frase de siempre: entregando X para comprar
+    /// materiales y empezar, el resto al terminar.
+    /// </summary>
+    public string? CommitmentText { get; set; }
+
     public ICollection<ProjectMaterial> Materials { get; set; } = [];
     public ICollection<ProjectAssignment> Assignments { get; set; } = [];
     public ICollection<ProjectBudgetLine> BudgetLines { get; set; } = [];
     public ICollection<ProjectLaborLine> LaborLines { get; set; } = [];
     public ICollection<ProjectPayment> Payments { get; set; } = [];
     public ICollection<ProjectQuoteImage> QuoteImages { get; set; } = [];
+    public ICollection<ProjectQuoteAttachment> Attachments { get; set; } = [];
 }

@@ -387,5 +387,39 @@
                 </StackPanel>
             </Expander>
         </Border>
+
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel>
+                <TextBlock Text="Aviso de seña en el presupuesto" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8" />
+                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Text="Si lo marcás, sale debajo del TOTAL. No se prende solo al cobrar: es un aviso para el cliente." />
+
+                <CheckBox Content="Mostrar aviso de seña" IsChecked="{Binding ShowCommitmentNote}"
+                          Margin="0,0,0,12" Foreground="{DynamicResource TextPrimaryBrush}"
+                          IsEnabled="{Binding CanEditSelected}" />
+
+                <StackPanel Visibility="{Binding ShowCommitmentNote, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Importe" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding CommitmentAmount, UpdateSourceTrigger=LostFocus}"
+                             Padding="10,8" Margin="0,0,0,12"
+                             IsEnabled="{Binding CanEditSelected}"
+                             LostFocus="OnCommitmentLostFocus"
+                             ToolTip="Ejemplo: 100000" />
+
+                    <TextBlock Text="Texto (opcional)" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding CommitmentText, UpdateSourceTrigger=LostFocus}"
+                             Padding="10,8" Margin="0,0,0,8" MinHeight="56"
+                             TextWrapping="Wrap" AcceptsReturn="True"
+                             IsEnabled="{Binding CanEditSelected}"
+                             LostFocus="OnCommitmentLostFocus"
+                             ToolTip="Si lo dejás vacío se usa la frase de siempre." />
+                    <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" TextWrapping="Wrap"
+                               Text="{Binding CommitmentNoteDisplay}"
+                               Visibility="{Binding ShowCommitmentOnTotal, Converter={StaticResource BoolToVisibilityConverter}}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
     </StackPanel>
 </UserControl>

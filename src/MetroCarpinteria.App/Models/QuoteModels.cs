@@ -271,6 +271,40 @@ public sealed class QuoteDetail
     public IReadOnlyList<QuoteImageItem> PrintableImages =>
         Images.Where(i => !i.IsMissing).ToList();
 
+    /// <summary>
+    /// Otros trabajos del mismo cliente colgados de éste. No entran en el TOTAL.
+    /// </summary>
+    public IReadOnlyList<QuoteAttachmentItem> Attachments { get; init; } = [];
+
+    public bool HasAttachments => Attachments.Count > 0;
+
+    /// <summary>El aviso de seña está prendido y hay un importe para nombrar.</summary>
+    public bool HasCommitmentNote => ShowCommitmentNote && CommitmentAmount is > 0;
+
+    public bool ShowCommitmentNote { get; init; }
+    public decimal? CommitmentAmount { get; init; }
+    public string? CommitmentText { get; init; }
+
+    /// <summary>Frase que sale debajo del TOTAL, o vacía si el aviso no aplica.</summary>
+    public string CommitmentNoteDisplay
+    {
+        get
+        {
+            if (!HasCommitmentNote)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(CommitmentText))
+            {
+                return CommitmentText.Trim();
+            }
+
+            return $"Entregando {AppCulture.Money(CommitmentAmount)} como compromiso para comprar " +
+                   "materiales y empezar el trabajo. El resto al finalizar.";
+        }
+    }
+
     /// <summary>Lo cobrado hasta ahora.</summary>
     public decimal PaidTotal => Payments.Sum(p => p.Amount);
 
@@ -330,4 +364,20 @@ public sealed class QuoteImageItem
     public bool IsMissing { get; init; }
 
     public string CaptionDisplay => string.IsNullOrWhiteSpace(Caption) ? "Sin pie de foto" : Caption;
+}
+
+/// <summary>Un presupuesto colgado de otro, tal como se lista en el editor y en el PDF.</summary>
+public sealed class QuoteAttachmentItem
+{
+    public int AttachmentId { get; init; }
+    public int ProjectId { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    public decimal? Budget { get; init; }
+    public IReadOnlyList<QuoteImageItem> Images { get; init; } = [];
+
+    public string BudgetDisplay => AppCulture.Money(Budget);
+
+    public IReadOnlyList<QuoteImageItem> PrintableImages =>
+        Images.Where(i => !i.IsMissing).ToList();
 }

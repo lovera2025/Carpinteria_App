@@ -25,6 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<ProjectPayment> ProjectPayments => Set<ProjectPayment>();
     public DbSet<ProjectQuoteImage> ProjectQuoteImages => Set<ProjectQuoteImage>();
+    public DbSet<ProjectQuoteAttachment> ProjectQuoteAttachments => Set<ProjectQuoteAttachment>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -98,6 +99,8 @@ public class AppDbContext : DbContext
             entity.Property(p => p.ProfitPercent).HasPrecision(9, 4);
             entity.Property(p => p.VatPercent).HasPrecision(9, 4);
             entity.Property(p => p.DiscountValue).HasPrecision(18, 2);
+            entity.Property(p => p.CommitmentAmount).HasPrecision(18, 2);
+            entity.Property(p => p.CommitmentText).HasMaxLength(500);
             entity.HasIndex(p => p.ClientId);
 
             // SetNull y no Cascade: archivar o borrar una ficha de cliente no puede
@@ -203,6 +206,25 @@ public class AppDbContext : DbContext
                 .WithMany(p => p.QuoteImages)
                 .HasForeignKey(i => i.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectQuoteAttachment>(entity =>
+        {
+            entity.HasIndex(a => a.ParentProjectId);
+            entity.HasIndex(a => a.AttachedProjectId);
+            entity.HasIndex(a => new { a.ParentProjectId, a.AttachedProjectId }).IsUnique();
+
+            entity.HasOne(a => a.Parent)
+                .WithMany(p => p.Attachments)
+                .HasForeignKey(a => a.ParentProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restrict y no Cascade: SQLite no admite dos caminos de borrado en cascada
+            // hacia la misma tabla. Si se borra el adjunto, el servicio saca la fila.
+            entity.HasOne(a => a.Attached)
+                .WithMany()
+                .HasForeignKey(a => a.AttachedProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

@@ -15,6 +15,7 @@ public sealed class AppPaths
     public string BackupsDirectory => Path.Combine(RootDirectory, "backups");
     public string LogsDirectory => Path.Combine(RootDirectory, "logs");
     public string QuoteImagesDirectory => Path.Combine(DataDirectory, "quote-images");
+    public string ReceiptsDirectory => Path.Combine(RootDirectory, "recibos");
     public string DatabasePath => Path.Combine(DataDirectory, "carpinteria.db");
     public string SettingsPath => Path.Combine(RootDirectory, "settings.json");
 
@@ -24,6 +25,7 @@ public sealed class AppPaths
         Directory.CreateDirectory(BackupsDirectory);
         Directory.CreateDirectory(LogsDirectory);
         Directory.CreateDirectory(QuoteImagesDirectory);
+        Directory.CreateDirectory(ReceiptsDirectory);
     }
 
     /// <summary>Carpeta de las fotos de un presupuesto. El id va en el nombre, no en una subruta libre.</summary>
