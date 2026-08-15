@@ -39,6 +39,11 @@ public sealed class ProjectAssignmentItem
     public string ProjectTitle { get; init; } = string.Empty;
     public string? Notes { get; init; }
     public DateTime AssignedAtLocal { get; init; }
+    public bool IsPaid { get; init; }
+
+    public string PaymentStatusLabel => IsPaid ? "Pagado" : "Pendiente";
+
+    public string TogglePaymentLabel => IsPaid ? "Marcar pendiente" : "Marcar pagado";
 }
 
 public sealed class EmployeeListItem
@@ -53,6 +58,9 @@ public sealed class EmployeeListItem
 
     public bool IsArchived { get; init; }
     public int ActiveAssignmentCount { get; init; }
+
+    /// <summary>Trabajos en los que todavía no se le pagó el jornal.</summary>
+    public int UnpaidAssignmentCount { get; init; }
 
     public string DailyRateDisplay => AppCulture.Money(DailyRate);
 

@@ -482,6 +482,49 @@ internal static class UiSmokeTests
             Assert.False(viewModel.ShowManualAdjustNotice, "ya no habría que avisar de un ajuste.");
         });
 
+        run("UI: fijar el precio sin marcar líneas no toca el desglose", () =>
+        {
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            var profitBefore = viewModel.Detail!.UnadjustedBreakdown!.Profit;
+            viewModel.AdjustedPrice = "190000";
+            viewModel.ApplyAdjustedPriceCommand.Execute(null);
+
+            Assert.Equal(viewModel.Detail!.Budget ?? 0m, 190000m, "precio fijado");
+            Assert.Equal(viewModel.Detail.Breakdown!.Profit, profitBefore, "ganancia intacta");
+            Assert.Equal(viewModel.Detail.PriceAdjustmentTargets.Count, 0, "sin marcas");
+
+            viewModel.RestoreCalculatedPriceCommand.Execute(null);
+        });
+
+        run("UI: marcar ganancia resta de ahí al fijar un precio menor", () =>
+        {
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            var profitLine = viewModel.BreakdownLines.First(l => l.Kind == BudgetLineKind.Profit);
+            var profitBefore = profitLine.OriginalAmount;
+
+            profitLine.IsSelected = true;
+            viewModel.AdjustedPrice = "190000";
+            viewModel.ApplyAdjustedPriceCommand.Execute(null);
+
+            Assert.True(viewModel.Detail!.PriceAdjustmentTargets.Contains(BudgetLineKind.Profit), "quedó ganancia marcada");
+            Assert.True(viewModel.Detail.Breakdown!.Profit < profitBefore, "la ganancia tenía que bajar");
+            Assert.True(
+                viewModel.BreakdownLines.First(l => l.Kind == BudgetLineKind.Profit).IsSelected,
+                "el tilde se restaura al reabrir");
+
+            viewModel.RestoreCalculatedPriceCommand.Execute(null);
+            Assert.Equal(
+                viewModel.Detail!.Breakdown!.Profit,
+                profitBefore,
+                "volver al calculado restaura la ganancia");
+        });
+
         run("UI: buscar en la lista no pisa lo tipeado en la calculadora", () =>
         {
             // El ciclo era: buscar → recargar la lista → la grilla reemite la selección →

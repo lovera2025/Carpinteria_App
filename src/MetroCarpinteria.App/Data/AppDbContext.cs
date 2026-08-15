@@ -101,6 +101,7 @@ public class AppDbContext : DbContext
             entity.Property(p => p.DiscountValue).HasPrecision(18, 2);
             entity.Property(p => p.CommitmentAmount).HasPrecision(18, 2);
             entity.Property(p => p.CommitmentText).HasMaxLength(500);
+            entity.Property(p => p.PriceAdjustmentTargets).HasMaxLength(80);
             entity.HasIndex(p => p.ClientId);
 
             // SetNull y no Cascade: archivar o borrar una ficha de cliente no puede

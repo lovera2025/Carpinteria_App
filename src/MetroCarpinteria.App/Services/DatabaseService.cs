@@ -271,6 +271,7 @@ public sealed class DatabaseService
                 EmployeeId INTEGER NOT NULL,
                 Notes TEXT NULL,
                 AssignedAtUtc TEXT NOT NULL,
+                IsPaid INTEGER NOT NULL DEFAULT 0,
                 CONSTRAINT FK_ProjectAssignments_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE,
                 CONSTRAINT FK_ProjectAssignments_Employees_EmployeeId FOREIGN KEY (EmployeeId) REFERENCES Employees (Id) ON DELETE RESTRICT
             );

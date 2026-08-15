@@ -190,7 +190,7 @@ public partial class QuotesViewModel : ViewModelBase
     public ObservableCollection<QuoteImageRow> Images { get; }
     public ObservableCollection<QuoteAttachmentItem> Attachments { get; }
     public ObservableCollection<QuoteListItem> AttachableQuotes { get; }
-    public ObservableCollection<BudgetBreakdownLine> BreakdownLines { get; }
+    public ObservableCollection<BreakdownLineItem> BreakdownLines { get; }
     public ObservableCollection<QuoteApprovalShortfall> Shortfalls { get; }
     public ObservableCollection<ProductListItem> AvailableProducts { get; }
     public IReadOnlyList<string> AvailableUnits { get; }

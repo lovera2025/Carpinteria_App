@@ -70,6 +70,7 @@ public class ProjectsViewModel : ViewModelBase
         AssignEmployeeCommand = new RelayCommand(_ => AssignEmployee(), _ => CanAssignToProject);
         RemoveMaterialCommand = new AsyncRelayCommand(RemoveMaterialAsync, () => CanAssignToProject);
         RemoveAssignmentCommand = new AsyncRelayCommand(RemoveAssignmentAsync, () => SelectedProject is not null);
+        ToggleAssignmentPaidCommand = new RelayCommand(ToggleAssignmentPaid, _ => CanToggleAssignmentPaid);
         PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => CanPrintQuote);
         SaveQuotePdfCommand = new RelayCommand(_ => SaveQuotePdf(), _ => CanPrintQuote);
         CancelProjectCommand = new AsyncRelayCommand(CancelSelectedAsync, () => CanCancelSelected);
@@ -112,6 +113,7 @@ public class ProjectsViewModel : ViewModelBase
             OnPropertyChanged(nameof(CanArchiveSelected));
             OnPropertyChanged(nameof(CanRestoreSelected));
             OnPropertyChanged(nameof(CanAssignToProject));
+            OnPropertyChanged(nameof(CanToggleAssignmentPaid));
             OnPropertyChanged(nameof(CanCancelSelected));
         }
     }
@@ -258,6 +260,9 @@ public class ProjectsViewModel : ViewModelBase
         _deleteBlockReason ?? "Borra el proyecto junto con su presupuesto.";
     public bool CanAssignToProject => SelectedProject is { IsArchived: false };
 
+    /// <summary>Se puede marcar el jornal aunque el trabajo ya esté terminado.</summary>
+    public bool CanToggleAssignmentPaid => SelectedProject is { IsArchived: false };
+
     /// <summary>
     /// Solo un trabajo en curso se puede cancelar. Terminado o entregado significa que
     /// el material ya se usó, y devolverlo al inventario inventaría existencias.
@@ -277,6 +282,7 @@ public class ProjectsViewModel : ViewModelBase
     public ICommand AssignEmployeeCommand { get; }
     public ICommand RemoveMaterialCommand { get; }
     public ICommand RemoveAssignmentCommand { get; }
+    public ICommand ToggleAssignmentPaidCommand { get; }
     public ICommand PrintQuoteCommand { get; }
     public ICommand SaveQuotePdfCommand { get; }
     public ICommand CancelProjectCommand { get; }
@@ -689,6 +695,30 @@ public class ProjectsViewModel : ViewModelBase
         catch (Exception ex)
         {
             AppHost.NotificationService.Error(ex.Message, ex);
+        }
+    }
+
+    private void ToggleAssignmentPaid(object? parameter)
+    {
+        if (parameter is not ProjectAssignmentItem assignment)
+        {
+            return;
+        }
+
+        try
+        {
+            var paid = !assignment.IsPaid;
+            AppHost.ProjectService.SetAssignmentPaid(assignment.Id, paid);
+            SetStatus(
+                paid
+                    ? $"{assignment.EmployeeName}: jornal marcado como pagado."
+                    : $"{assignment.EmployeeName}: jornal vuelto a pendiente.",
+                isError: false);
+            Load();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
         }
     }
 

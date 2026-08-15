@@ -94,7 +94,8 @@ public sealed class ProjectService
                 EmployeeRole = a.Employee.Role,
                 ProjectTitle = a.Project.Title,
                 Notes = a.Notes,
-                AssignedAtLocal = a.AssignedAtUtc.ToLocalTime()
+                AssignedAtLocal = a.AssignedAtUtc.ToLocalTime(),
+                IsPaid = a.IsPaid
             })
             .ToList();
     }
@@ -291,6 +292,24 @@ public sealed class ProjectService
         });
 
         project.UpdatedAtUtc = now;
+        context.SaveChanges();
+    }
+
+    public void SetAssignmentPaid(int assignmentId, bool isPaid)
+    {
+        using var context = _databaseService.CreateContext();
+        var assignment = context.ProjectAssignments
+            .Include(a => a.Project)
+            .FirstOrDefault(a => a.Id == assignmentId)
+            ?? throw new InvalidOperationException("Asignación no encontrada.");
+
+        if (assignment.Project.IsArchived)
+        {
+            throw new InvalidOperationException("No se puede marcar el pago en un proyecto archivado.");
+        }
+
+        assignment.IsPaid = isPaid;
+        assignment.Project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
     }
 

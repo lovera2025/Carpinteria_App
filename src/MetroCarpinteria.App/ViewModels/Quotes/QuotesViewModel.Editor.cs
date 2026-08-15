@@ -298,7 +298,8 @@ public partial class QuotesViewModel
                 : FormatOptional(AppHost.Settings.DefaultDailyRate);
 
             ApplyRates(detail.Rates ?? AppHost.Settings.BudgetRates);
-            ShowBreakdown(detail.Breakdown);
+            ShowBreakdown(detail.UnadjustedBreakdown ?? detail.Breakdown, preserveSelection: false);
+            RestoreAdjustmentTargets(detail.PriceAdjustmentTargets);
 
             // Se limpia el cartel de qué falta: si venimos de un presupuesto a medio
             // cargar, el aviso quedaba pegado sobre uno que ya tiene todo. Cuando falte
@@ -323,6 +324,10 @@ public partial class QuotesViewModel
         if (Detail is not null && Breakdown is null)
         {
             AutoCalculate();
+        }
+        else
+        {
+            PreviewPriceAdjustment();
         }
 
         NotifyStepSummaries();

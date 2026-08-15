@@ -42,7 +42,9 @@ public sealed class EmployeeService
                 Role = e.Role,
                 DailyRate = e.DailyRate,
                 IsArchived = e.IsArchived,
-                ActiveAssignmentCount = context.ProjectAssignments.Count(a => a.EmployeeId == e.Id)
+                ActiveAssignmentCount = context.ProjectAssignments.Count(a => a.EmployeeId == e.Id),
+                UnpaidAssignmentCount = context.ProjectAssignments.Count(
+                    a => a.EmployeeId == e.Id && !a.IsPaid)
             })
             .ToList();
     }
@@ -63,7 +65,8 @@ public sealed class EmployeeService
                 EmployeeRole = a.Employee.Role,
                 ProjectTitle = a.Project.Title,
                 Notes = a.Notes,
-                AssignedAtLocal = a.AssignedAtUtc.ToLocalTime()
+                AssignedAtLocal = a.AssignedAtUtc.ToLocalTime(),
+                IsPaid = a.IsPaid
             })
             .ToList();
     }

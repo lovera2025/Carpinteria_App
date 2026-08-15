@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 10;
+    public const int LatestVersion = 11;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -79,7 +79,8 @@ public sealed class SchemaMigrator
         new(7, "Afinidad de las columnas de dinero", ApplyMoneyColumnAffinity, TransformsData: true),
         new(8, "Fotos de referencia en presupuestos", ApplyQuoteImages),
         new(9, "Mano de obra por operario", ApplyLaborLines),
-        new(10, "Aviso de seña y presupuestos adjuntos", ApplyCommitmentAndAttachments)
+        new(10, "Aviso de seña y presupuestos adjuntos", ApplyCommitmentAndAttachments),
+        new(11, "Ajuste de desglose y jornales pagados", ApplyPriceAdjustmentAndAssignmentPaid)
     ];
 
     /// <summary>
@@ -385,6 +386,33 @@ public sealed class SchemaMigrator
             "CREATE INDEX IF NOT EXISTS IX_ProjectQuoteAttachments_AttachedProjectId ON ProjectQuoteAttachments (AttachedProjectId);");
         Execute(connection, transaction,
             "CREATE UNIQUE INDEX IF NOT EXISTS IX_ProjectQuoteAttachments_Parent_Attached ON ProjectQuoteAttachments (ParentProjectId, AttachedProjectId);");
+    }
+
+    /// <summary>
+    /// Claves del recorte a mano en el desglose, y si ya se le pagó el jornal a quien
+    /// está asignado al trabajo.
+    /// </summary>
+    private static void ApplyPriceAdjustmentAndAssignmentPaid(
+        SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        AddColumnIfMissing(connection, transaction, "Projects", "PriceAdjustmentTargets", "TEXT NULL");
+
+        Execute(connection, transaction, """
+            CREATE TABLE IF NOT EXISTS ProjectAssignments (
+                Id INTEGER NOT NULL CONSTRAINT PK_ProjectAssignments PRIMARY KEY AUTOINCREMENT,
+                ProjectId INTEGER NOT NULL,
+                EmployeeId INTEGER NOT NULL,
+                Notes TEXT NULL,
+                AssignedAtUtc TEXT NOT NULL,
+                IsPaid INTEGER NOT NULL DEFAULT 0,
+                CONSTRAINT FK_ProjectAssignments_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE,
+                CONSTRAINT FK_ProjectAssignments_Employees_EmployeeId FOREIGN KEY (EmployeeId) REFERENCES Employees (Id) ON DELETE RESTRICT
+            );
+            """);
+
+        AddColumnIfMissing(
+            connection, transaction, "ProjectAssignments", "IsPaid", "INTEGER NOT NULL DEFAULT 0");
     }
 
     /// <summary>

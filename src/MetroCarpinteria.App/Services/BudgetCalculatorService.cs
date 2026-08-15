@@ -1,3 +1,4 @@
+using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
 
 namespace MetroCarpinteria.App.Services;
@@ -115,6 +116,170 @@ public static class BudgetCalculatorService
         }
 
         return shares;
+    }
+
+    /// <summary>
+    /// A qué total de costo hay que llegar para que el recorte en pesos coincida con lo
+    /// que se ve en la barra (el total con IVA/descuento).
+    /// </summary>
+    public static decimal TargetCostTotal(
+        decimal calculatedFinalPrice,
+        decimal commercialTotal,
+        decimal newBudget) =>
+        Round(calculatedFinalPrice - (commercialTotal - newBudget));
+
+    /// <summary>
+    /// Reparte la diferencia del precio a mano sobre las líneas marcadas. La fórmula
+    /// original no se toca: esto es un paso posterior.
+    /// </summary>
+    public static BudgetBreakdown ApplyPriceAdjustment(
+        BudgetBreakdown breakdown,
+        IReadOnlyList<BudgetLineKind> targets,
+        decimal newFinalPrice)
+    {
+        ArgumentNullException.ThrowIfNull(breakdown);
+        ArgumentNullException.ThrowIfNull(targets);
+
+        if (newFinalPrice <= 0)
+        {
+            throw new InvalidOperationException("El precio final tiene que ser mayor a cero.");
+        }
+
+        var unique = targets
+            .Distinct()
+            .ToList();
+
+        if (unique.Count == 0)
+        {
+            return breakdown;
+        }
+
+        foreach (var kind in unique)
+        {
+            if (!BudgetLineKinds.CanAbsorb(kind))
+            {
+                throw new InvalidOperationException(
+                    $"No se puede restar de {BudgetLineKinds.GetLabel(kind)}.");
+            }
+        }
+
+        var delta = Round(breakdown.FinalPrice - newFinalPrice);
+        if (delta == 0)
+        {
+            return breakdown;
+        }
+
+        var amounts = new Dictionary<BudgetLineKind, decimal>
+        {
+            [BudgetLineKind.Waste] = breakdown.Waste,
+            [BudgetLineKind.ToolWear] = breakdown.ToolWear,
+            [BudgetLineKind.Overhead] = breakdown.Overhead,
+            [BudgetLineKind.Profit] = breakdown.Profit
+        };
+
+        var adjusted = Distribute(unique, amounts, delta);
+        var waste = adjusted[BudgetLineKind.Waste];
+        var toolWear = adjusted[BudgetLineKind.ToolWear];
+        var overhead = adjusted[BudgetLineKind.Overhead];
+        var profit = adjusted[BudgetLineKind.Profit];
+        var finalPrice = breakdown.MaterialsCost + waste + toolWear + breakdown.Labor + overhead + profit;
+
+        return new BudgetBreakdown
+        {
+            MaterialsCost = breakdown.MaterialsCost,
+            Waste = waste,
+            ToolWear = toolWear,
+            Labor = breakdown.Labor,
+            Overhead = overhead,
+            Profit = profit,
+            FinalPrice = finalPrice,
+            Days = breakdown.Days,
+            DailyRate = breakdown.DailyRate,
+            LaborShares = ReloadedShares(breakdown.LaborShares, overhead, profit),
+            AdjustedKinds = unique,
+            Rates = breakdown.Rates
+        };
+    }
+
+    /// <param name="delta">Positivo baja las líneas; negativo las sube.</param>
+    private static Dictionary<BudgetLineKind, decimal> Distribute(
+        IReadOnlyList<BudgetLineKind> targets,
+        IReadOnlyDictionary<BudgetLineKind, decimal> amounts,
+        decimal delta)
+    {
+        var result = amounts.ToDictionary(pair => pair.Key, pair => pair.Value);
+
+        if (delta > 0)
+        {
+            var capacity = targets.Sum(kind => amounts[kind]);
+            if (capacity < delta)
+            {
+                var names = string.Join(" + ", targets.Select(BudgetLineKinds.GetLabel));
+                throw new InvalidOperationException(
+                    $"{names} cubren {AppCulture.Money(capacity)}; faltan {AppCulture.Money(delta - capacity)}.");
+            }
+
+            var remaining = delta;
+            for (var i = 0; i < targets.Count; i++)
+            {
+                var kind = targets[i];
+                var share = i == targets.Count - 1
+                    ? remaining
+                    : Round(delta * amounts[kind] / capacity);
+
+                result[kind] = amounts[kind] - share;
+                remaining -= share;
+            }
+        }
+        else
+        {
+            var add = -delta;
+            var baseSum = targets.Sum(kind => amounts[kind]);
+            var remaining = add;
+
+            for (var i = 0; i < targets.Count; i++)
+            {
+                var kind = targets[i];
+                decimal share;
+                if (i == targets.Count - 1)
+                {
+                    share = remaining;
+                }
+                else if (baseSum == 0)
+                {
+                    share = Round(add / targets.Count);
+                }
+                else
+                {
+                    share = Round(add * amounts[kind] / baseSum);
+                }
+
+                result[kind] = amounts[kind] + share;
+                remaining -= share;
+            }
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<LaborShare> ReloadedShares(
+        IReadOnlyList<LaborShare> shares,
+        decimal overhead,
+        decimal profit)
+    {
+        return shares
+            .Select(share => share.IsForeman
+                ? new LaborShare
+                {
+                    Description = share.Description,
+                    Days = share.Days,
+                    DailyRate = share.DailyRate,
+                    Amount = share.Amount,
+                    Loaded = share.Amount + overhead + profit,
+                    IsForeman = true
+                }
+                : share)
+            .ToList();
     }
 
     private static void Validate(BudgetInput input)

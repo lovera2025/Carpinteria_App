@@ -199,8 +199,12 @@ public sealed class QuoteService
         var laborLines = ReadLaborLines(context, projectId);
         var rates = ReadRates(project);
         var materialsTotal = lines.Sum(l => l.LineTotal);
-        var breakdown = RebuildBreakdown(project, rates, materialsTotal, laborLines);
+        var unadjusted = RebuildRaw(project, rates, materialsTotal, laborLines);
         var terms = ReadTerms(project);
+        var breakdown = ApplyStoredAdjustment(project, unadjusted);
+        var calculatedTotal = unadjusted is null
+            ? (decimal?)null
+            : CommercialTermsService.Apply(unadjusted.FinalPrice, terms).Total;
 
         return new QuoteDetail
         {
@@ -226,6 +230,9 @@ public sealed class QuoteService
             Lines = lines,
             LaborLines = laborLines,
             Breakdown = breakdown,
+            UnadjustedBreakdown = unadjusted,
+            PriceAdjustmentTargets = BudgetLineKinds.ParseTargets(project.PriceAdjustmentTargets),
+            CalculatedTotal = calculatedTotal,
             Images = _imageService?.List(projectId) ?? [],
             Attachments = ReadAttachments(context, projectId),
             ShowCommitmentNote = project.ShowCommitmentNote,
@@ -881,6 +888,7 @@ public sealed class QuoteService
         // Es el número que necesitan Caja, Reportes y el saldo de la seña, y por eso vale
         // más que guardar el precio pelado y que cada pantalla rehaga la cuenta.
         project.Budget = CommercialTermsService.Apply(breakdown.FinalPrice, ReadTerms(project)).Total;
+        project.PriceAdjustmentTargets = null;
         project.UpdatedAtUtc = DateTime.UtcNow;
 
         context.SaveChanges();
@@ -911,7 +919,7 @@ public sealed class QuoteService
             .AsEnumerable()
             .Sum(l => l.LineTotal);
 
-        var breakdown = RebuildBreakdown(
+        var breakdown = RebuildRaw(
             project, ReadRates(project), lines, ReadLaborLines(context, projectId));
 
         var commercial = CommercialTermsService.Apply(breakdown?.FinalPrice ?? 0m, terms);
@@ -921,6 +929,7 @@ public sealed class QuoteService
         if (breakdown is not null)
         {
             project.Budget = commercial.Total;
+            project.PriceAdjustmentTargets = null;
         }
 
         project.UpdatedAtUtc = DateTime.UtcNow;
@@ -952,8 +961,17 @@ public sealed class QuoteService
         }
     }
 
-    /// <summary>Ajuste manual del precio final, para redondear lo que se le pasa al cliente.</summary>
-    public void SetFinalPrice(int projectId, decimal? finalPrice)
+    /// <summary>
+    /// Ajuste manual del precio final, para redondear lo que se le pasa al cliente.
+    /// </summary>
+    /// <param name="absorbInto">
+    /// Líneas del desglose que absorben la diferencia. Vacío o null deja el desglose
+    /// intacto: solo cambia lo que se le cobra.
+    /// </param>
+    public void SetFinalPrice(
+        int projectId,
+        decimal? finalPrice,
+        IReadOnlyList<BudgetLineKind>? absorbInto = null)
     {
         if (finalPrice is < 0)
         {
@@ -962,6 +980,35 @@ public sealed class QuoteService
 
         using var context = _databaseService.CreateContext();
         var project = RequireEditableQuote(context, projectId);
+
+        var targets = absorbInto is null
+            ? []
+            : absorbInto.Where(BudgetLineKinds.CanAbsorb).Distinct().ToList();
+
+        if (targets.Count > 0)
+        {
+            if (finalPrice is null or <= 0)
+            {
+                throw new InvalidOperationException("El precio final tiene que ser mayor a cero.");
+            }
+
+            var laborLines = ReadLaborLines(context, project.Id);
+            var rates = ReadRates(project);
+            var raw = RebuildRaw(project, rates, project.QuotedMaterialsCost ?? 0m, laborLines)
+                ?? throw new InvalidOperationException(
+                    "Falta calcular el precio antes de recortar el desglose.");
+
+            var commercial = CommercialTermsService.Apply(raw.FinalPrice, ReadTerms(project));
+            var targetCost = BudgetCalculatorService.TargetCostTotal(
+                raw.FinalPrice, commercial.Total, finalPrice.Value);
+
+            BudgetCalculatorService.ApplyPriceAdjustment(raw, targets, targetCost);
+            project.PriceAdjustmentTargets = BudgetLineKinds.FormatTargets(targets);
+        }
+        else
+        {
+            project.PriceAdjustmentTargets = null;
+        }
 
         project.Budget = finalPrice;
         project.UpdatedAtUtc = DateTime.UtcNow;
@@ -1536,7 +1583,7 @@ public sealed class QuoteService
             })
             .ToList();
 
-    private static BudgetBreakdown? RebuildBreakdown(
+    private static BudgetBreakdown? RebuildRaw(
         Project project,
         BudgetRates? rates,
         decimal materialsFromLines,
@@ -1555,6 +1602,38 @@ public sealed class QuoteService
             LaborLines = ToCalculatorInput(laborLines),
             Rates = rates
         });
+    }
+
+    /// <summary>
+    /// Si hay claves de recorte, las aplica sobre el cálculo. Si no cierran —datos viejos
+    /// o un recorte que ya no cubre— se muestra el desglose original: no puede impedir
+    /// abrir el presupuesto.
+    /// </summary>
+    private static BudgetBreakdown? ApplyStoredAdjustment(Project project, BudgetBreakdown? calculated)
+    {
+        if (calculated is null)
+        {
+            return null;
+        }
+
+        var targets = BudgetLineKinds.ParseTargets(project.PriceAdjustmentTargets);
+        if (targets.Count == 0 || project.Budget is null)
+        {
+            return calculated;
+        }
+
+        var commercial = CommercialTermsService.Apply(calculated.FinalPrice, ReadTerms(project));
+        var targetCost = BudgetCalculatorService.TargetCostTotal(
+            calculated.FinalPrice, commercial.Total, project.Budget.Value);
+
+        try
+        {
+            return BudgetCalculatorService.ApplyPriceAdjustment(calculated, targets, targetCost);
+        }
+        catch (InvalidOperationException)
+        {
+            return calculated;
+        }
     }
 
     private static List<QuoteListItem> FilterByFreshness(

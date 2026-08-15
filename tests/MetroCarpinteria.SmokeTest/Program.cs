@@ -294,6 +294,17 @@ internal static class Program
                     throw new InvalidOperationException("Empleado no asignado.");
                 }
 
+                if (assignments[0].IsPaid)
+                {
+                    throw new InvalidOperationException("El jornal tiene que arrancar pendiente.");
+                }
+
+                projects.SetAssignmentPaid(assignments[0].Id, true);
+                if (!projects.GetProjectAssignments(projectId)[0].IsPaid)
+                {
+                    throw new InvalidOperationException("No se pudo marcar el jornal como pagado.");
+                }
+
                 var product = inventory.GetProducts(false, false, "Tornillo test").First();
                 if (product.CurrentStock != 75m)
                 {

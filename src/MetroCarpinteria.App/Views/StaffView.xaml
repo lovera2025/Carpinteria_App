@@ -71,6 +71,7 @@
                             <DataGridTextColumn Header="Jornal" Binding="{Binding DailyRateDisplay}" Width="100" />
                             <DataGridTextColumn Header="Teléfono" Binding="{Binding Phone}" Width="110" />
                             <DataGridTextColumn Header="Proyectos" Binding="{Binding ActiveAssignmentCount}" Width="70" />
+                            <DataGridTextColumn Header="A cobrar" Binding="{Binding UnpaidAssignmentCount}" Width="70" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </Border>
@@ -122,6 +123,9 @@
                                             <Border Padding="0,8" BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,0,0,1">
                                                 <StackPanel>
                                                     <TextBlock Text="{Binding ProjectTitle}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding PaymentStatusLabel}" FontSize="12" FontWeight="SemiBold"
+                                                               Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource PrimaryBrownBrush}" />
                                                     <TextBlock Text="{Binding Notes}" Style="{StaticResource SubtitleStyle}"
                                                                TextWrapping="Wrap" />
                                                     <TextBlock Text="{Binding AssignedAtLocal, StringFormat=dd/MM/yyyy HH:mm}"

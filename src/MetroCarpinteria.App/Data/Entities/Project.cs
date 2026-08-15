@@ -29,6 +29,12 @@ public class Project
     /// <summary>Precio final que se le pasa al cliente. Puede ajustarse a mano sobre el calculado.</summary>
     public decimal? Budget { get; set; }
 
+    /// <summary>
+    /// Líneas del desglose que absorben el recorte a mano, separadas por coma
+    /// (<c>Waste,Profit</c>). Null o vacío es «solo cambió lo que se le cobra».
+    /// </summary>
+    public string? PriceAdjustmentTargets { get; set; }
+
     public ProjectStatus Status { get; set; } = ProjectStatus.Quote;
     public bool IsArchived { get; set; }
     public DateTime CreatedAtUtc { get; set; }

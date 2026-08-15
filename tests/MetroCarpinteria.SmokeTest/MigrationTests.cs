@@ -30,6 +30,7 @@ internal static class MigrationTests
         RunNormalizationTests(run);
         RunQuoteImageMigrationTests(run);
         RunCommitmentAndAttachmentMigrationTests(run);
+        RunPriceAdjustmentMigrationTests(run);
     }
 
     // --- v7: afinidad de las columnas de dinero -------------------------------
@@ -414,6 +415,29 @@ internal static class MigrationTests
                 "tabla ProjectQuoteAttachments");
             Assert.Equal(legacy.Count("Projects"), projects, "proyectos preservados");
             Assert.Equal(legacy.Count("ProjectQuoteAttachments"), 0, "adjuntos al migrar");
+            legacy.AssertIntegrity();
+        });
+    }
+
+    // --- v11: recorte de desglose y jornal pagado -----------------------------
+
+    private static void RunPriceAdjustmentMigrationTests(Action<string, Action> run)
+    {
+        run("Migración v11: aparecen el recorte de desglose y el tilde de jornal pagado", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+            var projects = legacy.Count("Projects");
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "versión del esquema");
+            Assert.Equal(legacy.ReadAffinity("Projects", "PriceAdjustmentTargets"), "TEXT", "afinidad de las claves");
+            Assert.Equal(legacy.ReadAffinity("ProjectAssignments", "IsPaid"), "INTEGER", "tipo del tilde");
+            Assert.Equal(legacy.Count("Projects"), projects, "proyectos preservados");
+            Assert.Equal(
+                legacy.ReadInt("SELECT COUNT(*) FROM ProjectAssignments WHERE IsPaid != 0;"),
+                0,
+                "jornales pendientes al migrar");
             legacy.AssertIntegrity();
         });
     }

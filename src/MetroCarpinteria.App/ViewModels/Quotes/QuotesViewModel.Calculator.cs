@@ -83,7 +83,13 @@ public partial class QuotesViewModel
     public string AdjustedPrice
     {
         get => _adjustedPrice;
-        set => SetProperty(ref _adjustedPrice, value);
+        set
+        {
+            if (SetProperty(ref _adjustedPrice, value))
+            {
+                PreviewPriceAdjustment();
+            }
+        }
     }
 
     public bool CanAdjustPrice => Detail is { IsEditable: true } && HasResult;
@@ -373,8 +379,15 @@ public partial class QuotesViewModel
         }
     }
 
-    private void ShowBreakdown(BudgetBreakdown? breakdown)
+    private void ShowBreakdown(BudgetBreakdown? breakdown, bool preserveSelection = true)
     {
+        var selected = preserveSelection
+            ? BreakdownLines
+                .Where(l => l.IsSelected && l.Kind.HasValue)
+                .Select(l => l.Kind!.Value)
+                .ToHashSet()
+            : [];
+
         Breakdown = breakdown;
         BreakdownLines.Clear();
 
@@ -385,7 +398,85 @@ public partial class QuotesViewModel
 
         foreach (var line in breakdown.Lines.Where(l => !l.IsTotal))
         {
-            BreakdownLines.Add(line);
+            BreakdownLines.Add(new BreakdownLineItem(line, PreviewPriceAdjustment));
+        }
+
+        foreach (var item in BreakdownLines)
+        {
+            item.IsSelected = item.Kind is { } kind
+                && selected.Contains(kind)
+                && item.CanAbsorbAdjustment;
+        }
+
+        PreviewPriceAdjustment();
+    }
+
+    /// <summary>
+    /// Restaura los tilde guardados y muestra el recorte sobre el cálculo, no sobre un
+    /// desglose que ya venía recortado: si no, marcarlo de nuevo lo aplicaba dos veces.
+    /// </summary>
+    private void RestoreAdjustmentTargets(IReadOnlyList<BudgetLineKind> targets)
+    {
+        var set = targets.ToHashSet();
+
+        foreach (var line in BreakdownLines)
+        {
+            line.IsSelected = line.Kind is { } kind && set.Contains(kind);
+        }
+    }
+
+    private IReadOnlyList<BudgetLineKind> SelectedAdjustmentTargets =>
+        BreakdownLines
+            .Where(l => l.IsSelected && l.Kind.HasValue && l.CanAbsorbAdjustment)
+            .Select(l => l.Kind!.Value)
+            .Distinct()
+            .ToList();
+
+    /// <summary>
+    /// Adelanta en pantalla lo que va a pasar al fijar, sin grabar. Si el recorte no
+    /// cubre, deja los importes originales: el error sale al confirmar.
+    /// </summary>
+    private void PreviewPriceAdjustment()
+    {
+        if (_isLoadingDetail || Breakdown is null)
+        {
+            return;
+        }
+
+        foreach (var line in BreakdownLines)
+        {
+            line.ResetToOriginal();
+        }
+
+        var targets = SelectedAdjustmentTargets;
+        if (targets.Count == 0 || !NumberInput.TryParseMoney(AdjustedPrice, out var price) || price <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var commercial = CommercialTermsService.Apply(Breakdown.FinalPrice, Detail?.Terms);
+            var targetCost = BudgetCalculatorService.TargetCostTotal(
+                Breakdown.FinalPrice, commercial.Total, price);
+            var adjusted = BudgetCalculatorService.ApplyPriceAdjustment(Breakdown, targets, targetCost);
+
+            foreach (var line in BreakdownLines)
+            {
+                var match = adjusted.Lines.FirstOrDefault(l =>
+                    l.Kind == line.Kind && l.Label == line.Label);
+                if (match is not null)
+                {
+                    line.Show(match.Amount, match.Detail);
+                }
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            foreach (var line in BreakdownLines)
+            {
+                line.ResetToOriginal();
+            }
         }
     }
 
@@ -415,8 +506,8 @@ public partial class QuotesViewModel
     }
 
     /// <summary>
-    /// Fija a mano el precio que se le cobra al cliente, sin tocar el cálculo. El desglose
-    /// queda igual: sirve para ver cuánto se resignó al redondear.
+    /// Fija a mano el precio que se le cobra al cliente. Si hay líneas marcadas, la
+    /// diferencia se resta de esas; si no, el desglose queda igual.
     /// </summary>
     private void ApplyAdjustedPrice()
     {
@@ -434,7 +525,7 @@ public partial class QuotesViewModel
                 throw new InvalidOperationException("El precio final tiene que ser mayor a cero.");
             }
 
-            AppHost.QuoteService.SetFinalPrice(Detail.Id, price);
+            AppHost.QuoteService.SetFinalPrice(Detail.Id, price, SelectedAdjustmentTargets);
             ReloadListAndDetail();
 
             SetStatus($"Precio final fijado en {AppCulture.Money(price)}.", isError: false);
@@ -455,8 +546,8 @@ public partial class QuotesViewModel
         // Se vuelve al total <b>con las condiciones aplicadas</b>, no al precio pelado:
         // restaurar al calculado no puede significar tirar a la basura el IVA pactado.
         // El display se toma antes de recargar, que reemplaza la instancia.
-        var calculated = detail.Commercial.Total;
-        var display = detail.Commercial.TotalDisplay;
+        var calculated = detail.CalculatedTotal ?? detail.Commercial.Total;
+        var display = AppCulture.Money(calculated);
 
         try
         {

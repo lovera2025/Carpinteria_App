@@ -29,10 +29,12 @@ internal static class CorrectnessTests
             var inventory = new InventoryService(database);
             var projects = new ProjectService(database);
             var quotes = new QuoteService(database, settings);
+            var employees = new EmployeeService(database);
 
             RunApprovalTests(run, inventory, quotes);
             RunStockWarningTests(run, inventory, quotes);
             RunFinalPriceTests(run, inventory, quotes);
+            RunAssignmentPayTests(run, projects, employees);
             RunStatusPolicyTests(run, inventory, quotes, projects);
             RunBackupTests(run, paths, settings, database);
             RunSettingsTests(run);
@@ -137,6 +139,116 @@ internal static class CorrectnessTests
             Assert.False(
                 RequireQuote(quotes, id).BudgetAdjustedManually,
                 "al volver al calculado ya no habría que avisar de un ajuste.");
+        });
+
+        run("Correctitud: recortar de ganancia baja esa línea y el desglose suma el nuevo total", () =>
+        {
+            var productId = inventory.CreateProduct("Pino recortado", 20m, 0m, "Metro", 800m).Id;
+            var id = quotes.CreateQuote("Mesa de pino", "Cliente que pide descuento", null).Id;
+            quotes.AddInventoryLine(id, productId, 4m);
+
+            var calculated = quotes.SaveCalculation(id, 4000m, 2m, 20000m, BudgetRates.Defaults());
+            var newPrice = calculated.FinalPrice - 3000m;
+
+            quotes.SetFinalPrice(id, newPrice, [BudgetLineKind.Profit]);
+
+            var detail = RequireQuote(quotes, id);
+            Assert.Equal(detail.Budget ?? 0m, newPrice, "precio guardado");
+            Assert.Equal(detail.Breakdown!.FinalPrice, newPrice, "desglose tras recortar");
+            Assert.Equal(detail.Breakdown.Profit, calculated.Profit - 3000m, "ganancia recortada");
+            Assert.Equal(detail.Breakdown.MaterialsCost, calculated.MaterialsCost, "materiales intactos");
+            Assert.Equal(detail.Breakdown.Labor, calculated.Labor, "mano de obra intacta");
+            Assert.Equal(detail.UnadjustedBreakdown!.Profit, calculated.Profit, "el cálculo original sigue ahí");
+            Assert.True(detail.PriceAdjustmentTargets.Contains(BudgetLineKind.Profit), "quedó marcada ganancia");
+            Assert.True(detail.BudgetAdjustedManually, "tiene que avisar el recorte a mano");
+        });
+
+        run("Correctitud: si lo marcado no cubre la diferencia, no se guarda", () =>
+        {
+            var productId = inventory.CreateProduct("Guatambú corto", 15m, 0m, "Metro", 900m).Id;
+            var id = quotes.CreateQuote("Estante", "Cliente imposible", null).Id;
+            quotes.AddInventoryLine(id, productId, 3m);
+
+            var calculated = quotes.SaveCalculation(id, 3000m, 2m, 20000m, BudgetRates.Defaults());
+
+            Assert.Throws(
+                () => quotes.SetFinalPrice(id, 1000m, [BudgetLineKind.Profit]),
+                "faltan");
+
+            var detail = RequireQuote(quotes, id);
+            Assert.Equal(detail.Budget ?? 0m, calculated.FinalPrice, "precio no se movió");
+            Assert.Equal(detail.Breakdown!.Profit, calculated.Profit, "ganancia no se movió");
+            Assert.Equal(detail.PriceAdjustmentTargets.Count, 0, "no quedó recorte a medias");
+        });
+
+        run("Correctitud: recalcular limpia el recorte del desglose", () =>
+        {
+            var productId = inventory.CreateProduct("Cedro recálculo", 12m, 0m, "Metro", 1100m).Id;
+            var id = quotes.CreateQuote("Mesa de cedro", "Cliente indeciso", null).Id;
+            quotes.AddInventoryLine(id, productId, 2m);
+
+            var calculated = quotes.SaveCalculation(id, 2500m, 1m, 15000m, BudgetRates.Defaults());
+            quotes.SetFinalPrice(id, calculated.FinalPrice - 1000m, [BudgetLineKind.Profit]);
+
+            var after = quotes.SaveCalculation(id, 2500m, 1m, 15000m, BudgetRates.Defaults());
+            var detail = RequireQuote(quotes, id);
+
+            Assert.Equal(detail.PriceAdjustmentTargets.Count, 0, "el recálculo tiene que borrar las marcas");
+            Assert.Equal(detail.Breakdown!.Profit, after.Profit, "ganancia vuelta al cálculo");
+            Assert.Equal(detail.Budget ?? 0m, after.FinalPrice, "precio vuelto al calculado");
+        });
+
+        run("Correctitud: no se puede recortar de materiales ni de mano de obra", () =>
+        {
+            var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
+            {
+                MaterialsCost = 5000m,
+                Days = 1m,
+                DailyRate = 10000m,
+                Rates = BudgetRates.Defaults()
+            });
+
+            Assert.Throws(
+                () => BudgetCalculatorService.ApplyPriceAdjustment(
+                    breakdown, [BudgetLineKind.Materials], 1000m),
+                "Materiales");
+
+            Assert.Throws(
+                () => BudgetCalculatorService.ApplyPriceAdjustment(
+                    breakdown, [BudgetLineKind.Labor], 1000m),
+                "Mano de obra");
+        });
+    }
+
+    private static void RunAssignmentPayTests(
+        Action<string, Action> run,
+        ProjectService projects,
+        EmployeeService employees)
+    {
+        run("Correctitud: el jornal arranca pendiente y se puede marcar pagado", () =>
+        {
+            var employee = employees.Create("Operario a cobrar", null, "Ayudante", 18000m);
+            var project = projects.Create("Placard en curso", "Cliente del barrio", null, 80000m, ProjectStatus.InProgress);
+
+            projects.AssignEmployee(project.Id, employee.Id, null);
+
+            var assigned = projects.GetProjectAssignments(project.Id).Single();
+            Assert.False(assigned.IsPaid, "al asignar tiene que arrancar pendiente");
+            Assert.Equal(assigned.PaymentStatusLabel, "Pendiente", "etiqueta inicial");
+
+            projects.SetAssignmentPaid(assigned.Id, true);
+            var paid = projects.GetProjectAssignments(project.Id).Single();
+            Assert.True(paid.IsPaid, "tenía que quedar pagado");
+            Assert.Equal(paid.PaymentStatusLabel, "Pagado", "etiqueta pagado");
+
+            var staff = employees.GetEmployees(false, "Operario a cobrar").Single();
+            Assert.Equal(staff.UnpaidAssignmentCount, 0, "ya no le queda nada a cobrar");
+
+            projects.SetAssignmentPaid(paid.Id, false);
+            Assert.Equal(
+                employees.GetEmployees(false, "Operario a cobrar").Single().UnpaidAssignmentCount,
+                1,
+                "volvió a pendiente");
         });
     }
 

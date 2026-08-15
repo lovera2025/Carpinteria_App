@@ -249,7 +249,23 @@ public sealed class QuoteDetail
     public IReadOnlyList<QuoteLaborLineItem> LaborLines { get; init; } = [];
 
     /// <summary>Desglose reconstruido desde las entradas congeladas. Null si nunca se calculó.</summary>
+    /// <remarks>
+    /// Si hubo recorte a mano con líneas marcadas, ya viene aplicado: es el que suma el
+    /// precio que se le cobra. El cálculo original está en <see cref="UnadjustedBreakdown"/>.
+    /// </remarks>
     public BudgetBreakdown? Breakdown { get; init; }
+
+    /// <summary>El desglose de la fórmula, sin el recorte a mano. Null si nunca se calculó.</summary>
+    public BudgetBreakdown? UnadjustedBreakdown { get; init; }
+
+    /// <summary>Líneas marcadas para absorber el recorte. Vacío si el desglose no se tocó.</summary>
+    public IReadOnlyList<BudgetLineKind> PriceAdjustmentTargets { get; init; } = [];
+
+    /// <summary>
+    /// Total con IVA/descuento sobre el cálculo, sin el recorte a mano. Es el número de
+    /// «Volver al calculado».
+    /// </summary>
+    public decimal? CalculatedTotal { get; init; }
 
     /// <summary>Lo pactado con el cliente: IVA y descuento. Nunca null; vacío es «nada pactado».</summary>
     public CommercialTerms Terms { get; init; } = CommercialTerms.None();
@@ -343,9 +359,10 @@ public sealed class QuoteDetail
     /// Se compara contra el total <b>con descuento e IVA</b>, no contra el precio pelado:
     /// si no, pactar un 21% haría que todo presupuesto pareciera ajustado a mano.
     /// </remarks>
-    public bool BudgetAdjustedManually => Commercial is not null
-        && Budget.HasValue
-        && Budget.Value != Commercial.Total;
+    public bool BudgetAdjustedManually =>
+        Budget.HasValue
+        && CalculatedTotal.HasValue
+        && (Budget.Value != CalculatedTotal.Value || PriceAdjustmentTargets.Count > 0);
 
     public bool HasPendingStock => Lines.Any(l => l.IsFromInventory && l.AppliedQuantity < l.Quantity)
         && Status != ProjectStatus.Quote

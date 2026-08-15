@@ -260,17 +260,27 @@
 
                 <ItemsControl ItemsSource="{Binding BreakdownLines}">
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:BudgetBreakdownLine}">
+                        <DataTemplate DataType="{x:Type models:BreakdownLineItem}">
                             <Grid Margin="0,5">
-                                <StackPanel>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <CheckBox Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"
+                                          IsChecked="{Binding IsSelected}"
+                                          Visibility="{Binding CanAbsorbAdjustment, Converter={StaticResource BoolToVisibilityConverter}}"
+                                          IsEnabled="{Binding DataContext.CanAdjustPrice, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          ToolTip="Si lo marcás, el recorte del precio sale de esta línea" />
+                                <StackPanel Grid.Column="1">
                                     <TextBlock Text="{Binding Label}"
                                                Foreground="{DynamicResource TextPrimaryBrush}" />
                                     <TextBlock Text="{Binding Detail}" FontSize="11"
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                Visibility="{Binding Detail, Converter={StaticResource StringToVisibilityConverter}}" />
                                 </StackPanel>
-                                <TextBlock Text="{Binding AmountDisplay}" HorizontalAlignment="Right"
-                                           VerticalAlignment="Center" FontWeight="SemiBold"
+                                <TextBlock Grid.Column="2" Text="{Binding AmountDisplay}"
+                                           VerticalAlignment="Center" FontWeight="SemiBold" Margin="12,0,0,0"
                                            Foreground="{DynamicResource TextPrimaryBrush}" />
                             </Grid>
                         </DataTemplate>
@@ -286,7 +296,7 @@
                                    Margin="0,0,0,4" />
                         <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" TextWrapping="Wrap"
                                    Margin="0,0,0,8"
-                                   Text="Es el número que se le cobra al cliente y el que sale impreso. El desglose no cambia." />
+                                   Text="Si no marcás nada, solo cambia lo que se le cobra al cliente. Si marcás líneas del desglose, se resta de ahí." />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
