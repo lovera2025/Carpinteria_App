@@ -149,6 +149,8 @@ public partial class QuotesViewModel : ViewModelBase
         ApproveCommand = new AsyncRelayCommand(ApproveAsync, () => CanEditSelected);
         RejectCommand = new AsyncRelayCommand(RejectAsync, () => CanEditSelected);
         ReopenCommand = new RelayCommand(_ => Reopen(), _ => Detail is { Status: ProjectStatus.Rejected });
+        DeleteRejectedCommand = new AsyncRelayCommand(
+            DeleteRejectedAsync, () => Detail is { Status: ProjectStatus.Rejected });
         DuplicateCommand = new RelayCommand(_ => Duplicate(), _ => Detail is not null);
         ApplyPendingCommand = new RelayCommand(_ => ApplyPending(), _ => Detail is { HasPendingStock: true });
         // El presupuesto del cliente exige precio y desglose: sin eso salía impreso con el
@@ -235,6 +237,7 @@ public partial class QuotesViewModel : ViewModelBase
     public ICommand ApproveCommand { get; }
     public ICommand RejectCommand { get; }
     public ICommand ReopenCommand { get; }
+    public ICommand DeleteRejectedCommand { get; }
     public ICommand DuplicateCommand { get; }
     public ICommand ApplyPendingCommand { get; }
     public ICommand PrintClientCommand { get; }

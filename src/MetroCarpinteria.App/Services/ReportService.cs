@@ -65,9 +65,9 @@ public sealed class ReportService
         }
 
         var projectsQuote = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Quote);
+        var projectsApproved = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Approved);
         var projectsActive = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.InProgress);
         var projectsCompleted = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Completed);
-        var projectsDelivered = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Delivered);
         var projectsArchived = context.Projects.Count(p => p.IsArchived);
         var employees = context.Employees.Count(e => !e.IsArchived);
 
@@ -106,10 +106,10 @@ public sealed class ReportService
                 Icon = "🪚",
                 Metrics =
                 [
-                    new ReportMetric { Label = "En curso", Value = projectsActive.ToString() },
+                    new ReportMetric { Label = "En taller", Value = projectsActive.ToString() },
                     new ReportMetric { Label = "Presupuesto", Value = projectsQuote.ToString() },
-                    new ReportMetric { Label = "Terminados", Value = projectsCompleted.ToString() },
-                    new ReportMetric { Label = "Entregados", Value = projectsDelivered.ToString() },
+                    new ReportMetric { Label = "Aprobados", Value = projectsApproved.ToString() },
+                    new ReportMetric { Label = "Listos", Value = projectsCompleted.ToString() },
                     new ReportMetric { Label = "Proyectos archivados", Value = projectsArchived.ToString() },
                     new ReportMetric { Label = "Personal activo", Value = employees.ToString() }
                 ]

@@ -303,20 +303,23 @@ internal static class UiSmokeTests
             LoadView(() => new MetroCarpinteria.App.Views.Quotes.QuoteImagesPanel(), viewModel);
         });
 
-        run("UI: los estados que ofrece Proyectos dependen del actual", () =>
+        run("UI: los botones del taller dependen del estado del trabajo", () =>
         {
-            // El desplegable ofrecía los cinco siempre: de ahí salía el salteo del ciclo.
+            // Antes esto era un desplegable que ofrecía los cinco estados siempre, y de ahí
+            // salía el salteo del ciclo. Ahora son botones, y cada uno aparece solo cuando
+            // su paso corresponde.
             var viewModel = new ProjectsViewModel(() => { });
             viewModel.Load();
             viewModel.SelectedProject = viewModel.Projects.First(p => p.Id == fixture.ActiveProjectId);
 
-            viewModel.EditProjectCommand.Execute(null);
+            Assert.False(viewModel.CanStartWork, "un trabajo que ya está en taller no se vuelve a iniciar.");
+            Assert.True(viewModel.CanMarkReady, "terminar el trabajo es el avance normal desde el taller.");
+            Assert.False(viewModel.CanBackToWorkshop, "todavía no está listo, no hay a qué volver.");
+            Assert.True(viewModel.CanCancelSelected, "el material sigue devolviéndose desde el taller.");
 
-            var offered = viewModel.FormStatusOptions.Select(o => o.Status).ToList();
-            Assert.True(offered.Contains(ProjectStatus.InProgress), "tendría que poder quedarse como está.");
-            Assert.True(offered.Contains(ProjectStatus.Completed), "terminar el trabajo es el avance normal.");
-            Assert.False(offered.Contains(ProjectStatus.Quote), "volver a presupuesto va por «Cancelar trabajo».");
-            Assert.False(offered.Contains(ProjectStatus.Rejected), "un trabajo aprobado no se rechaza.");
+            // Y editar dejó de poder mover el estado: el selector solo sale en el alta.
+            viewModel.EditProjectCommand.Execute(null);
+            Assert.False(viewModel.IsCreating, "editar no es un alta.");
         });
 
         run("UI: ClientsView + ViewModel", () =>
@@ -1073,27 +1076,18 @@ internal static class UiSmokeTests
             AssertNoInternalNumbers(text);
         });
 
-        run("PDF: los adjuntos se listan y no cambian el TOTAL", () =>
+        run("PDF: con el tilde apagado los adjuntos se listan y no cambian el TOTAL", () =>
         {
-            var withAttachments = BuildSampleQuote(attachments:
-            [
-                new QuoteAttachmentItem
-                {
-                    AttachmentId = 1,
-                    ProjectId = 99,
-                    Title = "Placard de dormitorio",
-                    Description = "Frentes de 2,40 m",
-                    Budget = 185000m
-                }
-            ]);
-
+            var withAttachments = BuildSampleQuote(attachments: [SampleAttachment()]);
             var text = ToText(service.BuildClientQuote(withAttachments));
 
-            foreach (var expected in new[] { "Otros trabajos", "Placard de dormitorio", "185.000" })
+            // Con más de un trabajo la lista se numera, y el principal es el 1.
+            foreach (var expected in new[]
+                { "TRABAJOS", "Trabajo 1", "Trabajo 2", "Mesa de prueba", "Placard de dormitorio", "185.000" })
             {
                 if (!text.Contains(expected, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidOperationException($"Faltaba «{expected}» entre los adjuntos.");
+                    throw new InvalidOperationException($"Faltaba «{expected}» en la lista de trabajos.");
                 }
             }
 
@@ -1109,7 +1103,200 @@ internal static class UiSmokeTests
                 throw new InvalidOperationException("El TOTAL del principal no tenía que cambiar al adjuntar.");
             }
 
+            if (text.Contains("472.000", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Con el tilde apagado el TOTAL no tenía que sumar el adjunto.");
+            }
+
             AssertNoInternalNumbers(text);
+        });
+
+        run("PDF: con el tilde prendido el TOTAL suma los adjuntos", () =>
+        {
+            var summed = BuildSampleQuote(
+                attachments: [SampleAttachment()], includeAttachmentsInTotal: true);
+
+            var text = ToText(service.BuildClientQuote(summed));
+
+            // 287.000 de la mesa más 185.000 del placard.
+            if (!text.Contains("472.000", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("El TOTAL tenía que sumar el adjunto.");
+            }
+
+            // Y la aclaración de que no entra sería justo lo contrario de lo que muestra.
+            if (text.Contains("no está incluido", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("no están incluidos", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Con el tilde prendido el papel no puede decir que no entra.");
+            }
+
+            AssertNoInternalNumbers(text);
+        });
+
+        run("PDF: con el tilde prendido el saldo resta también las señas de los adjuntos", () =>
+        {
+            var summed = BuildSampleQuote(
+                payments:
+                [
+                    new ProjectPaymentItem
+                    {
+                        Id = 1,
+                        Kind = PaymentKind.Deposit,
+                        Amount = 87000m,
+                        Method = PaymentMethod.Cash,
+                        CreatedAtLocal = DateTime.Today
+                    }
+                ],
+                attachments: [SampleAttachment(paidTotal: 85000m)],
+                includeAttachmentsInTotal: true);
+
+            var text = ToText(service.BuildClientQuote(summed));
+
+            // 472.000 de total, menos 87.000 del principal y 85.000 del adjunto.
+            if (!text.Contains("300.000", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Si el total suma los adjuntos, el saldo tiene que restar sus señas.");
+            }
+        });
+
+        run("PDF: el presupuesto de siempre sale sin compactar", () =>
+        {
+            // Lo primero que tiene que garantizar el ajuste: el papel de una mesa sola no
+            // cambia de aspecto. Sólo se aprieta lo que hace falta apretar.
+            var document = service.BuildClientQuote(BuildSampleQuote());
+
+            Assert.Equal(document.FontSize, 12d, "cuerpo del papel de siempre");
+            Assert.Equal(CountA4Pages(document), 1, "hojas del presupuesto simple");
+        });
+
+        run("PDF: un presupuesto cargado se compacta solo para entrar en una hoja", () =>
+        {
+            var loaded = BuildSampleQuote(attachments: ManyAttachments(6));
+            var document = service.BuildClientQuote(loaded);
+
+            Assert.Equal(CountA4Pages(document), 1, "hojas del presupuesto cargado");
+            Assert.True(
+                document.FontSize < 12d,
+                "con seis adjuntos y descripciones largas tendría que haberse apretado para entrar.");
+        });
+
+        run("PDF: las observaciones sobreviven a la compactación", () =>
+        {
+            // Es lo último que se recorta —de tres renglones a uno— pero nunca desaparece:
+            // el presupuesto se termina de cerrar de palabra en el taller.
+            var text = ToText(service.BuildClientQuote(BuildSampleQuote(attachments: ManyAttachments(6))));
+
+            if (!text.Contains("Observaciones", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Apretado también tiene que quedar dónde escribir.");
+            }
+        });
+
+        run("PDF: el cierre queda encadenado para no partirse entre hojas", () =>
+        {
+            // Encadenar sólo funciona con párrafos: si el TOTAL vuelve a ser una tabla,
+            // corta la cadena y puede quedar solo al pie de una hoja con las observaciones
+            // y la vigencia en la siguiente.
+            var document = service.BuildClientQuote(BuildSampleQuote(payments:
+            [
+                new ProjectPaymentItem
+                {
+                    Id = 1,
+                    Kind = PaymentKind.Deposit,
+                    Amount = 100000m,
+                    Method = PaymentMethod.Cash,
+                    CreatedAtLocal = DateTime.Today
+                }
+            ]));
+
+            // Total, entregado, saldo, observaciones, vigencia y pie.
+            var closing = document.Blocks.ToList().TakeLast(6).ToList();
+
+            foreach (var block in closing.Take(closing.Count - 1))
+            {
+                if (block is not System.Windows.Documents.Paragraph { KeepWithNext: true })
+                {
+                    throw new InvalidOperationException(
+                        $"Un bloque del cierre no quedó atado al siguiente: {block.GetType().Name}.");
+                }
+            }
+        });
+
+        run("PDF: la vista previa dibuja una imagen por hoja, del tamaño de una A4", () =>
+        {
+            // Es el mismo render que usa el runner de documentos: lo que se ve en la vista
+            // previa es lo que se verifica, no una maqueta aparte.
+            var document = service.BuildClientQuote(BuildSampleQuote());
+            var pages = QuoteDocumentService.RenderPages(document);
+
+            Assert.Equal(pages.Count, CountA4Pages(document), "hojas dibujadas");
+            Assert.Equal(pages[0].PixelWidth, 794, "ancho de la hoja");
+            Assert.Equal(pages[0].PixelHeight, 1123, "alto de la hoja");
+        });
+
+        run("PDF: la ventana de vista previa se arma con las hojas montadas", () =>
+        {
+            // Sin abrirla: alcanza con que el XAML cargue y las hojas queden puestas. Lo
+            // que se rompe en una ventana nueva es el enlace, no el dibujo.
+            var document = service.BuildClientQuote(BuildSampleQuote());
+            var window = new MetroCarpinteria.App.Views.QuotePreviewWindow(document, "Presupuesto 0042");
+
+            Assert.True(window.PagesList.ItemsSource is not null, "las hojas tendrían que estar puestas.");
+            Assert.False(window.Printed, "recién abierta todavía no imprimió nada.");
+        });
+
+        run("PDF: con un solo trabajo la lista no se numera", () =>
+        {
+            var text = ToText(service.BuildClientQuote(BuildSampleQuote()));
+
+            if (!text.Contains("TRABAJO", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Faltaba el título de la lista de trabajos.");
+            }
+
+            if (text.Contains("Trabajo 1", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Numerar un único renglón es ruido.");
+            }
+        });
+
+        run("PDF: la caja del cliente ya no repite el trabajo", () =>
+        {
+            // El título y la descripción bajaron a la lista de trabajos, donde cada uno va
+            // con su precio al lado.
+            var text = ToText(service.BuildClientQuote(BuildSampleQuote()));
+
+            if (text.Contains("Trabajo:", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("La caja del cliente no tenía que repetir el trabajo.");
+            }
+
+            if (!text.Contains("Cliente:", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("La caja del cliente sí lleva el nombre.");
+            }
+        });
+
+        run("PDF: el papel cierra con el TOTAL y un lugar para escribir a mano", () =>
+        {
+            var text = ToText(service.BuildClientQuote(BuildSampleQuote()));
+
+            if (!text.Contains("Observaciones", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Faltaba el bloque de observaciones.");
+            }
+
+            // El TOTAL va al final, después de las condiciones: el cliente termina de leer
+            // en el número.
+            var total = text.LastIndexOf("TOTAL", StringComparison.Ordinal);
+            var observations = text.IndexOf("Observaciones", StringComparison.OrdinalIgnoreCase);
+
+            if (total < 0 || observations < 0 || total > observations)
+            {
+                throw new InvalidOperationException("Las observaciones tienen que ir debajo del TOTAL.");
+            }
         });
 
         run("PDF: el recibo muestra el cobro y no el margen", () =>
@@ -1370,13 +1557,45 @@ internal static class UiSmokeTests
         }
     }
 
+    /// <summary>
+    /// Varios adjuntos con descripciones largas: el caso que no entra en una A4 con el aire
+    /// de siempre y obliga al documento a compactarse.
+    /// </summary>
+    private static IReadOnlyList<QuoteAttachmentItem> ManyAttachments(int count) =>
+        Enumerable.Range(1, count)
+            .Select(i => new QuoteAttachmentItem
+            {
+                AttachmentId = i,
+                ProjectId = 100 + i,
+                Title = $"Mueble a medida {i}",
+                Description =
+                    "Melamina blanca de 18 mm con cantos de PVC\n" +
+                    "Herrajes con cierre suave y correderas telescópicas\n" +
+                    "Zócalo regulable y fondo de 3 mm\n" +
+                    "Incluye colocación y ajuste en obra",
+                Budget = 120000m + (i * 1000m)
+            })
+            .ToList();
+
+    /// <summary>Un presupuesto colgado del de prueba, para los casos con adjuntos.</summary>
+    private static QuoteAttachmentItem SampleAttachment(decimal paidTotal = 0m) => new()
+    {
+        AttachmentId = 1,
+        ProjectId = 99,
+        Title = "Placard de dormitorio",
+        Description = "Frentes de 2,40 m",
+        Budget = 185000m,
+        PaidTotal = paidTotal
+    };
+
     private static QuoteDetail BuildSampleQuote(
         CommercialTerms? terms = null,
         IReadOnlyList<ProjectPaymentItem>? payments = null,
         string? description = null,
         IReadOnlyList<QuoteAttachmentItem>? attachments = null,
         bool showCommitment = false,
-        decimal? commitmentAmount = null)
+        decimal? commitmentAmount = null,
+        bool includeAttachmentsInTotal = false)
     {
         var breakdown = BudgetCalculatorService.Calculate(new BudgetInput
         {
@@ -1401,6 +1620,7 @@ internal static class UiSmokeTests
             Commercial = commercial,
             Payments = payments ?? [],
             Attachments = attachments ?? [],
+            IncludeAttachmentsInTotal = includeAttachmentsInTotal,
             ShowCommitmentNote = showCommitment,
             CommitmentAmount = commitmentAmount,
             QuotedAtLocal = DateTime.Today,

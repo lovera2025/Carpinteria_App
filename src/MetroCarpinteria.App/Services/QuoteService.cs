@@ -235,6 +235,7 @@ public sealed class QuoteService
             CalculatedTotal = calculatedTotal,
             Images = _imageService?.List(projectId) ?? [],
             Attachments = ReadAttachments(context, projectId),
+            IncludeAttachmentsInTotal = project.IncludeAttachmentsInTotal,
             ShowCommitmentNote = project.ShowCommitmentNote,
             CommitmentAmount = project.CommitmentAmount,
             CommitmentText = project.CommitmentText
@@ -287,6 +288,16 @@ public sealed class QuoteService
             .Where(p => ids.Contains(p.Id) && !p.IsArchived)
             .ToDictionary(p => p.Id);
 
+        // Las señas de cada adjunto: si el papel suma sus precios, tiene que restar
+        // también lo que ya se cobró de ellos, o el saldo sale de más.
+        var paid = context.ProjectPayments
+            .AsNoTracking()
+            .Where(p => ids.Contains(p.ProjectId))
+            .Select(p => new { p.ProjectId, p.Amount })
+            .ToList()
+            .GroupBy(p => p.ProjectId)
+            .ToDictionary(g => g.Key, g => g.Sum(p => p.Amount));
+
         var items = new List<QuoteAttachmentItem>(rows.Count);
 
         foreach (var row in rows)
@@ -303,6 +314,7 @@ public sealed class QuoteService
                 Title = project.Title,
                 Description = project.Description,
                 Budget = project.Budget,
+                PaidTotal = paid.GetValueOrDefault(project.Id),
                 Images = _imageService?.List(project.Id) ?? []
             });
         }
@@ -426,6 +438,21 @@ public sealed class QuoteService
         project.ShowCommitmentNote = show;
         project.CommitmentAmount = amount is > 0 ? amount : null;
         project.CommitmentText = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    /// <summary>Si los presupuestos adjuntos suman al TOTAL del papel del cliente.</summary>
+    /// <remarks>
+    /// Sólo sobre un presupuesto editable, como todo lo que cambia el número que se
+    /// entrega: una vez aprobado, el papel que firmó el cliente no se retoca.
+    /// </remarks>
+    public void SaveIncludeAttachmentsInTotal(int projectId, bool include)
+    {
+        using var context = _databaseService.CreateContext();
+        var project = RequireEditableQuote(context, projectId);
+
+        project.IncludeAttachmentsInTotal = include;
         project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
     }
@@ -1055,8 +1082,17 @@ public sealed class QuoteService
             var result = ApplyLinesToStock(context, project);
             AssignQuotedWorkers(context, project);
 
-            project.Status = ProjectStatus.InProgress;
-            project.UpdatedAtUtc = DateTime.UtcNow;
+            var approvedAt = DateTime.UtcNow;
+
+            // Queda «Aprobado», no «En taller»: aprobar es que el cliente dijo que sí, y
+            // eso no significa que alguien se haya puesto a trabajar. La diferencia es la
+            // que permite ver después cuántos trabajos están esperando turno.
+            project.Status = ProjectStatus.Approved;
+
+            // De acá arranca la cuenta de los días prometidos. Se escribe una sola vez, al
+            // aprobar: si se recalculara después, un trabajo atrasado se limpiaría solo.
+            project.ApprovedAtUtc = approvedAt;
+            project.UpdatedAtUtc = approvedAt;
 
             context.SaveChanges();
             transaction.Commit();
@@ -1130,14 +1166,89 @@ public sealed class QuoteService
     }
 
     /// <summary>
+    /// Borra un presupuesto rechazado y todo lo que colgaba de él.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Existe porque el borrado general —<see cref="ProjectService.Delete"/>— corta si hay
+    /// líneas de presupuesto cargadas, y eso es cualquier presupuesto cotizado de verdad:
+    /// los rechazados quedaban para siempre en la lista. Acá esas líneas se borran, porque
+    /// un rechazado no descontó stock y no hay nada que devolver.
+    /// </para>
+    /// <para>
+    /// Se corta con cobros o con materiales entregados. Los dos significan que algo pasó
+    /// fuera del presupuesto —plata que entró, material que salió del galpón— y borrarlo
+    /// dejaría esa plata o ese stock sin explicación en los papeles.
+    /// </para>
+    /// </remarks>
+    public void DeleteRejected(int projectId)
+    {
+        using var context = _databaseService.CreateContext();
+        using var transaction = context.Database.BeginTransaction();
+
+        try
+        {
+            var project = context.Projects.FirstOrDefault(p => p.Id == projectId)
+                ?? throw new InvalidOperationException("Presupuesto no encontrado.");
+
+            if (project.Status != ProjectStatus.Rejected)
+            {
+                throw new InvalidOperationException(
+                    "Solo se puede eliminar un presupuesto rechazado. Rechazalo primero o archivalo.");
+            }
+
+            if (context.ProjectPayments.Any(p => p.ProjectId == projectId))
+            {
+                throw new InvalidOperationException(
+                    "Tiene cobros registrados. Anulá los cobros o archivalo.");
+            }
+
+            if (context.ProjectMaterials.Any(m => m.ProjectId == projectId))
+            {
+                throw new InvalidOperationException(
+                    "Tiene materiales entregados. Quitalos primero para que vuelvan al inventario, o archivalo.");
+            }
+
+            context.ProjectBudgetLines.RemoveRange(
+                context.ProjectBudgetLines.Where(l => l.ProjectId == projectId));
+            context.ProjectLaborLines.RemoveRange(
+                context.ProjectLaborLines.Where(l => l.ProjectId == projectId));
+            context.ProjectAssignments.RemoveRange(
+                context.ProjectAssignments.Where(a => a.ProjectId == projectId));
+            context.ProjectQuoteImages.RemoveRange(
+                context.ProjectQuoteImages.Where(i => i.ProjectId == projectId));
+
+            // Los enganches de adjuntos, en los dos sentidos: la clave hacia el adjunto es
+            // ON DELETE RESTRICT, así que si éste cuelga de otro presupuesto y no se saca
+            // primero, el borrado falla.
+            context.ProjectQuoteAttachments.RemoveRange(
+                context.ProjectQuoteAttachments.Where(
+                    a => a.ParentProjectId == projectId || a.AttachedProjectId == projectId));
+
+            context.Projects.Remove(project);
+            context.SaveChanges();
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+
+        // Recién con la base consistente: si el borrado falla, los archivos tienen que
+        // seguir estando para las filas que quedaron.
+        _imageService?.DeleteFilesForProject(projectId);
+    }
+
+    /// <summary>
     /// Deshace una aprobación: devuelve al inventario todo lo que se había descontado y
     /// el trabajo vuelve a ser un presupuesto editable.
     /// </summary>
     /// <remarks>
-    /// Es el único camino de vuelta desde «En curso», y existe porque el otro —cambiar el
-    /// estado a mano desde Proyectos— dejaba el stock descontado sin nada que lo devolviera.
-    /// Solo desde «En curso»: si el trabajo ya está terminado o entregado, el material se
-    /// usó de verdad y devolverlo al inventario sería inventar existencias que no están.
+    /// Es el único camino de vuelta desde «Aprobado» y «En taller», y existe porque el otro
+    /// —cambiar el estado a mano desde Proyectos— dejaba el stock descontado sin nada que lo
+    /// devolviera. Solo desde esos dos: si el trabajo ya está listo, el material se usó de
+    /// verdad y devolverlo al inventario sería inventar existencias que no están.
     /// </remarks>
     public void CancelApproval(int projectId)
     {
@@ -1154,10 +1265,10 @@ public sealed class QuoteService
                 throw new InvalidOperationException("El proyecto está archivado.");
             }
 
-            if (project.Status != ProjectStatus.InProgress)
+            if (project.Status is not (ProjectStatus.Approved or ProjectStatus.InProgress))
             {
                 throw new InvalidOperationException(
-                    "Solo se puede cancelar un trabajo en curso. " +
+                    "Solo se puede cancelar un trabajo aprobado o en taller. " +
                     ProjectStatusPolicy.Explain(project.Status, ProjectStatus.Quote));
             }
 

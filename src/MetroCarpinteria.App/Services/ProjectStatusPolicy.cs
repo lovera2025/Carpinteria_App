@@ -3,10 +3,13 @@ using MetroCarpinteria.App.Models;
 
 namespace MetroCarpinteria.App.Services;
 
-/// <summary>Cómo se recorre una transición: eligiéndola en el formulario o con una acción.</summary>
+/// <summary>Cómo se recorre una transición: con un botón del taller o con una acción del ciclo.</summary>
 public enum StatusChangeKind
 {
-    /// <summary>Se puede elegir directamente en el desplegable de estado de Proyectos.</summary>
+    /// <summary>
+    /// La marca el taller con un botón de Proyectos —Iniciar trabajo, Marcar listo, Seguir
+    /// en taller—. No mueve inventario: solo dice en qué anda el trabajo.
+    /// </summary>
     Manual,
 
     /// <summary>
@@ -45,43 +48,37 @@ public static class ProjectStatusPolicy
     private static readonly IReadOnlyList<Transition> Transitions =
     [
         // Avance normal del trabajo: son las que el taller marca a mano.
+        new(ProjectStatus.Approved, ProjectStatus.InProgress, StatusChangeKind.Manual),
         new(ProjectStatus.InProgress, ProjectStatus.Completed, StatusChangeKind.Manual),
-        new(ProjectStatus.Completed, ProjectStatus.Delivered, StatusChangeKind.Manual),
 
-        // Y su marcha atrás de un paso, para corregir un clic equivocado.
+        // Un trabajo chico se aprueba, se hace y se entrega en el día: obligar a pasar por
+        // «En taller» para poder marcarlo listo sería puro trámite.
+        new(ProjectStatus.Approved, ProjectStatus.Completed, StatusChangeKind.Manual),
+
+        // Y la marcha atrás de un paso, para corregir un clic equivocado.
         new(ProjectStatus.Completed, ProjectStatus.InProgress, StatusChangeKind.Manual),
-        new(ProjectStatus.Delivered, ProjectStatus.Completed, StatusChangeKind.Manual),
 
-        new(ProjectStatus.Quote, ProjectStatus.InProgress, StatusChangeKind.Workflow,
+        new(ProjectStatus.Quote, ProjectStatus.Approved, StatusChangeKind.Workflow,
             "«Aprobar» desde Presupuestos, que es lo que descuenta el stock de los materiales"),
         new(ProjectStatus.Quote, ProjectStatus.Rejected, StatusChangeKind.Workflow,
             "«Marcar como rechazado» desde Presupuestos"),
         new(ProjectStatus.Rejected, ProjectStatus.Quote, StatusChangeKind.Workflow,
             "«Reabrir» desde Presupuestos"),
+
+        // Se puede cancelar mientras el material siga en su sitio: aprobado (nadie lo tocó)
+        // o en taller (se está usando pero todavía se puede devolver).
+        new(ProjectStatus.Approved, ProjectStatus.Quote, StatusChangeKind.Workflow,
+            "«Cancelar el trabajo», que devuelve los materiales al inventario"),
         new(ProjectStatus.InProgress, ProjectStatus.Quote, StatusChangeKind.Workflow,
             "«Cancelar el trabajo», que devuelve los materiales al inventario")
     ];
 
-    /// <summary>Estados que se pueden elegir en el formulario estando en <paramref name="from"/>.</summary>
-    /// <remarks>Incluye el actual: no cambiar el estado siempre es válido.</remarks>
-    public static IReadOnlyList<ProjectStatus> GetManualTargets(ProjectStatus from) =>
-    [
-        from,
-        .. Transitions
-            .Where(t => t.From == from && t.Kind == StatusChangeKind.Manual)
-            .Select(t => t.To)
-    ];
-
-    /// <summary>Las opciones del desplegable de estado, ya filtradas y etiquetadas.</summary>
-    public static IReadOnlyList<ProjectStatusOption> GetManualOptions(ProjectStatus from) =>
-        GetManualTargets(from)
-            .Select(status => new ProjectStatusOption
-            {
-                Status = status,
-                Label = ProjectStatusHelper.GetLabel(status)
-            })
-            .ToList();
-
+    /// <summary>Si el taller puede llevar el trabajo de <paramref name="from"/> a <paramref name="to"/>.</summary>
+    /// <remarks>
+    /// Quedarse donde está siempre vale: guardar sin cambiar el estado no es una transición.
+    /// La consultan los botones de Proyectos para saber cuáles mostrar y el servicio para
+    /// rechazar lo que no corresponde.
+    /// </remarks>
     public static bool CanChangeManually(ProjectStatus from, ProjectStatus to) =>
         from == to || Transitions.Any(t => t.From == from && t.To == to && t.Kind == StatusChangeKind.Manual);
 
@@ -120,10 +117,45 @@ public static class ProjectStatusPolicy
         var toLabel = ProjectStatusHelper.GetLabel(to);
 
         var workflow = Transitions.FirstOrDefault(
-            t => t.From == from && t.To == to && t.Kind == StatusChangeKind.Workflow);
+            t => t.From == from && t.To == to && t.Kind == StatusChangeKind.Workflow)
+            // Puede no haber salto directo y sí un camino: de «Presupuesto» a «En taller»
+            // se llega aprobando y después iniciando. Nombrar ese primer paso es lo útil;
+            // decir sólo que no se puede deja al usuario probando a ciegas.
+            ?? Transitions.FirstOrDefault(
+                t => t.From == from
+                    && t.Kind == StatusChangeKind.Workflow
+                    && CanReachManually(t.To, to));
 
         return workflow is not null
             ? $"Para pasar de «{fromLabel}» a «{toLabel}» hay que usar {workflow.Operation}."
             : $"Un trabajo en «{fromLabel}» no puede pasar a «{toLabel}».";
+    }
+
+    /// <summary>Si desde <paramref name="from"/> se llega a <paramref name="to"/> con pasos del taller.</summary>
+    private static bool CanReachManually(ProjectStatus from, ProjectStatus to)
+    {
+        var seen = new HashSet<ProjectStatus> { from };
+        var pending = new Queue<ProjectStatus>([from]);
+
+        while (pending.Count > 0)
+        {
+            var current = pending.Dequeue();
+
+            if (current == to)
+            {
+                return true;
+            }
+
+            foreach (var step in Transitions.Where(
+                t => t.From == current && t.Kind == StatusChangeKind.Manual))
+            {
+                if (seen.Add(step.To))
+                {
+                    pending.Enqueue(step.To);
+                }
+            }
+        }
+
+        return false;
     }
 }

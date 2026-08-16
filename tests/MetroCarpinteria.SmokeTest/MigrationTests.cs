@@ -31,6 +31,7 @@ internal static class MigrationTests
         RunQuoteImageMigrationTests(run);
         RunCommitmentAndAttachmentMigrationTests(run);
         RunPriceAdjustmentMigrationTests(run);
+        RunWorkshopCycleMigrationTests(run);
     }
 
     // --- v7: afinidad de las columnas de dinero -------------------------------
@@ -438,6 +439,66 @@ internal static class MigrationTests
                 legacy.ReadInt("SELECT COUNT(*) FROM ProjectAssignments WHERE IsPaid != 0;"),
                 0,
                 "jornales pendientes al migrar");
+            legacy.AssertIntegrity();
+        });
+    }
+
+    // --- v12: ciclo del taller y adjuntos en el total --------------------------
+
+    private static void RunWorkshopCycleMigrationTests(Action<string, Action> run)
+    {
+        run("Migración v12: el ciclo del taller reescribe los entregados y fecha los activos", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+
+            // Un trabajo «Entregado» (4), que es el caso que la migración reescribe. Se
+            // siembra acá y no en la base común para no correrle los números al resto de
+            // las migraciones, que cuentan proyectos.
+            legacy.Execute("""
+                INSERT INTO Projects (Id, Title, ClientName, Budget, Status, IsArchived, CreatedAtUtc, UpdatedAtUtc)
+                VALUES (90, 'Ropero entregado', 'Cliente de antes', 120000, 4, 0,
+                        '2026-07-01T10:00:00Z', '2026-07-20T10:00:00Z');
+                """);
+
+            var projects = legacy.Count("Projects");
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "versión del esquema");
+            Assert.Equal(
+                legacy.ReadAffinity("Projects", "IncludeAttachmentsInTotal"), "INTEGER", "tipo del tilde de adjuntos");
+            Assert.Equal(
+                legacy.ReadAffinity("Projects", "ApprovedAtUtc"), "TEXT", "afinidad de la fecha de aprobación");
+            Assert.Equal(legacy.Count("Projects"), projects, "proyectos preservados");
+
+            // «Entregado» dejó de existir: esa fila tiene que haber quedado en «Listo».
+            Assert.Equal(
+                legacy.ReadInt("SELECT COUNT(*) FROM Projects WHERE Status = 4;"),
+                0,
+                "trabajos que quedaron en Entregado");
+            Assert.Equal(
+                legacy.ReadInt("SELECT Status FROM Projects WHERE Id = 90;"),
+                3,
+                "estado del que estaba entregado");
+
+            // Los activos arrancan con fecha de aprobación respaldada, para que el aviso de
+            // atraso no los ignore para siempre.
+            Assert.Equal(
+                legacy.ReadInt("SELECT COUNT(*) FROM Projects WHERE Status IN (2, 3) AND ApprovedAtUtc IS NULL;"),
+                0,
+                "activos sin fecha de aprobación");
+
+            // Y a un presupuesto no se le inventa una: todavía no lo aprobó nadie.
+            Assert.Equal(
+                legacy.ReadInt("SELECT COUNT(*) FROM Projects WHERE Status = 1 AND ApprovedAtUtc IS NOT NULL;"),
+                0,
+                "presupuestos con fecha de aprobación inventada");
+
+            Assert.Equal(
+                legacy.ReadInt("SELECT COUNT(*) FROM Projects WHERE IncludeAttachmentsInTotal != 0;"),
+                0,
+                "el tilde de adjuntos arranca apagado");
+
             legacy.AssertIntegrity();
         });
     }

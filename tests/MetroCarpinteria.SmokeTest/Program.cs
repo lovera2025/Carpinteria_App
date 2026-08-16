@@ -894,9 +894,9 @@ internal static class Program
             Expect(SingleProduct(inventory, "Melamina aprobación").CurrentStock, 15m, "stock tras aprobar");
 
             var detail = RequireQuote(quotes, approvedId);
-            if (detail.Status != ProjectStatus.InProgress)
+            if (detail.Status != ProjectStatus.Approved)
             {
-                throw new InvalidOperationException($"Debía pasar a En curso, quedó en {detail.Status}.");
+                throw new InvalidOperationException($"Debía pasar a Aprobado, quedó en {detail.Status}.");
             }
 
             var materials = projects.GetProjectMaterials(approvedId);
@@ -994,7 +994,7 @@ internal static class Program
 
             // La app avisa, no decide: un vencido se sigue pudiendo aprobar.
             quotes.ApproveQuote(id);
-            if (RequireQuote(quotes, id).Status != ProjectStatus.InProgress)
+            if (RequireQuote(quotes, id).Status != ProjectStatus.Approved)
             {
                 throw new InvalidOperationException("Un vencido debía poder aprobarse igual.");
             }
@@ -1427,12 +1427,18 @@ internal static class Program
             "Presupuestos: verificar en Inventario que el stock NO se movió",
             "Presupuestos: calcular con 100000 / 3 días / 30000 y ver $ 287.000,00",
             "Presupuestos: agregar dos operarios y ver que el precio final sube",
-            "Presupuestos: imprimir para el cliente y revisar que solo muestre el TOTAL",
+            "Presupuestos: «Imprimir para el cliente» abre la vista previa y se ve el papel",
+            "Presupuestos: en la vista previa, que el TOTAL cierre el papel y haya lugar para observaciones",
             "Presupuestos: «Guardar PDF» — elegir carpeta, y que el archivo se abra solo",
             "Presupuestos: imprimir la hoja de costos y revisar que SÍ traiga el desglose",
             "Presupuestos: en la hoja de costos, que «Pesa en el precio» sume mano de obra + gastos + ganancia",
             "Presupuestos: abrir uno viejo (sin operarios) y confirmar que el precio no se movió",
-            "Presupuestos: aprobar y confirmar que descuenta stock y aparece en Proyectos",
+            "Presupuestos: adjuntar otro trabajo del mismo cliente y ver los dos en la lista del PDF",
+            "Presupuestos: prender «Incluir en el monto final» y ver que el TOTAL pasa a sumar los dos",
+            "Presupuestos: rechazar uno y borrarlo con «Eliminar»",
+            "Presupuestos: aprobar y confirmar que descuenta stock y aparece en Proyectos como «Aprobado»",
+            "Proyectos: «Iniciar trabajo» lo pasa a «En taller», y «Marcar listo» a «Listo»",
+            "Proyectos: un trabajo aprobado con los días vencidos muestra el chip de atraso y la cinta",
             "Proyectos: que los operarios cotizados hayan quedado asignados solos",
             "Proyectos: crear, asignar material y empleado",
             "Personal: alta de empleado con jornal, y que prellene la mano de obra al cotizarlo",

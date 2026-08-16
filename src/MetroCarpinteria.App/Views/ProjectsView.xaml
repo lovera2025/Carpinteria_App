@@ -26,6 +26,21 @@
                             Command="{Binding NewProjectCommand}" Margin="0,0,10,8" />
                     <Button Content="Editar" Style="{StaticResource SecondaryButtonStyle}"
                             Command="{Binding EditProjectCommand}" Margin="0,0,10,8" />
+                    <!-- Los tres pasos del taller. Se ocultan en vez de agrisarse: sobre un
+                         trabajo listo, «Iniciar trabajo» gris no aporta nada y una barra con
+                         seis botones muertos hace más ruido que una con dos vivos. -->
+                    <Button Content="Iniciar trabajo" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding StartWorkCommand}" Margin="0,0,10,8"
+                            Visibility="{Binding CanStartWork, Converter={StaticResource BoolToVisibilityConverter}}"
+                            ToolTip="El trabajo pasa de aprobado a en taller" />
+                    <Button Content="Marcar listo" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding MarkReadyCommand}" Margin="0,0,10,8"
+                            Visibility="{Binding CanMarkReady, Converter={StaticResource BoolToVisibilityConverter}}"
+                            ToolTip="El trabajo queda terminado y deja de contar como atrasado" />
+                    <Button Content="Seguir en taller" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding BackToWorkshopCommand}" Margin="0,0,10,8"
+                            Visibility="{Binding CanBackToWorkshop, Converter={StaticResource BoolToVisibilityConverter}}"
+                            ToolTip="Vuelve al taller un trabajo que se marcó listo por error" />
                     <Button Content="Cancelar trabajo" Style="{StaticResource SecondaryButtonStyle}"
                             Command="{Binding CancelProjectCommand}" Margin="0,0,10,8"
                             ToolTip="Vuelve el trabajo a presupuesto y devuelve los materiales al inventario" />
@@ -60,6 +75,15 @@
                     <CheckBox Grid.Column="2" Content="Ver archivados" IsChecked="{Binding ShowArchived}"
                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}" />
                 </Grid>
+                <!-- Sin toast al abrir: un aviso que hay que cerrar todos los días se vuelve
+                     un trámite. Esto se queda mientras haya algo atrasado y desaparece solo
+                     cuando se marca listo. -->
+                <Border Background="{DynamicResource StateWarningSurfaceBrush}"
+                        CornerRadius="6" Padding="12,8" Margin="0,0,0,8"
+                        Visibility="{Binding HasOverdue, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="{Binding OverdueBannerText}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AlertBrush}" />
+                </Border>
             </StackPanel>
 
             <Grid Grid.Row="1">
@@ -78,11 +102,20 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Proyecto" Binding="{Binding Title}" Width="*" MinWidth="120" />
                             <DataGridTextColumn Header="Cliente" Binding="{Binding ClientName}" Width="120" />
-                            <DataGridTemplateColumn Header="Estado" Width="100">
+                            <DataGridTemplateColumn Header="Estado" Width="130">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding StatusLabel}" FontSize="12" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource PrimaryBrownBrush}" />
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding StatusLabel}" FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource PrimaryBrownBrush}" />
+                                            <!-- El atraso va debajo del estado y no en lugar
+                                                 de él: saber que está atrasado no sirve si
+                                                 no se ve si está esperando o ya en el banco. -->
+                                            <TextBlock Text="{Binding OverdueDisplay}" FontSize="11" FontWeight="SemiBold"
+                                                       Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource AlertBrush}"
+                                                       Visibility="{Binding IsOverdue, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -113,9 +146,14 @@
                                 <TextBlock Text="Presupuesto (opcional)" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                                 <TextBox Text="{Binding FormBudget, UpdateSourceTrigger=PropertyChanged}"
                                          Padding="10,8" Margin="0,0,0,12" />
-                                <TextBlock Text="Estado" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
-                                <ComboBox ItemsSource="{Binding FormStatusOptions}" SelectedItem="{Binding FormStatus}"
-                                          DisplayMemberPath="Label" Padding="8,8" Margin="0,0,0,16" />
+                                <!-- Solo en el alta: anotar un trabajo que ya venía andando no
+                                     es una transición. Al editar el estado lo mueven los
+                                     botones del taller, que son los que respetan el ciclo. -->
+                                <StackPanel Visibility="{Binding IsCreating, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="Estado" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                    <ComboBox ItemsSource="{Binding FormStatusOptions}" SelectedItem="{Binding FormStatus}"
+                                              DisplayMemberPath="Label" Padding="8,8" Margin="0,0,0,16" />
+                                </StackPanel>
                                 <WrapPanel>
                                     <Button Content="Guardar" Style="{StaticResource PrimaryButtonStyle}"
                                             Command="{Binding SaveProjectCommand}" Margin="0,0,10,0" />

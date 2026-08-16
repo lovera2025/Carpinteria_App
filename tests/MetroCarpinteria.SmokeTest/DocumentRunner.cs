@@ -4,6 +4,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Models;
 using MetroCarpinteria.App.Services;
 using WpfApp = MetroCarpinteria.App.App;
@@ -148,6 +149,7 @@ internal static class DocumentRunner
             "presupuesto-simple");
 
         RenderPhotoExamples(outputDirectory, fixture, service);
+        RenderLoadedQuote(outputDirectory, fixture, service);
 
         Console.WriteLine();
         Console.WriteLine($"Documentos generados en {outputDirectory}");
@@ -236,6 +238,76 @@ internal static class DocumentRunner
         Save(service.BuildCostSheet(withFour), outputDirectory, "hoja-de-costos-con-4-fotos");
     }
 
+    /// <summary>
+    /// El caso que pone a prueba el ajuste a la A4: tres trabajos adjuntos, fotos en varios
+    /// de ellos y una seña. Se guarda con el tilde apagado y prendido, que es la diferencia
+    /// que hay que poder mirar de un vistazo.
+    /// </summary>
+    private static void RenderLoadedQuote(
+        string outputDirectory,
+        TestFixture fixture,
+        QuoteDocumentService service)
+    {
+        var samples = Path.Combine(outputDirectory, "_samples");
+        var photo = SampleJpeg.Write(samples, "cargado.jpg", Color.FromRgb(107, 68, 35), "Referencia");
+
+        var parentId = AppHost.QuoteService.CreateQuote(
+            "Cocina completa", "Cliente con varios trabajos", "Bajo mesada y alacenas en melamina").Id;
+
+        AppHost.QuoteService.AddInventoryLine(parentId, fixture.BoardProductId, 12m, 1200m);
+        AppHost.QuoteService.SaveCalculation(parentId, 14400m, 4m, 30000m, BudgetRates.Defaults());
+        AppHost.QuoteImageService.AddFromFile(parentId, photo, "Cocina de referencia");
+
+        string[] titles = ["Placard del dormitorio", "Mueble del baño", "Biblioteca del living"];
+        string[] notes =
+        [
+            "Dos cuerpos con puertas corredizas",
+            "Bajo mesada con puerta y estante",
+            "Cinco estantes de 1,80 m"
+        ];
+
+        for (var i = 0; i < titles.Length; i++)
+        {
+            var attachedId = AppHost.QuoteService.CreateQuote(
+                titles[i], "Cliente con varios trabajos", notes[i]).Id;
+
+            AppHost.QuoteService.AddInventoryLine(attachedId, fixture.BoardProductId, 5m, 1200m);
+            AppHost.QuoteService.SaveCalculation(attachedId, 6000m, 2m, 30000m, BudgetRates.Defaults());
+            AppHost.QuoteImageService.AddFromFile(attachedId, photo, $"Referencia de {titles[i].ToLowerInvariant()}");
+            AppHost.QuoteService.AttachQuote(parentId, attachedId);
+        }
+
+        // Por transferencia y no en efectivo: cobrar en efectivo exige una caja abierta, y
+        // este runner sólo dibuja papeles.
+        AppHost.PaymentService.RegisterPayment(
+            parentId, PaymentKind.Deposit, 60000m, PaymentMethod.Transfer, "Seña de la cocina");
+
+        // Y una seña sobre uno de los adjuntos, que es lo que el saldo tiene que restar
+        // cuando el tilde está prendido.
+        AppHost.PaymentService.RegisterPayment(
+            AppHost.QuoteService.GetDetail(parentId)!.Attachments[0].ProjectId,
+            PaymentKind.Deposit,
+            25000m,
+            PaymentMethod.Transfer,
+            "Seña del placard");
+
+        var apart = AppHost.QuoteService.GetDetail(parentId)!;
+        Console.WriteLine(
+            $"Presupuesto cargado: «{apart.Title}» — {apart.Attachments.Count} adjunto(s), " +
+            $"{apart.Images.Count + apart.Attachments.Sum(a => a.Images.Count)} foto(s)");
+
+        Save(service.BuildClientQuote(apart), outputDirectory, "presupuesto-cargado-separado");
+
+        AppHost.QuoteService.SaveIncludeAttachmentsInTotal(parentId, include: true);
+        var together = AppHost.QuoteService.GetDetail(parentId)!;
+
+        Console.WriteLine(
+            $"  Con el tilde prendido: TOTAL {together.PrintedTotalDisplay} · " +
+            $"saldo {together.PrintedBalanceDisplay}");
+
+        Save(service.BuildClientQuote(together), outputDirectory, "presupuesto-cargado-sumado");
+    }
+
     private static int SaveQuoteWithPhotos(
         TestFixture fixture,
         QuoteDocumentService service,
@@ -262,44 +334,30 @@ internal static class DocumentRunner
         return id;
     }
 
+    /// <remarks>
+    /// El dibujo de las hojas lo hace <see cref="QuoteDocumentService.RenderPages"/>, que es
+    /// el mismo que usa la vista previa de la app. Acá quedan sólo la medición del margen y
+    /// la escritura de los PNG: si el papel se ve mal en uno de los dos lados, se ve mal en
+    /// los dos, que es exactamente lo que se quiere de una vista previa.
+    /// </remarks>
     private static void Save(FlowDocument document, string directory, string name)
     {
         var needed = MeasureRequiredPageHeight(document);
-
-        QuoteDocumentService.LayOut(document, PageWidth, PageHeight);
-
-        var paginator = ((IDocumentPaginatorSource)document).DocumentPaginator;
-        paginator.ComputePageCount();
+        var pages = QuoteDocumentService.RenderPages(document);
 
         var slack = PageHeight - needed;
         var fit = slack >= 0 ? $"entra con {slack:F0} px de sobra" : $"se pasa por {-slack:F0} px";
 
         Console.WriteLine(
-            $"  {name}: {paginator.PageCount} hoja(s) — necesita {needed:F0} px de alto, A4 tiene {PageHeight:F0}: {fit}");
+            $"  {name}: {pages.Count} hoja(s) — necesita {needed:F0} px de alto, A4 tiene {PageHeight:F0}: {fit}");
 
-        for (var i = 0; i < paginator.PageCount; i++)
+        for (var i = 0; i < pages.Count; i++)
         {
-            using var page = paginator.GetPage(i);
-
-            var bitmap = new RenderTargetBitmap(
-                (int)PageWidth, (int)PageHeight, 96, 96, PixelFormats.Pbgra32);
-
-            // Fondo blanco primero: el documento es transparente y sin esto la hoja sale
-            // sobre negro, que no se parece en nada a lo que sale por la impresora.
-            var background = new DrawingVisual();
-            using (var context = background.RenderOpen())
-            {
-                context.DrawRectangle(Brushes.White, null, new Rect(0, 0, PageWidth, PageHeight));
-            }
-
-            bitmap.Render(background);
-            bitmap.Render(page.Visual);
-
-            var suffix = paginator.PageCount > 1 ? $"-hoja{i + 1}" : string.Empty;
+            var suffix = pages.Count > 1 ? $"-hoja{i + 1}" : string.Empty;
             var path = Path.Combine(directory, $"{name}{suffix}.png");
 
             var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            encoder.Frames.Add(BitmapFrame.Create(pages[i]));
 
             using var stream = File.Create(path);
             encoder.Save(stream);

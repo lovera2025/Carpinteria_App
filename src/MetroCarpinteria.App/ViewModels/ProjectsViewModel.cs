@@ -20,6 +20,7 @@ public class ProjectsViewModel : ViewModelBase
     private string _searchText = string.Empty;
     private bool _showArchived;
     private ProjectStatusOption? _selectedStatusFilter;
+    private int _overdueCount;
     private bool _isFormOpen;
     private bool _isCreating;
     private string _formTitle = string.Empty;
@@ -74,6 +75,30 @@ public class ProjectsViewModel : ViewModelBase
         PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => CanPrintQuote);
         SaveQuotePdfCommand = new RelayCommand(_ => SaveQuotePdf(), _ => CanPrintQuote);
         CancelProjectCommand = new AsyncRelayCommand(CancelSelectedAsync, () => CanCancelSelected);
+        StartWorkCommand = new AsyncRelayCommand(
+            () => AdvanceSelectedAsync(
+                ProjectStatus.InProgress,
+                "Iniciar el trabajo",
+                "va a figurar en taller.",
+                "Iniciar",
+                "arrancó en el taller."),
+            () => CanStartWork);
+        MarkReadyCommand = new AsyncRelayCommand(
+            () => AdvanceSelectedAsync(
+                ProjectStatus.Completed,
+                "Marcar listo",
+                "va a figurar como listo y deja de contar como atrasado.",
+                "Marcar listo",
+                "quedó listo."),
+            () => CanMarkReady);
+        BackToWorkshopCommand = new AsyncRelayCommand(
+            () => AdvanceSelectedAsync(
+                ProjectStatus.InProgress,
+                "Seguir en taller",
+                "vuelve a figurar en taller.",
+                "Seguir en taller",
+                "volvió al taller."),
+            () => CanBackToWorkshop);
 
         // El mismo bloque que Presupuestos: la seña se toma al cotizar, pero el saldo se
         // cobra con el trabajo en curso, y ahí el carpintero está mirando esta pantalla.
@@ -89,9 +114,13 @@ public class ProjectsViewModel : ViewModelBase
     public IReadOnlyList<ProjectStatusOption> StatusFilterOptions { get; }
 
     /// <summary>
-    /// Los estados que se pueden elegir en el formulario. Cambia según en cuál esté el
-    /// proyecto: ofrecer los cinco siempre era lo que permitía saltearse el ciclo.
+    /// Estado inicial, solo en el alta a mano. Al editar no se muestra: mover el trabajo de
+    /// etapa es cosa de los botones del taller, no del formulario.
     /// </summary>
+    /// <remarks>
+    /// El alta sí lo ofrece porque anotar un trabajo que ya está andando —o uno viejo, para
+    /// cargar historial— no es una transición: no hay estado anterior del que venir.
+    /// </remarks>
     public IReadOnlyList<ProjectStatusOption> FormStatusOptions
     {
         get => _formStatusOptions;
@@ -115,6 +144,9 @@ public class ProjectsViewModel : ViewModelBase
             OnPropertyChanged(nameof(CanAssignToProject));
             OnPropertyChanged(nameof(CanToggleAssignmentPaid));
             OnPropertyChanged(nameof(CanCancelSelected));
+            OnPropertyChanged(nameof(CanStartWork));
+            OnPropertyChanged(nameof(CanMarkReady));
+            OnPropertyChanged(nameof(CanBackToWorkshop));
         }
     }
 
@@ -184,6 +216,26 @@ public class ProjectsViewModel : ViewModelBase
     }
 
     public string FormHeader => IsCreating ? "Nuevo proyecto" : "Editar proyecto";
+
+    /// <summary>Cuántos de los que están a la vista pasaron su fecha prometida.</summary>
+    public int OverdueCount
+    {
+        get => _overdueCount;
+        private set
+        {
+            if (SetProperty(ref _overdueCount, value))
+            {
+                OnPropertyChanged(nameof(HasOverdue));
+                OnPropertyChanged(nameof(OverdueBannerText));
+            }
+        }
+    }
+
+    public bool HasOverdue => OverdueCount > 0;
+
+    public string OverdueBannerText => OverdueCount == 1
+        ? "Hay 1 trabajo atrasado."
+        : $"Hay {OverdueCount} trabajos atrasados.";
 
     public string FormTitle
     {
@@ -264,11 +316,24 @@ public class ProjectsViewModel : ViewModelBase
     public bool CanToggleAssignmentPaid => SelectedProject is { IsArchived: false };
 
     /// <summary>
-    /// Solo un trabajo en curso se puede cancelar. Terminado o entregado significa que
-    /// el material ya se usó, y devolverlo al inventario inventaría existencias.
+    /// Se cancela mientras el material siga en su sitio: aprobado o en taller. Listo
+    /// significa que ya se usó, y devolverlo al inventario inventaría existencias.
     /// </summary>
     public bool CanCancelSelected =>
-        SelectedProject is { IsArchived: false, Status: ProjectStatus.InProgress };
+        SelectedProject is { IsArchived: false, Status: ProjectStatus.Approved or ProjectStatus.InProgress };
+
+    // Los tres botones del taller preguntan a la política en vez de mirar el estado a mano:
+    // así la barra no puede ofrecer un paso que el servicio después rechaza.
+    public bool CanStartWork => CanAdvanceTo(ProjectStatus.InProgress) && IsSelectedIn(ProjectStatus.Approved);
+    public bool CanMarkReady => CanAdvanceTo(ProjectStatus.Completed);
+    public bool CanBackToWorkshop => CanAdvanceTo(ProjectStatus.InProgress) && IsSelectedIn(ProjectStatus.Completed);
+
+    private bool IsSelectedIn(ProjectStatus status) => SelectedProject?.Status == status;
+
+    private bool CanAdvanceTo(ProjectStatus target) =>
+        SelectedProject is { IsArchived: false } selected
+        && ProjectStatusPolicy.CanChangeManually(selected.Status, target)
+        && selected.Status != target;
 
     public ICommand LoadCommand { get; }
     public ICommand NewProjectCommand { get; }
@@ -286,6 +351,9 @@ public class ProjectsViewModel : ViewModelBase
     public ICommand PrintQuoteCommand { get; }
     public ICommand SaveQuotePdfCommand { get; }
     public ICommand CancelProjectCommand { get; }
+    public ICommand StartWorkCommand { get; }
+    public ICommand MarkReadyCommand { get; }
+    public ICommand BackToWorkshopCommand { get; }
 
     /// <summary>Señas y pagos. El mismo bloque que usa Presupuestos.</summary>
     public PaymentsSectionViewModel PaymentsSection { get; }
@@ -354,12 +422,21 @@ public class ProjectsViewModel : ViewModelBase
             SelectedStatusFilter?.Status,
             SearchText);
 
+        // «Atrasados» no es un estado sino una condición sobre la fecha prometida, así que
+        // el servicio no lo puede filtrar: se resuelve acá, sobre lo que ya vino.
+        if (SelectedStatusFilter is { OverdueOnly: true })
+        {
+            items = items.Where(p => p.IsOverdue).ToList();
+        }
+
         var selectedId = SelectedProject?.Id;
         Projects.Clear();
         foreach (var item in items)
         {
             Projects.Add(item);
         }
+
+        OverdueCount = Projects.Count(p => p.IsOverdue);
 
         SelectedProject = selectedId.HasValue
             ? Projects.FirstOrDefault(p => p.Id == selectedId.Value)
@@ -414,8 +491,8 @@ public class ProjectsViewModel : ViewModelBase
         FormDescription = string.Empty;
         FormBudget = string.Empty;
 
-        // Un alta no es una transición: se puede anotar un trabajo que ya está en curso
-        // o incluso entregado, para cargar historial.
+        // Un alta no es una transición: se puede anotar un trabajo que ya está en taller
+        // o incluso listo, para cargar historial.
         FormStatusOptions = ProjectStatusHelper.GetEditOptions();
         FormStatus = FormStatusOptions.First(o => o.Status == ProjectStatus.Quote);
 
@@ -436,9 +513,8 @@ public class ProjectsViewModel : ViewModelBase
         FormDescription = SelectedProject.Description ?? string.Empty;
         FormBudget = NumberInput.Format(SelectedProject.Budget);
 
-        FormStatusOptions = ProjectStatusPolicy.GetManualOptions(SelectedProject.Status);
-        FormStatus = FormStatusOptions.First(o => o.Status == SelectedProject.Status);
-
+        // Sin selector de estado: editar es corregir los datos del trabajo, no moverlo de
+        // etapa. Para eso están los botones de la barra.
         IsCreating = false;
         IsFormOpen = true;
         ClearStatus();
@@ -464,10 +540,9 @@ public class ProjectsViewModel : ViewModelBase
                 budget = parsedBudget;
             }
 
-            var status = FormStatus?.Status ?? ProjectStatus.Quote;
-
             if (IsCreating)
             {
+                var status = FormStatus?.Status ?? ProjectStatus.Quote;
                 var project = AppHost.ProjectService.Create(
                     FormTitle, FormClientName, FormDescription, budget, status);
                 SetStatus($"Proyecto «{project.Title}» creado.", isError: false);
@@ -475,7 +550,7 @@ public class ProjectsViewModel : ViewModelBase
             else if (SelectedProject is not null)
             {
                 AppHost.ProjectService.Update(
-                    SelectedProject.Id, FormTitle, FormClientName, FormDescription, budget, status);
+                    SelectedProject.Id, FormTitle, FormClientName, FormDescription, budget);
                 SetStatus($"Proyecto «{FormTitle.Trim()}» actualizado.", isError: false);
             }
 
@@ -614,6 +689,51 @@ public class ProjectsViewModel : ViewModelBase
             AppHost.QuoteService.CancelApproval(SelectedProject.Id);
             AppHost.NotificationService.Success(
                 $"«{title}» volvió a presupuesto y el material se devolvió al inventario.");
+            Load();
+        }
+        catch (Exception ex)
+        {
+            AppHost.NotificationService.Error(ex.Message, ex);
+        }
+    }
+
+    /// <summary>
+    /// Los tres pasos del taller comparten forma: confirmar, cambiar el estado, avisar.
+    /// </summary>
+    /// <remarks>
+    /// La confirmación es corta a propósito. No mueven inventario ni borran nada, así que
+    /// el diálogo está para evitar el clic distraído, no para advertir de un peligro —por
+    /// eso ninguno va marcado como destructivo.
+    /// </remarks>
+    private async Task AdvanceSelectedAsync(
+        ProjectStatus target,
+        string dialogTitle,
+        string dialogDetail,
+        string confirmText,
+        string doneMessage)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        var title = SelectedProject.Title;
+        var id = SelectedProject.Id;
+
+        var confirmed = await AppHost.DialogService.ConfirmAsync(
+            dialogTitle,
+            $"«{title}» {dialogDetail}",
+            confirmText: confirmText);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            AppHost.ProjectService.ChangeStatus(id, target);
+            AppHost.NotificationService.Success($"«{title}» {doneMessage}");
             Load();
         }
         catch (Exception ex)
@@ -763,7 +883,10 @@ public class ProjectsViewModel : ViewModelBase
             var document = AppHost.QuoteDocumentService.BuildClientQuote(
                 AppHost.QuoteService.GetDetail(Quote.Id) ?? Quote);
 
-            if (AppHost.QuoteDocumentService.Print(document, $"Presupuesto {Quote.Id:0000}"))
+            // Por la vista previa: el diálogo de Windows no puede mostrar el papel, así que
+            // sin esto se imprime a ciegas.
+            if (Views.QuotePreviewWindow.ShowFor(
+                    document, $"Presupuesto {Quote.Id:0000}", SaveQuotePdf))
             {
                 SetStatus("Presupuesto enviado a la impresora.", isError: false);
             }

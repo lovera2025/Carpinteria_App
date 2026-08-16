@@ -149,10 +149,15 @@
                                             Command="{Binding RejectCommand}" Margin="0,0,10,8"
                                             Visibility="{Binding CanEditSelected, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-                                    <!-- Reabrir es lo único que aplica a un rechazado. -->
+                                    <!-- Lo que aplica a un rechazado: volver a abrirlo, o sacarlo
+                                         de la lista para siempre. -->
                                     <Button Content="Reabrir" Style="{StaticResource SecondaryButtonStyle}"
                                             Command="{Binding ReopenCommand}" Margin="0,0,10,8"
                                             Visibility="{Binding IsRejectedSelected, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <Button Content="Eliminar" Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding DeleteRejectedCommand}" Margin="0,0,10,8"
+                                            Visibility="{Binding IsRejectedSelected, Converter={StaticResource BoolToVisibilityConverter}}"
+                                            ToolTip="Borra el presupuesto rechazado y su desglose. No se puede deshacer." />
 
                                     <Button Content="Descontar pendientes" Style="{StaticResource SecondaryButtonStyle}"
                                             Command="{Binding ApplyPendingCommand}" Margin="0,0,10,8"

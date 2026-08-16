@@ -287,12 +287,19 @@ public sealed class QuoteDetail
     public IReadOnlyList<QuoteImageItem> PrintableImages =>
         Images.Where(i => !i.IsMissing).ToList();
 
-    /// <summary>
-    /// Otros trabajos del mismo cliente colgados de éste. No entran en el TOTAL.
-    /// </summary>
+    /// <summary>Otros trabajos del mismo cliente colgados de éste.</summary>
     public IReadOnlyList<QuoteAttachmentItem> Attachments { get; init; } = [];
 
     public bool HasAttachments => Attachments.Count > 0;
+
+    /// <summary>
+    /// Si los adjuntos suman al número grande del papel del cliente.
+    /// </summary>
+    /// <remarks>
+    /// Apagado, adjuntar es sólo agrupar varios trabajos en una hoja y cada uno se cobra
+    /// por separado. Prendido, el cliente ve un solo total por todo.
+    /// </remarks>
+    public bool IncludeAttachmentsInTotal { get; init; }
 
     /// <summary>El aviso de seña está prendido y hay un importe para nombrar.</summary>
     public bool HasCommitmentNote => ShowCommitmentNote && CommitmentAmount is > 0;
@@ -336,6 +343,38 @@ public sealed class QuoteDetail
 
     public string PaidTotalDisplay => AppCulture.Money(PaidTotal);
     public string BalanceDisplay => AppCulture.Money(Balance);
+
+    // --- Las cuentas del papel ------------------------------------------------
+    //
+    // Van aparte de PaidTotal y Balance a propósito. Esos dos son la plata de ESTE
+    // presupuesto y los mira el panel de cobros: quien registra una seña necesita el
+    // saldo de lo que tiene delante, no el de un conjunto de trabajos. Lo que cambia
+    // según el tilde es sólo lo que se imprime.
+
+    /// <summary>Suma de los presupuestos adjuntos.</summary>
+    public decimal AttachmentsTotal => Attachments.Sum(a => a.Budget ?? 0m);
+
+    /// <summary>Lo ya cobrado sobre los adjuntos.</summary>
+    public decimal AttachmentsPaidTotal => Attachments.Sum(a => a.PaidTotal);
+
+    /// <summary>El número grande del papel: este trabajo, más los adjuntos si corresponde.</summary>
+    public decimal PrintedTotal => IncludeAttachmentsInTotal
+        ? (Budget ?? 0m) + AttachmentsTotal
+        : Budget ?? 0m;
+
+    /// <summary>Lo cobrado que el papel descuenta, del mismo conjunto que suma el total.</summary>
+    public decimal PrintedPaidTotal => IncludeAttachmentsInTotal
+        ? PaidTotal + AttachmentsPaidTotal
+        : PaidTotal;
+
+    public decimal PrintedBalance => Math.Max(0m, PrintedTotal - PrintedPaidTotal);
+
+    /// <summary>Si el papel tiene que mostrar el bloque de entregado a cuenta y saldo.</summary>
+    public bool HasPrintedPayments => PrintedPaidTotal > 0m;
+
+    public string PrintedTotalDisplay => AppCulture.Money(PrintedTotal);
+    public string PrintedPaidTotalDisplay => AppCulture.Money(PrintedPaidTotal);
+    public string PrintedBalanceDisplay => AppCulture.Money(PrintedBalance);
 
     public decimal MaterialsTotal => Lines.Sum(l => l.LineTotal);
     public string MaterialsTotalDisplay => AppCulture.Money(MaterialsTotal);
@@ -391,6 +430,13 @@ public sealed class QuoteAttachmentItem
     public string Title { get; init; } = string.Empty;
     public string? Description { get; init; }
     public decimal? Budget { get; init; }
+
+    /// <summary>
+    /// Lo ya cobrado sobre este adjunto. Sólo pesa cuando los adjuntos entran en el total:
+    /// si el papel suma sus precios, tiene que restar también sus señas.
+    /// </summary>
+    public decimal PaidTotal { get; init; }
+
     public IReadOnlyList<QuoteImageItem> Images { get; init; } = [];
 
     public string BudgetDisplay => AppCulture.Money(Budget);

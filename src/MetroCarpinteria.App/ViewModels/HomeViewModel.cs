@@ -74,6 +74,8 @@ public class HomeViewModel : ViewModelBase
         var cashOpen = AppHost.CashRegisterService.HasOpenSession();
         var cashState = AppHost.CashRegisterService.GetOpenSessionState();
         var activeProjects = AppHost.DatabaseService.GetActiveProjectCount();
+        var approvedProjects = AppHost.DatabaseService.GetApprovedProjectCount();
+        var overdueProjects = AppHost.ProjectService.GetOverdueCount();
         var employeeCount = AppHost.DatabaseService.GetEmployeeCount();
         var quotes = AppHost.QuoteService.GetPendingSummary();
 
@@ -108,8 +110,23 @@ public class HomeViewModel : ViewModelBase
             {
                 Title = "Proyectos activos",
                 Value = activeProjects.ToString(),
-                Description = activeProjects == 1 ? "En curso en el taller" : "En curso en el taller",
+                Description = approvedProjects == 0
+                    ? "En el taller, sin nada esperando"
+                    : approvedProjects == 1
+                        ? "En el taller · 1 aprobado por iniciar"
+                        : $"En el taller · {approvedProjects} aprobados por iniciar",
                 AccentColor = "#4A7C59"
+            },
+            new DashboardCard
+            {
+                Title = "Trabajos atrasados",
+                Value = overdueProjects.ToString(),
+                Description = overdueProjects == 0
+                    ? "Todo dentro de lo prometido"
+                    : overdueProjects == 1
+                        ? "Pasó la fecha que se prometió"
+                        : "Pasaron la fecha que se prometió",
+                AccentColor = "#C0392B"
             },
             new DashboardCard
             {

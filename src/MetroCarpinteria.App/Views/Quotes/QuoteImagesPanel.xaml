@@ -113,8 +113,22 @@
                            FontSize="13" FontWeight="SemiBold"
                            Foreground="{DynamicResource PrimaryBrownBrush}" />
 
-                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,12"
-                           Text="Salen en el PDF de este presupuesto, cada uno con su descripción y su total. El TOTAL grande sigue siendo solo el de este trabajo." />
+                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,10"
+                           Text="Salen en el PDF de este presupuesto, cada uno con su descripción y su precio." />
+
+                <!-- Apagado por defecto: adjuntar es agrupar los trabajos de un cliente en
+                     una sola hoja, que no es lo mismo que cobrarlos juntos. -->
+                <CheckBox Content="Incluir en el monto final"
+                          IsChecked="{Binding IncludeAttachmentsInTotal}"
+                          IsEnabled="{Binding CanManageAttachments}"
+                          Margin="0,0,0,6"
+                          Foreground="{DynamicResource TextPrimaryBrush}"
+                          Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVisibilityConverter}}"
+                          ToolTip="El TOTAL y el saldo del PDF pasan a sumar este trabajo y los adjuntos." />
+
+                <TextBlock Text="{Binding AttachmentsTotalHint}" Style="{StaticResource SubtitleStyle}"
+                           TextWrapping="Wrap" Margin="0,0,0,12"
+                           Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVisibilityConverter}}" />
 
                 <Border BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="0,1,0,0"
                         Padding="0,14,0,8" Margin="0,0,0,8"

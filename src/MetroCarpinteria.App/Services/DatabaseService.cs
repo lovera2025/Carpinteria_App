@@ -285,10 +285,18 @@ public sealed class DatabaseService
         context.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS IX_ProjectAssignments_ProjectId_EmployeeId ON ProjectAssignments (ProjectId, EmployeeId);");
     }
 
+    /// <summary>Trabajos que se están haciendo ahora mismo en el taller.</summary>
     public int GetActiveProjectCount()
     {
         using var context = CreateContext();
         return context.Projects.Count(p => !p.IsArchived && p.Status == Data.Entities.ProjectStatus.InProgress);
+    }
+
+    /// <summary>Trabajos aprobados que todavía no arrancó nadie: la cola del taller.</summary>
+    public int GetApprovedProjectCount()
+    {
+        using var context = CreateContext();
+        return context.Projects.Count(p => !p.IsArchived && p.Status == Data.Entities.ProjectStatus.Approved);
     }
 
     public int GetEmployeeCount()

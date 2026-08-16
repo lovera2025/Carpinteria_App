@@ -36,6 +36,8 @@ internal static class CorrectnessTests
             RunFinalPriceTests(run, inventory, quotes);
             RunAssignmentPayTests(run, projects, employees);
             RunStatusPolicyTests(run, inventory, quotes, projects);
+            RunOverdueTests(run, database, inventory, quotes, projects);
+            RunRejectedDeletionTests(run, database, inventory, quotes, projects);
             RunBackupTests(run, paths, settings, database);
             RunSettingsTests(run);
             RunClockTests(run);
@@ -260,42 +262,73 @@ internal static class CorrectnessTests
         QuoteService quotes,
         ProjectService projects)
     {
-        run("Correctitud: de Presupuesto no se salta a En curso desde Proyectos", () =>
+        run("Correctitud: de Presupuesto no se salta a En taller desde Proyectos", () =>
         {
             // Es el atajo que daba por aprobado un presupuesto sin descontar un solo
             // material: el trabajo arrancaba y el inventario decía que estaba todo.
             var id = quotes.CreateQuote("Escritorio salteado", "Cliente impaciente", null).Id;
 
-            Assert.Throws(
-                () => projects.Update(id, "Escritorio salteado", "Cliente impaciente", null, 100000m, ProjectStatus.InProgress),
-                "Aprobar");
+            Assert.Throws(() => projects.ChangeStatus(id, ProjectStatus.InProgress), "Aprobar");
         });
 
-        run("Correctitud: un trabajo en curso no vuelve a Presupuesto a mano", () =>
+        run("Correctitud: un trabajo en taller no vuelve a Presupuesto a mano", () =>
         {
             var project = projects.Create("Trabajo arrancado", "Cliente dudoso", null, 50000m, ProjectStatus.InProgress);
 
-            Assert.Throws(
-                () => projects.Update(project.Id, project.Title, project.ClientName, null, 50000m, ProjectStatus.Quote),
-                "Cancelar");
+            Assert.Throws(() => projects.ChangeStatus(project.Id, ProjectStatus.Quote), "Cancelar");
+        });
+
+        run("Correctitud: editar un proyecto ya no puede moverlo de estado", () =>
+        {
+            // Corregir una falta de ortografía en el título no debería poder dar por
+            // arrancado un trabajo: por eso Editar dejó de llevar el estado.
+            var project = projects.Create("Mesda ratona", "Cliente exigente", null, 40000m, ProjectStatus.Approved);
+
+            projects.Update(project.Id, "Mesa ratona", project.ClientName, null, 40000m);
+
+            var reloaded = projects.GetProjects(false, null, "Mesa ratona").Single();
+            Assert.Equal(reloaded.Status, ProjectStatus.Approved, "estado tras editar los datos");
         });
 
         run("Correctitud: el avance normal del trabajo sigue permitido", () =>
         {
-            var project = projects.Create("Trabajo que avanza", "Cliente paciente", null, 50000m, ProjectStatus.InProgress);
+            var project = projects.Create("Trabajo que avanza", "Cliente paciente", null, 50000m, ProjectStatus.Approved);
 
-            projects.Update(project.Id, project.Title, project.ClientName, null, 50000m, ProjectStatus.Completed);
-            projects.Update(project.Id, project.Title, project.ClientName, null, 50000m, ProjectStatus.Delivered);
+            projects.ChangeStatus(project.Id, ProjectStatus.InProgress);
+            projects.ChangeStatus(project.Id, ProjectStatus.Completed);
 
             var reloaded = projects.GetProjects(false, null, "Trabajo que avanza").Single();
-            Assert.Equal(reloaded.Status, ProjectStatus.Delivered, "estado tras el avance normal");
+            Assert.Equal(reloaded.Status, ProjectStatus.Completed, "estado tras el avance normal");
 
             // Y la marcha atrás de un paso, para corregir un clic equivocado.
-            projects.Update(project.Id, project.Title, project.ClientName, null, 50000m, ProjectStatus.Completed);
+            projects.ChangeStatus(project.Id, ProjectStatus.InProgress);
             Assert.Equal(
                 projects.GetProjects(false, null, "Trabajo que avanza").Single().Status,
-                ProjectStatus.Completed,
+                ProjectStatus.InProgress,
                 "estado tras corregir");
+        });
+
+        run("Correctitud: un trabajo chico se marca listo sin pasar por el taller", () =>
+        {
+            // Se aprueba, se hace y se entrega en el día: obligar a tocar «Iniciar
+            // trabajo» primero sería puro trámite.
+            var project = projects.Create("Estante al toque", "Cliente apurado", null, 15000m, ProjectStatus.Approved);
+
+            projects.ChangeStatus(project.Id, ProjectStatus.Completed);
+
+            Assert.Equal(
+                projects.GetProjects(false, null, "Estante al toque").Single().Status,
+                ProjectStatus.Completed,
+                "estado tras saltear el taller");
+        });
+
+        run("Correctitud: no hay camino a Entregado", () =>
+        {
+            // «Entregado» duplicaba a «Listo» y nadie lo marcaba. La v12 lo vació, y
+            // ninguna transición tiene que poder volver a meter una fila ahí.
+            var project = projects.Create("Trabajo sin entregar", "Cliente final", null, 30000m, ProjectStatus.Completed);
+
+            Assert.Throws(() => projects.ChangeStatus(project.Id, ProjectStatus.Delivered), "Entregado");
         });
 
         run("Correctitud: cancelar el trabajo devuelve los materiales al inventario", () =>
@@ -322,16 +355,243 @@ internal static class CorrectnessTests
             Assert.Equal(SingleProduct(inventory, "Guatambú cancelado").CurrentStock, 7m, "stock tras reaprobar");
         });
 
-        run("Correctitud: solo se cancela un trabajo en curso", () =>
+        run("Correctitud: solo se cancela un trabajo aprobado o en taller", () =>
         {
-            // Si el trabajo ya está terminado, el material se usó: devolverlo al
+            // Si el trabajo ya está listo, el material se usó: devolverlo al
             // inventario sería inventar existencias que no están en el galpón.
             var project = projects.Create("Trabajo terminado", "Cliente conforme", null, 80000m, ProjectStatus.InProgress);
-            projects.Update(project.Id, project.Title, project.ClientName, null, 80000m, ProjectStatus.Completed);
+            projects.ChangeStatus(project.Id, ProjectStatus.Completed);
 
-            Assert.Throws(() => quotes.CancelApproval(project.Id), "en curso");
+            Assert.Throws(() => quotes.CancelApproval(project.Id), "taller");
+        });
+
+        run("Correctitud: se cancela un trabajo aprobado que todavía no arrancó", () =>
+        {
+            // El material sigue en el galpón sin tocar, así que devolverlo es lo correcto.
+            var productId = inventory.CreateProduct("Melamina sin usar", 20m, 0m, "Metro", 2000m).Id;
+            var id = quotes.CreateQuote("Placard que no arrancó", "Cliente que se arrepintió", null).Id;
+            quotes.AddInventoryLine(id, productId, 6m);
+            quotes.SaveCalculation(id, 12000m, 3m, 30000m, BudgetRates.Defaults());
+
+            quotes.ApproveQuote(id);
+            Assert.Equal(RequireQuote(quotes, id).Status, ProjectStatus.Approved, "estado tras aprobar");
+            Assert.Equal(SingleProduct(inventory, "Melamina sin usar").CurrentStock, 14m, "stock tras aprobar");
+
+            quotes.CancelApproval(id);
+            Assert.Equal(SingleProduct(inventory, "Melamina sin usar").CurrentStock, 20m, "stock tras cancelar");
         });
     }
+
+    // --- Borrado de rechazados ------------------------------------------------
+
+    private static void RunRejectedDeletionTests(
+        Action<string, Action> run,
+        DatabaseService database,
+        InventoryService inventory,
+        QuoteService quotes,
+        ProjectService projects)
+    {
+        run("Rechazado: se borra junto con su desglose", () =>
+        {
+            // El borrado general corta si hay líneas de presupuesto cargadas, que es
+            // cualquier presupuesto cotizado de verdad: los rechazados no se podían sacar
+            // nunca de la lista.
+            var id = QuoteWithLines(inventory, quotes, "Ropero descartado", "Cliente que no compró");
+            quotes.RejectQuote(id);
+
+            Assert.Throws(() => projects.Delete(id), "presupuesto");
+
+            quotes.DeleteRejected(id);
+
+            Assert.Equal(
+                projects.GetProjects(false, null, "Ropero descartado").Count,
+                0,
+                "proyectos que quedaron con ese nombre");
+            Assert.True(quotes.GetDetail(id) is null, "el presupuesto tendría que haber desaparecido.");
+        });
+
+        run("Rechazado: con cobros registrados no se borra", () =>
+        {
+            // La plata entró: borrarlo la dejaría sin explicación en los papeles.
+            var id = QuoteWithLines(inventory, quotes, "Mesa con seña", "Cliente que adelantó");
+            AddPaymentDirectly(database, id, 30000m);
+            quotes.RejectQuote(id);
+
+            Assert.Throws(() => quotes.DeleteRejected(id), "cobros");
+            Assert.True(quotes.GetDetail(id) is not null, "tenía que seguir estando.");
+        });
+
+        run("Rechazado: un presupuesto abierto no se borra por este camino", () =>
+        {
+            var id = QuoteWithLines(inventory, quotes, "Placard vigente", "Cliente que está pensando");
+
+            Assert.Throws(() => quotes.DeleteRejected(id), "rechazado");
+        });
+
+        run("Rechazado: borrar uno adjunto no rompe el enganche del otro", () =>
+        {
+            // La clave hacia el adjunto es ON DELETE RESTRICT: si el enganche no se saca
+            // primero, el borrado falla con un error de base que nadie entiende.
+            var parentId = QuoteWithLines(inventory, quotes, "Cocina principal", "Cliente con dos trabajos");
+            var attachedId = QuoteWithLines(inventory, quotes, "Alacena aparte", "Cliente con dos trabajos");
+
+            quotes.AttachQuote(parentId, attachedId);
+            quotes.RejectQuote(attachedId);
+            quotes.DeleteRejected(attachedId);
+
+            var parent = quotes.GetDetail(parentId);
+            Assert.True(parent is not null, "el principal tenía que sobrevivir.");
+            Assert.Equal(parent!.Attachments.Count, 0, "adjuntos que quedaron colgando");
+        });
+    }
+
+    /// <summary>Un presupuesto cotizado de verdad: con líneas y con precio.</summary>
+    private static int QuoteWithLines(
+        InventoryService inventory,
+        QuoteService quotes,
+        string title,
+        string clientName)
+    {
+        var productId = inventory.CreateProduct($"Insumo {Guid.NewGuid():N}", 50m, 0m, "Metro", 1000m).Id;
+        var id = quotes.CreateQuote(title, clientName, null).Id;
+        quotes.AddInventoryLine(id, productId, 3m);
+        quotes.SaveCalculation(id, 3000m, 1m, 25000m, BudgetRates.Defaults());
+        return id;
+    }
+
+    /// <summary>
+    /// Un cobro escrito directo en la base: registrarlo por el servicio pediría una caja
+    /// abierta, y acá lo único que importa es que el cobro exista.
+    /// </summary>
+    private static void AddPaymentDirectly(DatabaseService database, int projectId, decimal amount)
+    {
+        using var context = database.CreateContext();
+        context.ProjectPayments.Add(new ProjectPayment
+        {
+            ProjectId = projectId,
+            Kind = PaymentKind.Deposit,
+            Amount = amount,
+            Method = PaymentMethod.Transfer,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        context.SaveChanges();
+    }
+
+    // --- Atraso ---------------------------------------------------------------
+
+    private static void RunOverdueTests(
+        Action<string, Action> run,
+        DatabaseService database,
+        InventoryService inventory,
+        QuoteService quotes,
+        ProjectService projects)
+    {
+        run("Atraso: con los días vencidos y en taller, el trabajo avisa", () =>
+        {
+            var id = ApproveWithDays(inventory, quotes, "Ropero atrasado", "Cliente que espera", foremanDays: 2m);
+            BackdateApproval(database, id, days: 5);
+            projects.ChangeStatus(id, ProjectStatus.InProgress);
+
+            var item = SingleProject(projects, "Ropero atrasado");
+            Assert.True(item.IsOverdue, "prometido a 2 días y aprobado hace 5: tendría que avisar.");
+            Assert.Equal(item.OverdueDays, 3, "días de atraso");
+            Assert.Equal(item.OverdueDisplay, "Atrasado · 3 días", "texto del chip");
+        });
+
+        run("Atraso: al marcar listo deja de figurar", () =>
+        {
+            var id = ApproveWithDays(inventory, quotes, "Mesa que se terminó", "Cliente conforme", foremanDays: 1m);
+            BackdateApproval(database, id, days: 9);
+
+            Assert.True(SingleProject(projects, "Mesa que se terminó").IsOverdue, "antes de terminarla, avisa.");
+
+            projects.ChangeStatus(id, ProjectStatus.Completed);
+
+            Assert.False(
+                SingleProject(projects, "Mesa que se terminó").IsOverdue,
+                "un trabajo listo cumplió, aunque haya tardado.");
+        });
+
+        run("Atraso: sin días cotizados no avisa nunca", () =>
+        {
+            // No hay plazo acordado, así que inventarle uno sería avisar de algo que
+            // nadie prometió.
+            var id = ApproveWithDays(inventory, quotes, "Trabajo sin plazo", "Cliente sin apuro", foremanDays: 0m);
+            BackdateApproval(database, id, days: 60);
+
+            var item = SingleProject(projects, "Trabajo sin plazo");
+            Assert.False(item.IsOverdue, "sin días cotizados no hay promesa que romper.");
+            Assert.True(item.PromisedDate is null, "y tampoco tendría que haber fecha prometida.");
+        });
+
+        run("Atraso: diez días de operario no se leen como nueve", () =>
+        {
+            // Los días son decimal guardados como TEXT en SQLite. Si el máximo se calculara
+            // en SQL compararía como texto, «9» daría mayor que «10», y un trabajo de diez
+            // días figuraría vencido un día antes de tiempo.
+            var id = ApproveWithDays(
+                inventory, quotes, "Cocina de diez días", "Cliente paciente", foremanDays: 1m,
+                workerDays: [9m, 10m]);
+            BackdateApproval(database, id, days: 10);
+
+            var item = SingleProject(projects, "Cocina de diez días");
+            Assert.Equal(item.PromisedDate, DateTime.Today, "la promesa sale del operario más largo, no del texto mayor.");
+            Assert.False(item.IsOverdue, "el día prometido todavía no venció.");
+        });
+
+        run("Atraso: los días se cuentan en paralelo, no sumados", () =>
+        {
+            // Dos personas de tres días cada una siguen siendo tres días de taller.
+            var id = ApproveWithDays(
+                inventory, quotes, "Placard entre dos", "Cliente del centro", foremanDays: 3m,
+                workerDays: [3m]);
+            BackdateApproval(database, id, days: 4);
+
+            Assert.True(
+                SingleProject(projects, "Placard entre dos").IsOverdue,
+                "si sumara los días, seis, todavía no avisaría a los cuatro.");
+        });
+    }
+
+    /// <summary>Cotiza, carga un material y los operarios, y aprueba: un trabajo con fecha.</summary>
+    /// <remarks>
+    /// Los operarios van antes de aprobar porque después el presupuesto queda cerrado, que
+    /// es justamente lo que garantiza que los días de la promesa sean los cotizados.
+    /// </remarks>
+    private static int ApproveWithDays(
+        InventoryService inventory,
+        QuoteService quotes,
+        string title,
+        string clientName,
+        decimal foremanDays,
+        params decimal[] workerDays)
+    {
+        var productId = inventory.CreateProduct($"Insumo {Guid.NewGuid():N}", 100m, 0m, "Metro", 1000m).Id;
+        var id = quotes.CreateQuote(title, clientName, null).Id;
+        quotes.AddInventoryLine(id, productId, 1m);
+
+        var index = 1;
+        foreach (var days in workerDays)
+        {
+            quotes.AddLaborLine(id, null, $"Operario {index++}", days, 20000m);
+        }
+
+        quotes.SaveCalculation(id, 1000m, foremanDays, 25000m, BudgetRates.Defaults());
+        quotes.ApproveQuote(id);
+        return id;
+    }
+
+    /// <summary>Envejece la aprobación, que es de lo único que depende el atraso.</summary>
+    private static void BackdateApproval(DatabaseService database, int projectId, int days)
+    {
+        using var context = database.CreateContext();
+        var project = context.Projects.First(p => p.Id == projectId);
+        project.ApprovedAtUtc = DateTime.UtcNow.AddDays(-days);
+        context.SaveChanges();
+    }
+
+    private static ProjectListItem SingleProject(ProjectService projects, string title) =>
+        projects.GetProjects(false, null, title).Single();
 
     // --- Respaldos ------------------------------------------------------------
 

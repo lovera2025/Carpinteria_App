@@ -42,21 +42,118 @@ public sealed class ProjectService
                 || EF.Functions.Like(p.ClientName, $"%{term}%"));
         }
 
-        return query
+        var rows = query
             .OrderByDescending(p => p.UpdatedAtUtc)
-            .Select(p => new ProjectListItem
+            .Select(p => new
             {
-                Id = p.Id,
-                Title = p.Title,
-                ClientName = p.ClientName,
-                Description = p.Description,
-                Status = p.Status,
-                Budget = p.Budget,
-                IsArchived = p.IsArchived,
+                p.Id,
+                p.Title,
+                p.ClientName,
+                p.Description,
+                p.Status,
+                p.Budget,
+                p.IsArchived,
+                p.ApprovedAtUtc,
+                p.EstimatedDays,
                 MaterialCount = context.ProjectMaterials.Count(m => m.ProjectId == p.Id),
                 AssignmentCount = context.ProjectAssignments.Count(a => a.ProjectId == p.Id)
             })
             .ToList();
+
+        var workerDays = ReadLongestWorkerDays(context, rows.Select(r => r.Id).ToList());
+
+        return rows
+            .Select(r => new ProjectListItem
+            {
+                Id = r.Id,
+                Title = r.Title,
+                ClientName = r.ClientName,
+                Description = r.Description,
+                Status = r.Status,
+                Budget = r.Budget,
+                IsArchived = r.IsArchived,
+                MaterialCount = r.MaterialCount,
+                AssignmentCount = r.AssignmentCount,
+                PromisedDate = BuildPromisedDate(
+                    r.ApprovedAtUtc, r.EstimatedDays, workerDays.GetValueOrDefault(r.Id))
+            })
+            .ToList();
+    }
+
+    /// <summary>Cuántos trabajos del taller pasaron su fecha prometida.</summary>
+    /// <remarks>
+    /// Trae sólo los que pueden estar atrasados —activos y con fecha de aprobación— en vez
+    /// de recorrer la lista entera: lo llama la pantalla de Inicio en cada refresco.
+    /// </remarks>
+    public int GetOverdueCount()
+    {
+        using var context = _databaseService.CreateContext();
+
+        var rows = context.Projects
+            .AsNoTracking()
+            .Where(p => !p.IsArchived
+                && (p.Status == ProjectStatus.Approved || p.Status == ProjectStatus.InProgress)
+                && p.ApprovedAtUtc != null)
+            .Select(p => new { p.Id, p.ApprovedAtUtc, p.EstimatedDays })
+            .ToList();
+
+        var workerDays = ReadLongestWorkerDays(context, rows.Select(r => r.Id).ToList());
+        var today = DateTime.Today;
+
+        return rows.Count(r =>
+            BuildPromisedDate(r.ApprovedAtUtc, r.EstimatedDays, workerDays.GetValueOrDefault(r.Id))
+                is { } promised && promised < today);
+    }
+
+    /// <summary>Días del operario que más tarda, por proyecto.</summary>
+    /// <remarks>
+    /// El <c>Max</c> se hace en memoria a propósito. Los días son <c>decimal</c> guardados
+    /// como <c>TEXT</c> en SQLite, y traducido a SQL el máximo compararía como texto: «9»
+    /// saldría mayor que «10» y un trabajo de diez días parecería de nueve.
+    /// </remarks>
+    private static Dictionary<int, decimal> ReadLongestWorkerDays(AppDbContext context, List<int> projectIds)
+    {
+        if (projectIds.Count == 0)
+        {
+            return [];
+        }
+
+        return context.ProjectLaborLines
+            .AsNoTracking()
+            .Where(l => projectIds.Contains(l.ProjectId))
+            .Select(l => new { l.ProjectId, l.Days })
+            .ToList()
+            .GroupBy(l => l.ProjectId)
+            .ToDictionary(g => g.Key, g => g.Max(l => l.Days));
+    }
+
+    /// <summary>Cuándo quedó prometido el trabajo: la fecha de aprobación más los días cotizados.</summary>
+    /// <remarks>
+    /// Se toma el máximo entre los días del jefe y los del operario más largo, no la suma:
+    /// en el taller trabajan en paralelo, así que dos personas de tres días cada una siguen
+    /// siendo tres días de trabajo, no seis.
+    /// </remarks>
+    private static DateTime? BuildPromisedDate(
+        DateTime? approvedAtUtc,
+        decimal? foremanDays,
+        decimal longestWorkerDays)
+    {
+        if (approvedAtUtc is not { } approved)
+        {
+            return null;
+        }
+
+        var days = Math.Max(foremanDays ?? 0m, longestWorkerDays);
+
+        // Sin días cotizados no hay promesa que romper: ese trabajo no avisa nunca. Es
+        // preferible a inventarle un plazo que nadie acordó.
+        if (days <= 0m)
+        {
+            return null;
+        }
+
+        // Medio día de trabajo igual ocupa el día entero en el calendario del taller.
+        return approved.ToLocalTime().Date.AddDays((double)Math.Ceiling(days));
     }
 
     public IReadOnlyList<ProjectMaterialItem> GetProjectMaterials(int projectId)
@@ -122,7 +219,13 @@ public sealed class ProjectService
         return project;
     }
 
-    public void Update(int id, string title, string clientName, string? description, decimal? budget, ProjectStatus status)
+    /// <summary>Edita los datos del proyecto. El estado no se toca acá.</summary>
+    /// <remarks>
+    /// Editar y avanzar el trabajo son dos cosas distintas: corregir una falta de ortografía
+    /// en el título no debería poder mover un trabajo de taller. El estado se cambia con los
+    /// botones de la barra, que pasan por <see cref="ChangeStatus"/>.
+    /// </remarks>
+    public void Update(int id, string title, string clientName, string? description, decimal? budget)
     {
         ValidateProject(title, clientName, budget);
 
@@ -130,15 +233,33 @@ public sealed class ProjectService
         var project = context.Projects.FirstOrDefault(p => p.Id == id)
             ?? throw new InvalidOperationException("Proyecto no encontrado.");
 
-        // El formulario ya solo ofrece los estados alcanzables, pero el que garantiza es
-        // esto: las transiciones que faltan acá son las que mueven inventario, y saltearlas
-        // deja el stock descontado sin trabajo que lo justifique.
-        ProjectStatusPolicy.RequireManual(project.Status, status);
-
         project.Title = title.Trim();
         project.ClientName = clientName.Trim();
         project.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         project.Budget = budget;
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    /// <summary>Avance del trabajo en el taller: iniciar, marcar listo, volver al taller.</summary>
+    /// <remarks>
+    /// Los botones ya solo ofrecen lo alcanzable, pero el que garantiza es esto: las
+    /// transiciones que la política no incluye son las que mueven inventario, y saltearlas
+    /// deja el stock descontado sin trabajo que lo justifique.
+    /// </remarks>
+    public void ChangeStatus(int id, ProjectStatus status)
+    {
+        using var context = _databaseService.CreateContext();
+        var project = context.Projects.FirstOrDefault(p => p.Id == id)
+            ?? throw new InvalidOperationException("Proyecto no encontrado.");
+
+        if (project.IsArchived)
+        {
+            throw new InvalidOperationException("El proyecto está archivado.");
+        }
+
+        ProjectStatusPolicy.RequireManual(project.Status, status);
+
         project.Status = status;
         project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();

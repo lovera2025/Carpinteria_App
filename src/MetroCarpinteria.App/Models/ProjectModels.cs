@@ -15,9 +15,31 @@ public sealed class ProjectListItem
     public int MaterialCount { get; init; }
     public int AssignmentCount { get; init; }
 
+    /// <summary>
+    /// Fecha en la que el trabajo tendría que estar listo: la aprobación más los días
+    /// cotizados. Null cuando no se cotizaron días, y entonces nunca figura atrasado.
+    /// </summary>
+    public DateTime? PromisedDate { get; init; }
+
     public string StatusLabel => ProjectStatusHelper.GetLabel(Status);
 
     public string BudgetDisplay => Helpers.AppCulture.Money(Budget);
+
+    /// <remarks>
+    /// Sólo avisan los que todavía se pueden terminar. Uno listo cumplió —aunque haya
+    /// tardado— y uno archivado ya no es asunto del taller.
+    /// </remarks>
+    public bool IsOverdue =>
+        !IsArchived
+        && Status is ProjectStatus.Approved or ProjectStatus.InProgress
+        && PromisedDate is { } promised
+        && promised < DateTime.Today;
+
+    public int OverdueDays => IsOverdue ? (DateTime.Today - PromisedDate!.Value).Days : 0;
+
+    public string OverdueDisplay => OverdueDays == 1
+        ? "Atrasado · 1 día"
+        : $"Atrasado · {OverdueDays} días";
 }
 
 public sealed class ProjectMaterialItem
@@ -74,6 +96,16 @@ public sealed class ProjectStatusOption
 {
     public ProjectStatus? Status { get; init; }
     public required string Label { get; init; }
+
+    /// <summary>
+    /// El filtro «Atrasados», que no es un estado sino una condición sobre la fecha
+    /// prometida.
+    /// </summary>
+    /// <remarks>
+    /// Hace falta este campo aparte porque <see cref="Status"/> en null ya significa
+    /// «todos los estados»: sin el discriminador, atrasados y todos serían la misma opción.
+    /// </remarks>
+    public bool OverdueOnly { get; init; }
 }
 
 public static class ProjectStatusHelper
@@ -81,29 +113,36 @@ public static class ProjectStatusHelper
     public static string GetLabel(ProjectStatus status) => status switch
     {
         ProjectStatus.Quote => "Presupuesto",
-        ProjectStatus.InProgress => "En curso",
-        ProjectStatus.Completed => "Terminado",
+        ProjectStatus.Approved => "Aprobado",
+        ProjectStatus.InProgress => "En taller",
+        ProjectStatus.Completed => "Listo",
         ProjectStatus.Delivered => "Entregado",
         ProjectStatus.Rejected => "Rechazado",
         _ => status.ToString()
     };
 
+    /// <remarks>
+    /// «Entregado» no se ofrece: dejó de usarse en la v12 y la migración vació el estado.
+    /// Sigue teniendo etiqueta en <see cref="GetLabel"/> por si alguna fila no migró, pero
+    /// nadie tiene que poder volver a meterse ahí.
+    /// </remarks>
     public static IReadOnlyList<ProjectStatusOption> GetFilterOptions() =>
     [
         new ProjectStatusOption { Status = null, Label = "Todos los estados" },
         new ProjectStatusOption { Status = ProjectStatus.Quote, Label = "Presupuesto" },
-        new ProjectStatusOption { Status = ProjectStatus.InProgress, Label = "En curso" },
-        new ProjectStatusOption { Status = ProjectStatus.Completed, Label = "Terminado" },
-        new ProjectStatusOption { Status = ProjectStatus.Delivered, Label = "Entregado" },
-        new ProjectStatusOption { Status = ProjectStatus.Rejected, Label = "Rechazado" }
+        new ProjectStatusOption { Status = ProjectStatus.Approved, Label = "Aprobado" },
+        new ProjectStatusOption { Status = ProjectStatus.InProgress, Label = "En taller" },
+        new ProjectStatusOption { Status = ProjectStatus.Completed, Label = "Listo" },
+        new ProjectStatusOption { Status = ProjectStatus.Rejected, Label = "Rechazado" },
+        new ProjectStatusOption { Status = null, OverdueOnly = true, Label = "Atrasados" }
     ];
 
     public static IReadOnlyList<ProjectStatusOption> GetEditOptions() =>
     [
         new ProjectStatusOption { Status = ProjectStatus.Quote, Label = "Presupuesto" },
-        new ProjectStatusOption { Status = ProjectStatus.InProgress, Label = "En curso" },
-        new ProjectStatusOption { Status = ProjectStatus.Completed, Label = "Terminado" },
-        new ProjectStatusOption { Status = ProjectStatus.Delivered, Label = "Entregado" },
+        new ProjectStatusOption { Status = ProjectStatus.Approved, Label = "Aprobado" },
+        new ProjectStatusOption { Status = ProjectStatus.InProgress, Label = "En taller" },
+        new ProjectStatusOption { Status = ProjectStatus.Completed, Label = "Listo" },
         new ProjectStatusOption { Status = ProjectStatus.Rejected, Label = "Rechazado" }
     ];
 }

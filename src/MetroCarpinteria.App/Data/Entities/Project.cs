@@ -40,6 +40,16 @@ public class Project
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 
+    /// <summary>
+    /// Cuándo se aprobó el presupuesto. De acá arranca la cuenta de los días prometidos,
+    /// así que es lo que decide si un trabajo figura atrasado.
+    /// </summary>
+    /// <remarks>
+    /// No sirve <see cref="UpdatedAtUtc"/> para esto: se mueve con cualquier retoque y
+    /// haría que la promesa se corriera sola cada vez que alguien abre la ficha.
+    /// </remarks>
+    public DateTime? ApprovedAtUtc { get; set; }
+
     // Entradas del cálculo congeladas al momento de cotizar. Guardar las entradas y no
     // los importes permite reconstruir el desglose entero sin que se mueva si mañana
     // cambian los porcentajes por defecto del taller.
@@ -83,6 +93,16 @@ public class Project
     /// materiales y empezar, el resto al terminar.
     /// </summary>
     public string? CommitmentText { get; set; }
+
+    /// <summary>
+    /// Si los presupuestos adjuntos suman al TOTAL y al saldo del papel del cliente.
+    /// </summary>
+    /// <remarks>
+    /// Apagado por defecto: adjuntar un trabajo del mismo cliente es agruparlo en un solo
+    /// papel, no cobrarlo junto. Prenderlo es una decisión aparte y explícita, porque
+    /// cambia el número grande que el cliente lee.
+    /// </remarks>
+    public bool IncludeAttachmentsInTotal { get; set; }
 
     public ICollection<ProjectMaterial> Materials { get; set; } = [];
     public ICollection<ProjectAssignment> Assignments { get; set; } = [];

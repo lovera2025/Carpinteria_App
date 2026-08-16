@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 11;
+    public const int LatestVersion = 12;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -80,7 +80,8 @@ public sealed class SchemaMigrator
         new(8, "Fotos de referencia en presupuestos", ApplyQuoteImages),
         new(9, "Mano de obra por operario", ApplyLaborLines),
         new(10, "Aviso de seña y presupuestos adjuntos", ApplyCommitmentAndAttachments),
-        new(11, "Ajuste de desglose y jornales pagados", ApplyPriceAdjustmentAndAssignmentPaid)
+        new(11, "Ajuste de desglose y jornales pagados", ApplyPriceAdjustmentAndAssignmentPaid),
+        new(12, "Ciclo del taller y adjuntos en el total", ApplyWorkshopCycle, TransformsData: true)
     ];
 
     /// <summary>
@@ -413,6 +414,40 @@ public sealed class SchemaMigrator
 
         AddColumnIfMissing(
             connection, transaction, "ProjectAssignments", "IsPaid", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    /// <summary>
+    /// El ciclo del taller —cuándo se aprobó cada trabajo, para saber qué se está
+    /// atrasando— y el tilde que suma los presupuestos adjuntos al total del papel.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// «Entregado» deja de ofrecerse: duplicaba a «Listo» y en la práctica nadie lo
+    /// marcaba, así que las filas que habían quedado ahí pasan a <c>Completed</c>.
+    /// </para>
+    /// <para>
+    /// El estado «Aprobado» arranca vacío a propósito. Los trabajos que hoy están
+    /// <c>InProgress</c> ya se están haciendo de verdad, y moverlos a la sala de espera
+    /// sería mentir sobre lo que pasa en el taller.
+    /// </para>
+    /// </remarks>
+    private static void ApplyWorkshopCycle(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        AddColumnIfMissing(
+            connection, transaction, "Projects", "IncludeAttachmentsInTotal", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(connection, transaction, "Projects", "ApprovedAtUtc", "TEXT NULL");
+
+        Execute(connection, transaction, "UPDATE Projects SET Status = 3 WHERE Status = 4;");
+
+        // Sin fecha de aprobación no hay atraso que calcular, y ningún trabajo viejo la
+        // tiene. UpdatedAtUtc es lo más cercano que hay: no es exacta —uno que se tocó ayer
+        // va a parecer recién aprobado y no va a avisar— pero es preferible a que los
+        // trabajos anteriores a esta versión queden fuera del aviso para siempre.
+        Execute(connection, transaction, """
+            UPDATE Projects
+               SET ApprovedAtUtc = UpdatedAtUtc
+             WHERE Status IN (2, 3) AND ApprovedAtUtc IS NULL;
+            """);
     }
 
     /// <summary>

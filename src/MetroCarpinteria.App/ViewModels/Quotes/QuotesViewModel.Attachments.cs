@@ -29,7 +29,59 @@ public partial class QuotesViewModel
             }
 
             return Phrases.Count(Attachments.Count, "trabajo adjunto", "trabajos adjuntos") +
-                   " · no entran en el total de éste";
+                   (IncludeAttachmentsInTotal
+                       ? " · suman al total de éste"
+                       : " · no entran en el total de éste");
+        }
+    }
+
+    /// <summary>
+    /// Si los adjuntos suman al TOTAL del papel del cliente.
+    /// </summary>
+    /// <remarks>
+    /// Apagado por defecto: adjuntar es agrupar los trabajos de un cliente en una sola hoja,
+    /// que no es lo mismo que cobrarlos juntos. Prenderlo cambia el número grande que el
+    /// cliente lee, así que es una decisión aparte y explícita.
+    /// </remarks>
+    public bool IncludeAttachmentsInTotal
+    {
+        get => Detail?.IncludeAttachmentsInTotal ?? false;
+        set
+        {
+            if (Detail is null || Detail.IncludeAttachmentsInTotal == value)
+            {
+                return;
+            }
+
+            try
+            {
+                AppHost.QuoteService.SaveIncludeAttachmentsInTotal(Detail.Id, value);
+                LoadDetail();
+
+                OnPropertyChanged(nameof(IncludeAttachmentsInTotal));
+                OnPropertyChanged(nameof(AttachmentsSummary));
+                OnPropertyChanged(nameof(AttachmentsTotalHint));
+            }
+            catch (Exception ex)
+            {
+                SetStatus(ex.Message, isError: true);
+            }
+        }
+    }
+
+    /// <summary>Lo que el papel va a decir, para que el tilde no se pruebe imprimiendo.</summary>
+    public string AttachmentsTotalHint
+    {
+        get
+        {
+            if (Detail is null || Attachments.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return IncludeAttachmentsInTotal
+                ? $"El TOTAL del PDF va a decir {Detail.PrintedTotalDisplay}, sumando este trabajo y los adjuntos."
+                : $"El TOTAL del PDF va a decir {Detail.BudgetDisplay}, solo este trabajo.";
         }
     }
 
@@ -89,6 +141,8 @@ public partial class QuotesViewModel
 
         OnPropertyChanged(nameof(HasAttachments));
         OnPropertyChanged(nameof(AttachmentsSummary));
+        OnPropertyChanged(nameof(IncludeAttachmentsInTotal));
+        OnPropertyChanged(nameof(AttachmentsTotalHint));
     }
 
     private void OpenAttachmentPicker()
