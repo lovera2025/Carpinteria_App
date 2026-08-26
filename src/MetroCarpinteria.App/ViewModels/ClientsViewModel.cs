@@ -26,6 +26,14 @@ public class ClientsViewModel : ViewModelBase
 
     private bool _isFormOpen;
     private bool _isCreating;
+
+    /// <summary>El cliente que el formulario está editando.</summary>
+    /// <remarks>
+    /// Va aparte de la selección a propósito: la lista puede cambiar de fila con el
+    /// formulario abierto, y Guardar le escribía a la fila seleccionada en ese momento
+    /// en vez de a la que se abrió.
+    /// </remarks>
+    private int? _editingClientId;
     private string _formName = string.Empty;
     private string _formPhone = string.Empty;
     private string _formEmail = string.Empty;
@@ -43,7 +51,7 @@ public class ClientsViewModel : ViewModelBase
         NewClientCommand = new RelayCommand(_ => StartNew());
         EditClientCommand = new RelayCommand(_ => StartEdit(), _ => SelectedClient is not null);
         SaveClientCommand = new RelayCommand(_ => SaveClient());
-        CancelFormCommand = new RelayCommand(_ => IsFormOpen = false);
+        CancelFormCommand = new RelayCommand(_ => CloseForm());
 
         ArchiveClientCommand = new AsyncRelayCommand(ArchiveSelectedAsync, () => CanArchiveSelected);
         RestoreClientCommand = new RelayCommand(_ => RestoreSelected(), _ => CanRestoreSelected);
@@ -290,6 +298,7 @@ public class ClientsViewModel : ViewModelBase
         FormAddress = string.Empty;
         FormNotes = string.Empty;
 
+        _editingClientId = null;
         IsCreating = true;
         IsFormOpen = true;
     }
@@ -301,6 +310,7 @@ public class ClientsViewModel : ViewModelBase
             return;
         }
 
+        _editingClientId = SelectedClient.Id;
         FormName = SelectedClient.Name;
         FormPhone = SelectedClient.Phone ?? string.Empty;
         FormEmail = SelectedClient.Email ?? string.Empty;
@@ -321,22 +331,23 @@ public class ClientsViewModel : ViewModelBase
                 var created = AppHost.ClientService.Create(
                     FormName, FormPhone, FormEmail, FormTaxId, FormAddress, FormNotes);
 
-                IsFormOpen = false;
+                CloseForm();
                 LoadClients();
                 SelectedClient = Clients.FirstOrDefault(c => c.Id == created.Id);
                 AppHost.NotificationService.Success($"Cliente «{created.Name}» creado.");
                 return;
             }
 
-            if (SelectedClient is null)
+            // A la ficha que se abrió, no a la que quedó seleccionada mientras tanto.
+            if (_editingClientId is not int clientId)
             {
                 return;
             }
 
             AppHost.ClientService.Update(
-                SelectedClient.Id, FormName, FormPhone, FormEmail, FormTaxId, FormAddress, FormNotes);
+                clientId, FormName, FormPhone, FormEmail, FormTaxId, FormAddress, FormNotes);
 
-            IsFormOpen = false;
+            CloseForm();
             LoadClients();
             AppHost.NotificationService.Success("Ficha actualizada.");
         }
@@ -344,6 +355,13 @@ public class ClientsViewModel : ViewModelBase
         {
             AppHost.NotificationService.Warning(ex.Message);
         }
+    }
+
+    private void CloseForm()
+    {
+        IsFormOpen = false;
+        IsCreating = false;
+        _editingClientId = null;
     }
 
     private async Task ArchiveSelectedAsync()

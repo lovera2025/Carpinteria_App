@@ -112,6 +112,14 @@ internal static class ScreenshotRunner
             Path.Combine(outputDirectory, "presupuestos-condiciones-comerciales.png"),
             NavigationSection.Quotes);
 
+        // El alta de un presupuesto: el formulario se adueña del panel y los pasos 1/2/3
+        // desaparecen, porque hasta guardar siguen siendo del presupuesto anterior.
+        var formWindow = new MetroCarpinteria.App.MainWindow();
+        var formVm = (MainViewModel)formWindow.DataContext!;
+        formVm.NavigateCommand.Execute(NavigationSection.Quotes);
+        formVm.NewInSectionCommand.Execute(null);
+        Render(formWindow, Path.Combine(outputDirectory, "presupuestos-alta-abierta.png"));
+
         // Y una en letra grande, que es donde se nota si algo recorta.
         theme.Apply(AppTheme.Light, FontScale.Large, persist: false);
         var bigWindow = new MetroCarpinteria.App.MainWindow();

@@ -92,7 +92,7 @@ public partial class QuotesViewModel
         }
     }
 
-    public bool CanAdjustPrice => Detail is { IsEditable: true } && HasResult;
+    public bool CanAdjustPrice => CanEditSelected && HasResult;
 
     public string RateWaste
     {
@@ -279,7 +279,7 @@ public partial class QuotesViewModel
 
             // Se guarda solo en presupuestos editables. Los TextBox de la vista usan
             // LostFocus, así que esto corre al salir del campo y no en cada tecla.
-            if (Detail is { IsEditable: true })
+            if (CanEditSelected && Detail is not null)
             {
                 AppHost.QuoteService.SaveCalculation(
                     Detail.Id, input.MaterialsCost, input.Days, input.DailyRate, input.Rates);

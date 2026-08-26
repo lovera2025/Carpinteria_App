@@ -21,6 +21,8 @@ public partial class QuotesViewModel
             if (SetProperty(ref _detail, value))
             {
                 OnPropertyChanged(nameof(HasSelection));
+                OnPropertyChanged(nameof(ShowQuoteBody));
+                OnPropertyChanged(nameof(ShowEmptyState));
                 OnPropertyChanged(nameof(CanEditSelected));
                 OnPropertyChanged(nameof(CanPrintForClient));
                 OnPropertyChanged(nameof(CanAdjustPrice));
@@ -40,7 +42,27 @@ public partial class QuotesViewModel
     }
 
     public bool HasSelection => Detail is not null;
-    public bool CanEditSelected => Detail is { IsEditable: true };
+
+    /// <summary>
+    /// Se puede tocar el presupuesto abierto.
+    /// </summary>
+    /// <remarks>
+    /// Con el formulario de cabecera arriba, no: lo que hay abajo todavía es del
+    /// presupuesto <em>anterior</em> y estos paneles graban sin pedir confirmación, así que
+    /// seguir el camino hacia abajo mientras se daba de alta otro le cargaba materiales y
+    /// precio al que no era.
+    /// </remarks>
+    public bool CanEditSelected => Detail is { IsEditable: true } && !IsFormOpen;
+
+    /// <summary>
+    /// Los pasos del presupuesto abierto. Se esconden con el formulario de cabecera
+    /// arriba, por el mismo motivo que <see cref="CanEditSelected"/>.
+    /// </summary>
+    public bool ShowQuoteBody => HasSelection && !IsFormOpen;
+
+    /// <summary>El cartel de «elegí uno de la lista» tampoco va con el formulario abierto.</summary>
+    public bool ShowEmptyState => !HasSelection && !IsFormOpen;
+
     public string MaterialsTotalDisplay => Detail?.MaterialsTotalDisplay ?? AppCulture.Money(0m);
 
     public string DetailStatusLabel
@@ -73,7 +95,27 @@ public partial class QuotesViewModel
     public bool IsFormOpen
     {
         get => _isFormOpen;
-        private set => SetProperty(ref _isFormOpen, value);
+        private set
+        {
+            if (SetProperty(ref _isFormOpen, value))
+            {
+                // Abrir la cabecera apaga todo lo de abajo: se esconde y además deja de
+                // aceptar cambios, que es lo que evita que un LostFocus tardío le grabe al
+                // presupuesto equivocado.
+                OnPropertyChanged(nameof(ShowQuoteBody));
+                OnPropertyChanged(nameof(ShowEmptyState));
+                OnPropertyChanged(nameof(CanEditSelected));
+                OnPropertyChanged(nameof(CanAdjustPrice));
+                OnPropertyChanged(nameof(CanEditCommercialTerms));
+
+                // Abrir o cerrar el formulario cambia el predicado de media pantalla
+                // —«Editar datos», «Duplicar» y todo lo que cuelga de CanEditSelected— y
+                // WPF cachea CanExecute hasta que algo pide el barrido. Es el mismo motivo
+                // por el que LoadQuotes lo pide: ningún comando de esta pantalla avisa por
+                // su cuenta.
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
     }
 
     public bool IsCreating
@@ -343,6 +385,7 @@ public partial class QuotesViewModel
         FormClientEmail = string.Empty;
         FormDescription = string.Empty;
         FormValidUntil = DateTime.Today.AddDays(Math.Max(0, AppHost.Settings.DefaultQuoteValidityDays));
+        _editingQuoteId = null;
         IsCreating = true;
         IsFormOpen = true;
         ClearStatus();
@@ -361,6 +404,7 @@ public partial class QuotesViewModel
         FormClientEmail = string.Empty;
         FormDescription = Detail.Description ?? string.Empty;
         FormValidUntil = Detail.ValidUntilLocal;
+        _editingQuoteId = Detail.Id;
         IsCreating = false;
         IsFormOpen = true;
         ClearStatus();
@@ -386,20 +430,32 @@ public partial class QuotesViewModel
 
                 CloseForm();
                 LoadQuotes();
+
+                if (Quotes.All(q => q.Id != created.Id))
+                {
+                    // Con un filtro puesto o algo escrito en el buscador, el recién creado
+                    // no entra en la lista: se acababa de crear y la pantalla mostraba
+                    // «Ningún presupuesto seleccionado», como si se hubiera esfumado.
+                    SearchText = string.Empty;
+                    SelectedFilter = FilterOptions[0];
+                    LoadQuotes();
+                }
+
                 SelectedQuote = Quotes.FirstOrDefault(q => q.Id == created.Id);
                 SetStatus($"Presupuesto «{created.Title}» creado.", isError: false);
                 return;
             }
 
-            if (Detail is null)
+            // Al que se abrió el formulario, no al que quedó seleccionado mientras tanto.
+            if (_editingQuoteId is not int quoteId)
             {
                 return;
             }
 
             AppHost.QuoteService.UpdateQuote(
-                Detail.Id, FormTitle, FormClientName, FormDescription, FormValidUntil);
+                quoteId, FormTitle, FormClientName, FormDescription, FormValidUntil);
 
-            LinkClient(Detail.Id);
+            LinkClient(quoteId);
 
             CloseForm();
             ReloadListAndDetail();
@@ -442,6 +498,7 @@ public partial class QuotesViewModel
     {
         IsFormOpen = false;
         IsCreating = false;
+        _editingQuoteId = null;
         ClientSuggestions.Clear();
         OnPropertyChanged(nameof(HasClientSuggestions));
     }

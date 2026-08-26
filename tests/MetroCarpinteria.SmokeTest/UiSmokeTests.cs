@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Documents;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
@@ -420,6 +421,99 @@ internal static class UiSmokeTests
             var client = AppHost.ClientService.GetClients(search: "Don Pedro").Single();
             Assert.Equal(client.Phone, "3777-777888", "teléfono conservado");
             Assert.Equal(client.Email, "pedro@ejemplo.com", "email conservado");
+        });
+
+        run("UI: editar la cabecera le escribe al presupuesto que se abrió, no al que quedó seleccionado", () =>
+        {
+            // El que reportó el taller: se abría «Editar datos» sobre uno, se tocaba otra
+            // fila de la lista —que cambia el detalle sin cerrar el formulario— y Guardar
+            // terminaba renombrando al segundo con los datos del primero.
+            var aId = AppHost.QuoteService.CreateQuote("Mesada de A", "Cliente A", null).Id;
+            var bId = AppHost.QuoteService.CreateQuote("Placard de B", "Cliente B", null).Id;
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == aId);
+            viewModel.EditQuoteCommand.Execute(null);
+            viewModel.FormTitle = "Mesada corregida";
+
+            // La lista cambia el presupuesto abierto por debajo del formulario.
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == bId);
+            viewModel.SaveQuoteCommand.Execute(null);
+
+            Assert.Equal(
+                AppHost.QuoteService.GetDetail(aId)!.Title, "Mesada corregida", "el que se abrió sí cambia");
+            Assert.Equal(
+                AppHost.QuoteService.GetDetail(bId)!.Title, "Placard de B", "el otro queda intacto");
+        });
+
+        run("UI: con el formulario de cabecera abierto no se toca el presupuesto de abajo", () =>
+        {
+            // Los pasos 1/2/3 graban solos al salir del foco y siempre contra el
+            // presupuesto abierto: mientras se da de alta otro, tienen que estar apagados.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            Assert.True(viewModel.ShowQuoteBody, "con un presupuesto elegido, los pasos se ven.");
+            Assert.True(viewModel.CanEditSelected, "y se pueden tocar.");
+
+            viewModel.NewQuoteCommand.Execute(null);
+
+            Assert.False(viewModel.ShowQuoteBody, "con el alta abierta, los pasos se esconden.");
+            Assert.False(viewModel.CanEditSelected, "y dejan de aceptar cambios.");
+            Assert.False(viewModel.EditQuoteCommand.CanExecute(null), "«Editar datos» no se puede apretar.");
+            Assert.False(viewModel.DuplicateCommand.CanExecute(null), "«Duplicar» tampoco.");
+
+            // Cancelar devuelve el presupuesto anterior intacto.
+            viewModel.CancelFormCommand.Execute(null);
+
+            Assert.True(viewModel.ShowQuoteBody, "al cancelar vuelven los pasos.");
+            Assert.Equal(viewModel.Detail!.Id, fixture.QuoteId, "y sigue siendo el mismo presupuesto.");
+        });
+
+        run("UI: la lista queda deshabilitada mientras el formulario de cabecera está abierto", () =>
+        {
+            // Los bindings nuevos se verifican sobre el control y no por lo que se ve: en
+            // WPF una ruta mal escrita deja la propiedad en su valor por omisión —la lista
+            // habilitada— sin romper nada ni avisar.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == fixture.QuoteId);
+
+            var view = BuildView(() => new QuotesView(), viewModel);
+            var grid = FindVisual<System.Windows.Controls.DataGrid>(view);
+            Assert.NotNull(grid, "la grilla de presupuestos tendría que estar en la vista");
+            Assert.True(grid!.IsEnabled, "sin formulario abierto la lista se toca normalmente.");
+
+            viewModel.NewQuoteCommand.Execute(null);
+            view.UpdateLayout();
+
+            Assert.False(grid.IsEnabled, "con el alta abierta la lista no se puede tocar.");
+
+            viewModel.CancelFormCommand.Execute(null);
+            view.UpdateLayout();
+
+            Assert.True(grid.IsEnabled, "al cancelar la lista vuelve a habilitarse.");
+        });
+
+        run("UI: el presupuesto recién creado aparece aunque haya algo en el buscador", () =>
+        {
+            // Con un filtro puesto, el nuevo no entraba en la lista y la pantalla quedaba
+            // en «Ningún presupuesto seleccionado»: se acababa de crear y parecía perdido.
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SearchText = "zzz-no-existe-nada-con-esto";
+
+            viewModel.NewQuoteCommand.Execute(null);
+            viewModel.FormTitle = "Biblioteca";
+            viewModel.FormClientName = "Cliente escondido";
+            viewModel.SaveQuoteCommand.Execute(null);
+
+            Assert.NotNull(viewModel.Detail, "el recién creado tendría que quedar abierto");
+            Assert.Equal(viewModel.Detail!.Title, "Biblioteca", "título del que quedó abierto");
+            Assert.Equal(viewModel.SearchText, string.Empty, "el buscador se limpia para que entre en la lista");
         });
 
         run("UI: StaffView + ViewModel", () =>
@@ -1711,5 +1805,46 @@ internal static class UiSmokeTests
         view.Measure(new Size(900, 600));
         view.Arrange(new Rect(0, 0, 900, 600));
         view.UpdateLayout();
+    }
+
+    /// <summary>
+    /// Dibuja la vista y la devuelve, para poder mirar los controles de adentro.
+    /// </summary>
+    /// <remarks>
+    /// Un binding mal escrito en WPF no rompe nada: la propiedad se queda en su valor por
+    /// omisión y la pantalla se dibuja como si nada. Leer el control es la única forma de
+    /// que un test note la diferencia.
+    /// </remarks>
+    private static FrameworkElement BuildView(Func<FrameworkElement> createView, object dataContext)
+    {
+        var view = createView();
+        view.DataContext = dataContext;
+        view.Measure(new Size(900, 600));
+        view.Arrange(new Rect(0, 0, 900, 600));
+        view.UpdateLayout();
+        return view;
+    }
+
+    /// <summary>El primer descendiente de ese tipo en el árbol visual, o null.</summary>
+    private static T? FindVisual<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindVisual<T>(child) is { } deeper)
+            {
+                return deeper;
+            }
+        }
+
+        return null;
     }
 }

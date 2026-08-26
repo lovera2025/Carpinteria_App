@@ -23,6 +23,14 @@ public class ProjectsViewModel : ViewModelBase
     private int _overdueCount;
     private bool _isFormOpen;
     private bool _isCreating;
+
+    /// <summary>El proyecto que el formulario está editando.</summary>
+    /// <remarks>
+    /// Va aparte de la selección a propósito: la lista puede cambiar de fila con el
+    /// formulario abierto, y Guardar le escribía a la fila seleccionada en ese momento
+    /// en vez de a la que se abrió.
+    /// </remarks>
+    private int? _editingProjectId;
     private string _formTitle = string.Empty;
     private string _formClientName = string.Empty;
     private string _formDescription = string.Empty;
@@ -496,6 +504,7 @@ public class ProjectsViewModel : ViewModelBase
         FormStatusOptions = ProjectStatusHelper.GetEditOptions();
         FormStatus = FormStatusOptions.First(o => o.Status == ProjectStatus.Quote);
 
+        _editingProjectId = null;
         IsCreating = true;
         IsFormOpen = true;
         ClearStatus();
@@ -508,6 +517,7 @@ public class ProjectsViewModel : ViewModelBase
             return;
         }
 
+        _editingProjectId = SelectedProject.Id;
         FormTitle = SelectedProject.Title;
         FormClientName = SelectedProject.ClientName;
         FormDescription = SelectedProject.Description ?? string.Empty;
@@ -547,10 +557,11 @@ public class ProjectsViewModel : ViewModelBase
                     FormTitle, FormClientName, FormDescription, budget, status);
                 SetStatus($"Proyecto «{project.Title}» creado.", isError: false);
             }
-            else if (SelectedProject is not null)
+            else if (_editingProjectId is int projectId)
             {
+                // Al que se abrió el formulario, no al que quedó seleccionado mientras tanto.
                 AppHost.ProjectService.Update(
-                    SelectedProject.Id, FormTitle, FormClientName, FormDescription, budget);
+                    projectId, FormTitle, FormClientName, FormDescription, budget);
                 SetStatus($"Proyecto «{FormTitle.Trim()}» actualizado.", isError: false);
             }
 
@@ -563,7 +574,12 @@ public class ProjectsViewModel : ViewModelBase
         }
     }
 
-    private void CloseForm() => IsFormOpen = false;
+    private void CloseForm()
+    {
+        IsFormOpen = false;
+        IsCreating = false;
+        _editingProjectId = null;
+    }
 
     private async Task ArchiveSelectedAsync()
     {

@@ -421,6 +421,20 @@ internal static class CorrectnessTests
             Assert.True(quotes.GetDetail(id) is not null, "tenía que seguir estando.");
         });
 
+        run("Proyecto: con cobros registrados tampoco se borra", () =>
+        {
+            // La contracara del anterior, que faltaba. Un trabajo anotado a mano —precio
+            // escrito directo, sin materiales ni personal— pasaba las tres validaciones, y
+            // como la clave foránea de los cobros cascadea, se borraba con la seña adentro.
+            var project = projects.Create(
+                "Banco a medida", "Cliente con adelanto", null, 120000m, ProjectStatus.InProgress);
+            AddPaymentDirectly(database, project.Id, 40000m);
+
+            Assert.Throws(() => projects.Delete(project.Id), "cobros");
+            Assert.NotNull(projects.DescribeDeleteBlock(project.Id), "tendría que explicar por qué");
+            Assert.True(quotes.GetDetail(project.Id) is not null, "el trabajo tenía que seguir estando.");
+        });
+
         run("Rechazado: un presupuesto abierto no se borra por este camino", () =>
         {
             var id = QuoteWithLines(inventory, quotes, "Placard vigente", "Cliente que está pensando");

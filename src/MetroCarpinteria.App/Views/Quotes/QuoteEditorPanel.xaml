@@ -84,7 +84,7 @@
 
         <!-- Sin selección -->
         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}">
+                Visibility="{Binding ShowEmptyState, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel>
                 <TextBlock Text="Ningún presupuesto seleccionado" FontSize="15" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6" />
@@ -95,7 +95,7 @@
 
         <!-- Cabecera del presupuesto -->
         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel>
                 <TextBlock Text="{Binding Detail.Title}" FontSize="17" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" />

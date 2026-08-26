@@ -301,6 +301,16 @@ public sealed class ProjectService
                 "No se puede eliminar un proyecto con materiales, personal o presupuesto cargado. Archivalo.");
         }
 
+        // La clave foránea de los cobros cascadea: sin esta guarda, borrar un proyecto
+        // cargado a mano —con el precio escrito directo y sin materiales ni personal— se
+        // llevaba puesta la seña y no quedaba rastro de una plata que el cliente sí pagó.
+        // Presupuestos ya lo cubría en DeleteRejected; acá faltaba.
+        if (context.ProjectPayments.Any(p => p.ProjectId == id))
+        {
+            throw new InvalidOperationException(
+                "No se puede eliminar un proyecto con cobros registrados. Anulá los cobros o archivalo.");
+        }
+
         // Esta fila es el adjunto de otro presupuesto: Restrict no deja borrar el proyecto
         // si queda el enganche. El anexo del padre se cae con el trabajo.
         context.ProjectQuoteAttachments.RemoveRange(
@@ -500,8 +510,9 @@ public sealed class ProjectService
         var materials = context.ProjectMaterials.Count(m => m.ProjectId == projectId);
         var assignments = context.ProjectAssignments.Count(a => a.ProjectId == projectId);
         var budgetLines = context.ProjectBudgetLines.Count(l => l.ProjectId == projectId);
+        var payments = context.ProjectPayments.Count(p => p.ProjectId == projectId);
 
-        if (materials == 0 && assignments == 0 && budgetLines == 0)
+        if (materials == 0 && assignments == 0 && budgetLines == 0 && payments == 0)
         {
             return null;
         }
@@ -521,6 +532,11 @@ public sealed class ProjectService
         if (budgetLines > 0)
         {
             reasons.Add(Phrases.Count(budgetLines, "línea de presupuesto", "líneas de presupuesto"));
+        }
+
+        if (payments > 0)
+        {
+            reasons.Add(Phrases.Count(payments, "cobro registrado", "cobros registrados"));
         }
 
         return $"No se puede eliminar: tiene {Phrases.JoinWithAnd(reasons)}. Archivalo en su lugar.";

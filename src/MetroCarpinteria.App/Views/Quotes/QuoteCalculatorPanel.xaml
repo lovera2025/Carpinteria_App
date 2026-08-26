@@ -12,8 +12,12 @@
          ajuste manual del precio final. El DataContext se hereda del contenedor, así que
          las rutas de binding son las mismas que cuando esto vivía dentro de QuotesView. -->
     <StackPanel>
-        <!-- Paso 2: precio -->
-        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+        <!-- Paso 2: precio. Sin presupuesto abierto se queda a la vista a propósito: sirve
+             de calculadora suelta para pasar un precio de memoria. Lo que sí la esconde es
+             el formulario de cabecera, porque ahí abajo todavía está el presupuesto
+             anterior y estos campos le graban al salir del foco. -->
+        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                Visibility="{Binding IsFormOpen, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=invert}">
             <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <Border Background="{DynamicResource PrimaryBrownBrush}" CornerRadius="11"
@@ -115,7 +119,7 @@
         <!-- Operarios: quiénes trabajan además del jefe. Cada uno con sus días y su jornal,
              porque no todos cobran lo mismo ni están la misma cantidad de días. -->
         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel>
                 <Grid Margin="0,0,0,4">
                     <TextBlock Text="OPERARIOS" FontSize="15" FontWeight="Bold"
@@ -399,7 +403,7 @@
         </Border>
 
         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel>
                 <TextBlock Text="Aviso de seña en el presupuesto" FontSize="16" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8" />

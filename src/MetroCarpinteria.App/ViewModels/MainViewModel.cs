@@ -73,7 +73,7 @@ public class MainViewModel : ObservableObject
         RefreshCommand = new RelayCommand(_ => RefreshSection(SelectedSection));
         NewInSectionCommand = new RelayCommand(_ => StartNewInSection());
         ToggleShortcutsCommand = new RelayCommand(_ => AreShortcutsVisible = !AreShortcutsVisible);
-        CloseOverlaysCommand = new RelayCommand(_ => AreShortcutsVisible = false);
+        CloseOverlaysCommand = new RelayCommand(_ => CloseOverlays());
 
         AppHost.ClockService.DayChanged += OnDayChanged;
     }
@@ -222,6 +222,36 @@ public class MainViewModel : ObservableObject
         {
             command.Execute(null);
         }
+    }
+
+    /// <summary>
+    /// Cierra lo que haya abierto, que es lo que promete el atajo Esc.
+    /// </summary>
+    /// <remarks>
+    /// Antes solo bajaba la ayuda de atajos, así que un formulario de alta se quedaba
+    /// abierto para siempre. En Presupuestos eso importaba de más: la lista seguía
+    /// cambiando el presupuesto de abajo y Guardar le escribía al que quedara seleccionado.
+    /// </remarks>
+    private void CloseOverlays()
+    {
+        if (AreShortcutsVisible)
+        {
+            // La ayuda está encima de todo: primero se baja ella y el formulario queda.
+            AreShortcutsVisible = false;
+            return;
+        }
+
+        var command = SelectedSection switch
+        {
+            NavigationSection.Inventory => _inventoryViewModel.CancelFormCommand,
+            NavigationSection.Quotes => _quotesViewModel.CancelFormCommand,
+            NavigationSection.Clients => _clientsViewModel.CancelFormCommand,
+            NavigationSection.Projects => _projectsViewModel.CancelFormCommand,
+            NavigationSection.Staff => _staffViewModel.CancelFormCommand,
+            _ => null
+        };
+
+        command?.Execute(null);
     }
 
     /// <summary>

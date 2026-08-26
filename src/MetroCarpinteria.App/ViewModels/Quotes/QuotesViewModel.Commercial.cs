@@ -159,7 +159,7 @@ public partial class QuotesViewModel
     }
 
     /// <summary>Solo se pactan condiciones sobre un presupuesto abierto y ya calculado.</summary>
-    public bool CanEditCommercialTerms => Detail is { IsEditable: true } && HasResult;
+    public bool CanEditCommercialTerms => CanEditSelected && HasResult;
 
     // --- Carga y guardado -----------------------------------------------------
 
@@ -215,7 +215,7 @@ public partial class QuotesViewModel
     /// <summary>Lee los campos y guarda. Corre solo, como el resto de la calculadora.</summary>
     private void ApplyCommercialTerms()
     {
-        if (_isLoadingDetail || Detail is not { IsEditable: true })
+        if (_isLoadingDetail || !CanEditSelected || Detail is not { } detail)
         {
             return;
         }
@@ -223,13 +223,13 @@ public partial class QuotesViewModel
         try
         {
             var terms = ReadTermsFromForm();
-            var commercial = AppHost.QuoteService.SaveCommercialTerms(Detail.Id, terms);
+            var commercial = AppHost.QuoteService.SaveCommercialTerms(detail.Id, terms);
 
             ShowCommercial(commercial);
 
             // Cambió el total: el renglón de la lista y el precio guardado tienen que
             // seguirlo, igual que después de recalcular.
-            RefreshRow(Detail.Id);
+            RefreshRow(detail.Id);
             RefreshDetailAfterCalculation();
         }
         catch (Exception ex)
@@ -311,7 +311,7 @@ public partial class QuotesViewModel
     /// <summary>Guarda el aviso. Corre al marcar el tilde y al salir de los campos.</summary>
     public void SaveCommitmentNote()
     {
-        if (_isLoadingDetail || Detail is not { IsEditable: true })
+        if (_isLoadingDetail || !CanEditSelected || Detail is not { } detail)
         {
             return;
         }
@@ -325,7 +325,7 @@ public partial class QuotesViewModel
             }
 
             AppHost.QuoteService.SaveCommitmentNote(
-                Detail.Id, ShowCommitmentNote, amount, CommitmentText);
+                detail.Id, ShowCommitmentNote, amount, CommitmentText);
 
             RefreshDetailAfterCalculation();
             OnPropertyChanged(nameof(ShowCommitmentOnTotal));

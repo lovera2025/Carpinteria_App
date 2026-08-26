@@ -12,8 +12,12 @@
     <!-- El DataContext se hereda del contenedor, así que las rutas de binding son las
          mismas que cuando esto vivía dentro de QuotesView. -->
     <Border Style="{StaticResource CardStyle}" Padding="0">
+        <!-- Con el formulario de cabecera abierto la lista no se toca: cambiar de fila
+             cambiaba el presupuesto de abajo sin cerrar el formulario, y Guardar terminaba
+             escribiéndole al que había quedado seleccionado. -->
         <DataGrid ItemsSource="{Binding Quotes}" SelectedItem="{Binding SelectedQuote}" BorderThickness="0"
                   Background="Transparent"
+                  IsEnabled="{Binding IsFormOpen, Converter={StaticResource InverseBoolConverter}}"
                   ctl:Ui.EmptyIcon="🧮"
                   ctl:Ui.EmptyTitle="Ningún presupuesto todavía"
                   ctl:Ui.EmptyMessage="Empezá con «+ Nuevo presupuesto». Cargar materiales no toca el inventario: el stock se descuenta recién cuando el cliente acepta.">

@@ -36,6 +36,18 @@ public partial class QuotesViewModel : ViewModelBase
 
     private bool _isFormOpen;
     private bool _isCreating;
+
+    /// <summary>
+    /// El presupuesto que el formulario de cabecera está editando.
+    /// </summary>
+    /// <remarks>
+    /// Va aparte de <see cref="Detail"/> a propósito. La lista, los filtros, el buscador y
+    /// hasta un F5 cambian el presupuesto abierto por debajo sin cerrar el formulario, y
+    /// Guardar le escribía a ese: se abría «Editar datos» sobre uno, se tocaba otra fila, y
+    /// el guardado terminaba renombrando al que estaba seleccionado en ese momento.
+    /// </remarks>
+    private int? _editingQuoteId;
+
     private string _formTitle = string.Empty;
     private string _formClientName = string.Empty;
     private string _formClientPhone = string.Empty;
@@ -122,9 +134,13 @@ public partial class QuotesViewModel : ViewModelBase
         _calcDailyRate = FormatOptional(AppHost.Settings.DefaultDailyRate);
 
         LoadCommand = new RelayCommand(_ => Load());
-        NewQuoteCommand = new RelayCommand(_ => StartNew());
-        EditQuoteCommand = new RelayCommand(_ => StartEdit(), _ => Detail is { IsEditable: true });
-        SaveQuoteCommand = new RelayCommand(_ => SaveQuote());
+
+        // Con el formulario de cabecera abierto no se abre otro ni se duplica: apretar
+        // «Editar datos» sobre un alta a medio tipear la borraba y cambiaba a qué
+        // presupuesto le escribía Guardar.
+        NewQuoteCommand = new RelayCommand(_ => StartNew(), _ => !IsFormOpen);
+        EditQuoteCommand = new RelayCommand(_ => StartEdit(), _ => CanEditSelected);
+        SaveQuoteCommand = new RelayCommand(_ => SaveQuote(), _ => IsFormOpen);
         CancelFormCommand = new RelayCommand(_ => CloseForm());
         PickClientCommand = new RelayCommand(PickClient);
 
@@ -151,7 +167,7 @@ public partial class QuotesViewModel : ViewModelBase
         ReopenCommand = new RelayCommand(_ => Reopen(), _ => Detail is { Status: ProjectStatus.Rejected });
         DeleteRejectedCommand = new AsyncRelayCommand(
             DeleteRejectedAsync, () => Detail is { Status: ProjectStatus.Rejected });
-        DuplicateCommand = new RelayCommand(_ => Duplicate(), _ => Detail is not null);
+        DuplicateCommand = new RelayCommand(_ => Duplicate(), _ => Detail is not null && !IsFormOpen);
         ApplyPendingCommand = new RelayCommand(_ => ApplyPending(), _ => Detail is { HasPendingStock: true });
         // El presupuesto del cliente exige precio y desglose: sin eso salía impreso con el
         // TOTAL en un guión, que es peor que no entregar nada. La hoja de costos sí se

@@ -19,6 +19,14 @@ public class StaffViewModel : ViewModelBase
     private bool _showArchived;
     private bool _isFormOpen;
     private bool _isCreating;
+
+    /// <summary>El empleado que el formulario está editando.</summary>
+    /// <remarks>
+    /// Va aparte de la selección a propósito: la lista puede cambiar de fila con el
+    /// formulario abierto, y Guardar le escribía a la fila seleccionada en ese momento
+    /// en vez de a la que se abrió.
+    /// </remarks>
+    private int? _editingEmployeeId;
     private string _formFullName = string.Empty;
     private string _formPhone = string.Empty;
     private string _formRole = string.Empty;
@@ -230,6 +238,7 @@ public class StaffViewModel : ViewModelBase
         FormPhone = string.Empty;
         FormRole = string.Empty;
         FormDailyRate = string.Empty;
+        _editingEmployeeId = null;
         IsCreating = true;
         IsFormOpen = true;
         ClearStatus();
@@ -242,6 +251,7 @@ public class StaffViewModel : ViewModelBase
             return;
         }
 
+        _editingEmployeeId = SelectedEmployee.Id;
         FormFullName = SelectedEmployee.FullName;
         FormPhone = SelectedEmployee.Phone ?? string.Empty;
         FormRole = SelectedEmployee.Role ?? string.Empty;
@@ -264,10 +274,11 @@ public class StaffViewModel : ViewModelBase
                 var employee = AppHost.EmployeeService.Create(FormFullName, FormPhone, FormRole, dailyRate);
                 SetStatus($"Empleado «{employee.FullName}» creado.", isError: false);
             }
-            else if (SelectedEmployee is not null)
+            else if (_editingEmployeeId is int employeeId)
             {
+                // Al que se abrió el formulario, no al que quedó seleccionado mientras tanto.
                 AppHost.EmployeeService.Update(
-                    SelectedEmployee.Id, FormFullName, FormPhone, FormRole, dailyRate);
+                    employeeId, FormFullName, FormPhone, FormRole, dailyRate);
                 SetStatus($"Empleado «{FormFullName.Trim()}» actualizado.", isError: false);
             }
 
@@ -291,7 +302,12 @@ public class StaffViewModel : ViewModelBase
         return NumberInput.ParseMoneyOrThrow(FormDailyRate, "Jornal por día");
     }
 
-    private void CloseForm() => IsFormOpen = false;
+    private void CloseForm()
+    {
+        IsFormOpen = false;
+        IsCreating = false;
+        _editingEmployeeId = null;
+    }
 
     private async Task ArchiveSelectedAsync()
     {

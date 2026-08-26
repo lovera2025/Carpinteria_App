@@ -85,31 +85,38 @@
                         <quotes:QuoteCalculatorPanel />
 
                         <!-- El bloque de cobros trae su propio ViewModel, compartido con
-                             Proyectos: un trabajo en curso también cobra. -->
-                        <quotes:QuotePaymentsPanel DataContext="{Binding PaymentsSection}" />
+                             Proyectos: un trabajo en curso también cobra. Su DataContext es
+                             otro, así que para esconderlo con el formulario de cabecera hay
+                             que preguntarle al de la pantalla. -->
+                        <quotes:QuotePaymentsPanel DataContext="{Binding PaymentsSection}"
+                                                   Visibility="{Binding DataContext.ShowQuoteBody, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-                        <!-- Faltantes -->
-                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                                Visibility="{Binding Shortfalls.Count, Converter={StaticResource IntToVisibilityConverter}}">
-                            <StackPanel>
-                                <TextBlock Text="Falta comprar" FontSize="16" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource AlertBrush}" Margin="0,0,0,6" />
-                                <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,10"
-                                           Text="Se descontó el stock disponible. Estos materiales quedaron pendientes." />
-                                <ItemsControl ItemsSource="{Binding Shortfalls}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type models:QuoteApprovalShortfall}">
-                                            <TextBlock Text="{Binding Display}" Margin="0,3" TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
+                        <!-- Faltantes. La lista sobrevive a la recarga que hace aprobar, así
+                             que sin la envoltura quedaba colgando debajo del formulario de
+                             alta, hablando de un presupuesto que ya no era el de la pantalla. -->
+                        <StackPanel Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
+                                    Visibility="{Binding Shortfalls.Count, Converter={StaticResource IntToVisibilityConverter}}">
+                                <StackPanel>
+                                    <TextBlock Text="Falta comprar" FontSize="16" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AlertBrush}" Margin="0,0,0,6" />
+                                    <TextBlock Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                               Text="Se descontó el stock disponible. Estos materiales quedaron pendientes." />
+                                    <ItemsControl ItemsSource="{Binding Shortfalls}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type models:QuoteApprovalShortfall}">
+                                                <TextBlock Text="{Binding Display}" Margin="0,3" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
 
                         <!-- Acciones -->
                         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8"
-                                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                                Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                     <Border Background="{DynamicResource PrimaryBrownBrush}" CornerRadius="11"
@@ -172,7 +179,7 @@
                 <!-- Precio final: fijo, para no tener que scrollear hasta el fondo -->
                 <Border Grid.Row="1" Background="{DynamicResource PrimaryBrownBrush}" CornerRadius="12"
                         Padding="18,14" Margin="0,12,0,0"
-                        Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                        Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
                     <Grid>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="PRECIO FINAL" FontSize="13" FontWeight="Bold"

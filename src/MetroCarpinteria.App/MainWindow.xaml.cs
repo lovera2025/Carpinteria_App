@@ -46,9 +46,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Esc cierra lo que haya abierto. Va en PreviewKeyDown porque un TextBox con el
-        // foco se queda con la tecla antes de que llegue a la ventana.
-        if (e.Key == Key.Escape && main.AreShortcutsVisible)
+        // Esc cierra lo que haya abierto: la ayuda de atajos, y si no está, el formulario
+        // de la sección. Va en PreviewKeyDown porque un TextBox con el foco se queda con la
+        // tecla antes de que llegue a la ventana — que es justamente el caso de un
+        // formulario a medio tipear.
+        if (e.Key == Key.Escape)
         {
             main.CloseOverlaysCommand.Execute(null);
             e.Handled = true;

@@ -254,7 +254,7 @@ public partial class QuotesViewModel
 
     private void ConfirmMaterial()
     {
-        if (Detail is null)
+        if (Detail is null || !CanEditSelected)
         {
             return;
         }
@@ -307,7 +307,7 @@ public partial class QuotesViewModel
 
     private void RemoveLine(object? parameter)
     {
-        if (parameter is not QuoteLineItem line)
+        if (parameter is not QuoteLineItem line || !CanEditSelected)
         {
             return;
         }

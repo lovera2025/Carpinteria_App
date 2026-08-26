@@ -14,7 +14,7 @@
          porque en el papel salen en esta misma zona. -->
     <StackPanel>
         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel>
                 <Grid Margin="0,0,0,4">
                     <TextBlock Text="FOTOS PARA EL CLIENTE" FontSize="15" FontWeight="Bold"
@@ -89,7 +89,7 @@
         </Border>
 
         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibilityConverter}}">
+                Visibility="{Binding ShowQuoteBody, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel>
                 <Grid Margin="0,0,0,4">
                     <TextBlock Text="OTROS TRABAJOS" FontSize="15" FontWeight="Bold"

@@ -22,6 +22,14 @@ public class InventoryViewModel : ViewModelBase
     private bool _lowStockOnly;
     private bool _isFormOpen;
     private bool _isCreating;
+
+    /// <summary>El producto que el formulario está editando.</summary>
+    /// <remarks>
+    /// Va aparte de la selección a propósito: la lista puede cambiar de fila con el
+    /// formulario abierto, y Guardar le escribía a la fila seleccionada en ese momento
+    /// en vez de a la que se abrió.
+    /// </remarks>
+    private int? _editingProductId;
     private string _formName = string.Empty;
     private string _formInitialStock = "0";
     private string _formMinimumStock = "0";
@@ -328,6 +336,7 @@ public class InventoryViewModel : ViewModelBase
         FormUnit = ProductUnits.Unit;
         FormCostPrice = string.Empty;
         FormCurrentStockDisplay = string.Empty;
+        _editingProductId = null;
         IsCreating = true;
         IsFormOpen = true;
 
@@ -345,6 +354,7 @@ public class InventoryViewModel : ViewModelBase
             return;
         }
 
+        _editingProductId = SelectedProduct.Id;
         FormName = SelectedProduct.Name;
         FormMinimumStock = NumberInput.Format(SelectedProduct.MinimumStock);
         FormUnit = SelectedProduct.Unit;
@@ -386,10 +396,11 @@ public class InventoryViewModel : ViewModelBase
                     FormName, initialStock, minimumStock, FormUnit, costPrice);
                 SetStatus($"Producto «{product.Name}» creado.", isError: false);
             }
-            else if (SelectedProduct is not null)
+            else if (_editingProductId is int productId)
             {
+                // Al que se abrió el formulario, no al que quedó seleccionado mientras tanto.
                 AppHost.InventoryService.UpdateProduct(
-                    SelectedProduct.Id, FormName, minimumStock, FormUnit, costPrice);
+                    productId, FormName, minimumStock, FormUnit, costPrice);
                 SetStatus($"Producto «{FormName.Trim()}» actualizado.", isError: false);
             }
 
@@ -406,6 +417,7 @@ public class InventoryViewModel : ViewModelBase
     {
         IsFormOpen = false;
         IsCreating = false;
+        _editingProductId = null;
     }
 
     private async Task ArchiveSelectedAsync()
