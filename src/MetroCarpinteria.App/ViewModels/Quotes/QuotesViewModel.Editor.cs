@@ -28,6 +28,7 @@ public partial class QuotesViewModel
                 OnPropertyChanged(nameof(CanAdjustPrice));
                 OnPropertyChanged(nameof(FinalPriceOrPlaceholder));
                 OnPropertyChanged(nameof(CanEditCommercialTerms));
+                OnPropertyChanged(nameof(CanIncludeAttachmentsInTotal));
                 PaymentsSection.Load(value);
                 OnPropertyChanged(nameof(DetailStatusLabel));
                 OnPropertyChanged(nameof(MaterialsTotalDisplay));

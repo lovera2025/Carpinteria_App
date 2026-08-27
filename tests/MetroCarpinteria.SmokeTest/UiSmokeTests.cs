@@ -385,6 +385,46 @@ internal static class UiSmokeTests
             Assert.Equal(viewModel.SelectedProject!.Title, "Banco de taller", "proyecto abierto tras el alta");
         });
 
+        run("UI: sobre un aprobado, el tilde de sumar los adjuntos no puede quedar mintiendo", () =>
+        {
+            // El checkbox se colgaba de CanManageAttachments, que solo mira si está
+            // archivado, pero guardar exige que el presupuesto sea editable. Sobre un
+            // aprobado tiraba error, el setter salía sin avisar, y el tilde quedaba marcado
+            // en pantalla mientras la base decía que no: el PDF salía con el total viejo.
+            var parentId = NewPricedQuote("Placard con anexo", "Cliente con anexos");
+            var childId = NewPricedQuote("Zócalos del placard", "Cliente con anexos");
+
+            AppHost.QuoteService.AttachQuote(parentId, childId);
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == parentId);
+
+            Assert.True(viewModel.CanIncludeAttachmentsInTotal, "sin aprobar tendría que poder tocarse.");
+
+            AppHost.QuoteService.ApproveQuote(parentId);
+            viewModel.Load();
+            viewModel.ShowApproved = true;
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == parentId);
+
+            Assert.False(
+                viewModel.CanIncludeAttachmentsInTotal,
+                "aprobado, el tilde no tendría que poder tocarse.");
+
+            // Y si igual llega una escritura, el valor que se muestra sigue siendo el real.
+            viewModel.IncludeAttachmentsInTotal = true;
+
+            Assert.False(
+                viewModel.IncludeAttachmentsInTotal,
+                "el tilde no puede quedar marcado si no se guardó.");
+            Assert.False(
+                AppHost.QuoteService.GetDetail(parentId)!.IncludeAttachmentsInTotal,
+                "y en la base tampoco tendría que haberse guardado.");
+
+            // Adjuntar sigue andando sobre un aprobado: eso no se toca.
+            Assert.True(viewModel.CanManageAttachments, "adjuntar tendría que seguir disponible.");
+        });
+
         run("UI: el panel de fotos carga en un presupuesto", () =>
         {
             var viewModel = new QuotesViewModel(() => { });
@@ -1657,6 +1697,21 @@ internal static class UiSmokeTests
     }
 
     /// <summary>Un presupuesto con el jefe más los operarios que se le pasen.</summary>
+    /// <summary>
+    /// Un presupuesto con material y precio, listo para aprobar. Aprobar exige las dos
+    /// cosas, así que sin esto no se puede probar nada del otro lado de la aprobación.
+    /// </summary>
+    private static int NewPricedQuote(string title, string client)
+    {
+        var productId = AppHost.InventoryService.CreateProduct($"Material {title}", 100m, 0m, "Metro", 500m).Id;
+        var id = AppHost.QuoteService.CreateQuote(title, client, null).Id;
+
+        AppHost.QuoteService.AddInventoryLine(id, productId, 4m);
+        AppHost.QuoteService.SaveCalculation(id, 2000m, 2m, 25000m, BudgetRates.Defaults());
+
+        return id;
+    }
+
     private static QuoteDetail BuildQuoteWithWorkers(
         params (string Name, decimal Days, decimal Rate)[] workers)
     {
