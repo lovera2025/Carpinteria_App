@@ -78,7 +78,9 @@ public class ProjectsViewModel : ViewModelBase
         AssignMaterialCommand = new RelayCommand(_ => AssignMaterial(), _ => CanAssignToProject);
         AssignEmployeeCommand = new RelayCommand(_ => AssignEmployee(), _ => CanAssignToProject);
         RemoveMaterialCommand = new AsyncRelayCommand(RemoveMaterialAsync, () => CanAssignToProject);
-        RemoveAssignmentCommand = new AsyncRelayCommand(RemoveAssignmentAsync, () => SelectedProject is not null);
+        // El mismo predicado que su hermano RemoveMaterialCommand: quitar personal de un
+        // proyecto archivado no tiene por qué estar permitido si quitar material no lo está.
+        RemoveAssignmentCommand = new AsyncRelayCommand(RemoveAssignmentAsync, () => CanAssignToProject);
         ToggleAssignmentPaidCommand = new RelayCommand(ToggleAssignmentPaid, _ => CanToggleAssignmentPaid);
         PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => CanPrintQuote);
         SaveQuotePdfCommand = new RelayCommand(_ => SaveQuotePdf(), _ => CanPrintQuote);

@@ -425,6 +425,70 @@ internal static class UiSmokeTests
             Assert.True(viewModel.CanManageAttachments, "adjuntar tendría que seguir disponible.");
         });
 
+        run("UI: con «solo bajo stock» puesto, el producto recién creado queda a la vista", () =>
+        {
+            // Acá el filtro muerde más que en otras pantallas: un producto nuevo cargado con
+            // existencias no entra en «solo bajo stock», así que se acababa de crear y no
+            // aparecía por ningún lado.
+            var viewModel = new InventoryViewModel(() => { });
+            viewModel.LoadProducts();
+            viewModel.LowStockOnly = true;
+
+            viewModel.NewProductCommand.Execute(null);
+            viewModel.FormName = "Bisagra recién cargada";
+            viewModel.FormInitialStock = "50";
+            viewModel.FormMinimumStock = "5";
+            viewModel.SaveProductCommand.Execute(null);
+
+            Assert.NotNull(viewModel.SelectedProduct, "el producto recién creado tendría que quedar seleccionado.");
+            Assert.Equal(viewModel.SelectedProduct!.Name, "Bisagra recién cargada", "producto abierto tras el alta");
+        });
+
+        run("UI: dar de alta un empleado con el buscador escrito lo deja a la vista", () =>
+        {
+            var viewModel = new StaffViewModel(() => { });
+            viewModel.Load();
+            viewModel.SearchText = "zzz-no-existe";
+
+            viewModel.NewEmployeeCommand.Execute(null);
+            viewModel.FormFullName = "Ramón Carpintero";
+            viewModel.SaveEmployeeCommand.Execute(null);
+
+            Assert.NotNull(viewModel.SelectedEmployee, "el empleado recién creado tendría que quedar seleccionado.");
+            Assert.Equal(viewModel.SelectedEmployee!.FullName, "Ramón Carpintero", "empleado abierto tras el alta");
+        });
+
+        run("UI: quitar personal pide lo mismo que quitar material", () =>
+        {
+            // Uno se negaba sobre un proyecto archivado y el otro no, sin ninguna razón.
+            var viewModel = new ProjectsViewModel(() => { });
+            viewModel.Load();
+            viewModel.ShowArchived = true;
+
+            var projectId = AppHost.ProjectService.Create(
+                "Trabajo archivado", "Cliente viejo", null, 1000m, ProjectStatus.Completed).Id;
+            var employeeId = AppHost.EmployeeService.Create("Peón archivable", null, null).Id;
+
+            AppHost.ProjectService.AssignEmployee(projectId, employeeId, null);
+            AppHost.ProjectService.Archive(projectId);
+
+            var assignmentId = AppHost.ProjectService.GetProjectAssignments(projectId).Single().Id;
+
+            Assert.Throws(
+                () => AppHost.ProjectService.RemoveAssignment(assignmentId),
+                "archivados");
+
+            viewModel.Load();
+            viewModel.SelectedProject = viewModel.Projects.First(p => p.Id == projectId);
+
+            Assert.False(
+                viewModel.RemoveAssignmentCommand.CanExecute(null),
+                "sobre un archivado el botón tendría que estar apagado, igual que el de material.");
+            Assert.False(
+                viewModel.RemoveMaterialCommand.CanExecute(null),
+                "y su hermano sigue apagado, que es de donde sale la regla.");
+        });
+
         run("UI: el panel de fotos carga en un presupuesto", () =>
         {
             var viewModel = new QuotesViewModel(() => { });

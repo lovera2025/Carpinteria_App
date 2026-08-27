@@ -499,6 +499,13 @@ public sealed class ProjectService
             .FirstOrDefault(a => a.Id == assignmentId)
             ?? throw new InvalidOperationException("Asignación no encontrada.");
 
+        // La misma regla que RemoveMaterial, que es la acción hermana: un proyecto archivado
+        // no se toca. Acá faltaba, y el botón tampoco lo pedía.
+        if (assignment.Project.IsArchived)
+        {
+            throw new InvalidOperationException("No se puede quitar personal de proyectos archivados.");
+        }
+
         assignment.Project.UpdatedAtUtc = DateTime.UtcNow;
         context.ProjectAssignments.Remove(assignment);
         context.SaveChanges();

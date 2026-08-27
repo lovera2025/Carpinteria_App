@@ -218,6 +218,27 @@ public class StaffViewModel : ViewModelBase
         CommandManager.InvalidateRequerySuggested();
     }
 
+    /// <summary>
+    /// Deja abierto el empleado recién creado, asegurándose de que la lista lo muestre.
+    /// </summary>
+    /// <remarks>
+    /// El alta recargaba conservando la selección anterior, así que el que se acababa de
+    /// dar de alta quedaba cargado pero sin abrir. Es el mismo criterio que en Presupuestos
+    /// y Proyectos: el buscador se limpia solo si el nuevo no entra en la lista.
+    /// </remarks>
+    private void SelectEnsuringVisible(int employeeId)
+    {
+        LoadEmployees();
+
+        if (Employees.All(e => e.Id != employeeId))
+        {
+            SearchText = string.Empty;
+            LoadEmployees();
+        }
+
+        SelectedEmployee = Employees.FirstOrDefault(e => e.Id == employeeId);
+    }
+
     private void LoadAssignments()
     {
         Assignments.Clear();
@@ -269,9 +290,12 @@ public class StaffViewModel : ViewModelBase
         {
             var dailyRate = ReadDailyRate();
 
+            int? createdId = null;
+
             if (IsCreating)
             {
                 var employee = AppHost.EmployeeService.Create(FormFullName, FormPhone, FormRole, dailyRate);
+                createdId = employee.Id;
                 SetStatus($"Empleado «{employee.FullName}» creado.", isError: false);
             }
             else if (_editingEmployeeId is int employeeId)
@@ -283,6 +307,14 @@ public class StaffViewModel : ViewModelBase
             }
 
             CloseForm();
+
+            if (createdId is int newId)
+            {
+                SelectEnsuringVisible(newId);
+                _onDataChanged();
+                return;
+            }
+
             Load();
         }
         catch (Exception ex)
