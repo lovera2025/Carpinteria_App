@@ -489,6 +489,49 @@ internal static class UiSmokeTests
                 "y su hermano sigue apagado, que es de donde sale la regla.");
         });
 
+        run("UI: Esc contesta el diálogo abierto y no toca el formulario de abajo", () =>
+        {
+            // El PreviewKeyDown de la ventana se queda con la tecla antes de que llegue al
+            // botón IsCancel del diálogo, así que Esc no lo cerraba: se iba a cerrar el
+            // formulario que había quedado abajo. En Proyectos, Inventario, Personal y
+            // Clientes el formulario convive con la barra de acciones, o sea que se podía
+            // tener los dos abiertos y perder lo tipeado con el diálogo todavía esperando.
+            var window = new MetroCarpinteria.App.MainWindow();
+            var main = (MainViewModel)window.DataContext!;
+
+            main.SelectedNavItem = main.NavItems.First(i => i.Section == NavigationSection.Projects);
+            var projects = (ProjectsViewModel)main.CurrentViewModel;
+
+            projects.NewProjectCommand.Execute(null);
+            projects.FormTitle = "Lo que estaba tipeando";
+            Assert.True(projects.IsFormOpen, "la prueba necesita el formulario abierto.");
+
+            AppHost.DialogService.HasHost = true;
+
+            try
+            {
+                var pendiente = AppHost.DialogService.ConfirmAsync("Archivar proyecto", "¿Seguro?");
+                Assert.False(pendiente.IsCompleted, "el diálogo tendría que estar esperando.");
+
+                main.CloseOverlaysCommand.Execute(null);
+
+                Assert.True(pendiente.IsCompleted, "Esc tendría que haber contestado el diálogo.");
+                Assert.False(pendiente.Result, "y la respuesta segura es que no.");
+                Assert.True(AppHost.DialogService.Current is null, "el diálogo tendría que haberse cerrado.");
+
+                Assert.True(projects.IsFormOpen, "el formulario de abajo no se tiene que tocar.");
+                Assert.Equal(projects.FormTitle, "Lo que estaba tipeando", "ni perder lo tipeado");
+            }
+            finally
+            {
+                AppHost.DialogService.HasHost = false;
+            }
+
+            // Sin diálogo, Esc sigue cerrando el formulario como promete la chuleta.
+            main.CloseOverlaysCommand.Execute(null);
+            Assert.False(projects.IsFormOpen, "sin diálogo, Esc tendría que cerrar el formulario.");
+        });
+
         run("UI: el panel de fotos carga en un presupuesto", () =>
         {
             var viewModel = new QuotesViewModel(() => { });
