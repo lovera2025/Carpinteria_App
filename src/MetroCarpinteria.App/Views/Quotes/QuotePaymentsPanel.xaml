@@ -35,7 +35,7 @@
                     Visibility="{Binding HasPayments, Converter={StaticResource BoolToVisibilityConverter}}">
                 <Grid>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="SALDO A COBRAR" FontSize="11" FontWeight="Bold"
+                        <TextBlock Text="{Binding BalanceLabel}" FontSize="11" FontWeight="Bold"
                                    Foreground="{DynamicResource TextSecondaryBrush}" />
                         <TextBlock Margin="0,3,0,0" FontSize="12"
                                    Foreground="{DynamicResource TextSecondaryBrush}">

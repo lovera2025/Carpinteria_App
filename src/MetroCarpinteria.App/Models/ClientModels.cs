@@ -23,14 +23,23 @@ public sealed class ClientListItem
     /// <summary>Suma de los trabajos aprobados. Es lo facturado, no lo cotizado.</summary>
     public decimal Invoiced { get; init; }
 
-    /// <summary>Lo que falta cobrar de esos trabajos.</summary>
+    /// <summary>Lo que falta cobrar de esos trabajos. Negativo si se cobró de más.</summary>
     public decimal Balance { get; init; }
 
     public DateTime? LastQuotedAtLocal { get; init; }
 
     public string InvoicedDisplay => AppCulture.Money(Invoiced);
-    public string BalanceDisplay => AppCulture.Money(Balance);
-    public bool HasBalance => Balance > 0;
+
+    /// <summary>Siempre en positivo: de qué lado está la plata lo dice el rótulo.</summary>
+    public string BalanceDisplay => AppCulture.Money(Math.Abs(Balance));
+
+    /// <summary>Se le cobró más de lo facturado: esa diferencia es del cliente.</summary>
+    public bool HasCredit => Balance < 0m;
+
+    /// <summary>Hay algo que mirar, deba él o debamos nosotros.</summary>
+    public bool HasBalance => Balance != 0m;
+
+    public string BalanceLabel => HasCredit ? "SALDO A FAVOR" : "SALDO A COBRAR";
 
     public string ContactDisplay
     {
@@ -77,9 +86,13 @@ public sealed class ClientProjectItem
 
     public string StatusLabel => ProjectStatusHelper.GetLabel(Status);
     public string BudgetDisplay => AppCulture.Money(Budget);
-    public decimal Balance => Math.Max(0m, (Budget ?? 0m) - Paid);
-    public string BalanceDisplay => AppCulture.Money(Balance);
-    public bool HasBalance => Balance > 0;
+    public decimal Balance => (Budget ?? 0m) - Paid;
+    public string BalanceDisplay => AppCulture.Money(Math.Abs(Balance));
+    public bool HasCredit => Balance < 0m;
+    public bool HasBalance => Balance != 0m;
+
+    /// <summary>«Debe » o «A favor », según de qué lado quedó la plata.</summary>
+    public string BalanceCaption => HasCredit ? "A favor " : "Debe ";
 
     public string DateDisplay => QuotedAtLocal is null
         ? string.Empty

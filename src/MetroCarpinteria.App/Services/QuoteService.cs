@@ -1008,6 +1008,10 @@ public sealed class QuoteService
         using var context = _databaseService.CreateContext();
         var project = RequireEditableQuote(context, projectId);
 
+        // Antes de tocar nada: fijar un precio por debajo de lo ya cobrado deja plata del
+        // cliente sin explicación, y el saldo la mostraba como cero.
+        PaymentService.RequireBudgetCoversPayments(context, projectId, finalPrice);
+
         var targets = absorbInto is null
             ? []
             : absorbInto.Where(BudgetLineKinds.CanAbsorb).Distinct().ToList();

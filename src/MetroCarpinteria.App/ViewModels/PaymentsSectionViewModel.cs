@@ -92,6 +92,9 @@ public sealed class PaymentsSectionViewModel : ObservableObject
     public string PaidTotalDisplay => _detail?.PaidTotalDisplay ?? AppCulture.Money(0m);
     public string BalanceDisplay => _detail?.BalanceDisplay ?? AppCulture.Money(0m);
 
+    /// <summary>«SALDO A COBRAR», o «SALDO A FAVOR» si se cobró de más.</summary>
+    public string BalanceLabel => _detail?.BalanceLabel ?? "SALDO A COBRAR";
+
     public string Summary
     {
         get
@@ -104,6 +107,13 @@ public sealed class PaymentsSectionViewModel : ObservableObject
             if (!HasPayments)
             {
                 return "Todavía no se cobró nada";
+            }
+
+            // Se cobró más que el precio: eso hay que decirlo, no resumirlo en «completo».
+            // Pasa cuando el precio baja después de tomada la seña.
+            if (_detail.HasCredit)
+            {
+                return $"Cobrado de más · {_detail.BalanceDisplay} a favor del cliente";
             }
 
             return _detail.IsFullyPaid
@@ -182,6 +192,7 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRegisterPayment));
         OnPropertyChanged(nameof(PaidTotalDisplay));
         OnPropertyChanged(nameof(BalanceDisplay));
+        OnPropertyChanged(nameof(BalanceLabel));
         OnPropertyChanged(nameof(Summary));
         OnPropertyChanged(nameof(NeedsOpenRegister));
     }
@@ -196,7 +207,10 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         }
 
         // Se propone cobrar todo el saldo: es lo más habitual y evita tipear el número.
-        Amount = NumberInput.Format(_detail.Balance);
+        // Con el saldo en negativo no hay nada que proponer: el formulario no debería poder
+        // abrirse (IsFullyPaid apaga el botón), pero no se cuelga de eso para no proponer
+        // un importe negativo si alguna vez llega hasta acá.
+        Amount = NumberInput.Format(Math.Max(0m, _detail.Balance));
 
         // El primer cobro casi siempre es la seña; los siguientes, pagos a cuenta.
         PaymentKind = PaymentKinds.First(o => o.Kind == (HasPayments

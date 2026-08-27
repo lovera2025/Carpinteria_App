@@ -233,6 +233,10 @@ public sealed class ProjectService
         var project = context.Projects.FirstOrDefault(p => p.Id == id)
             ?? throw new InvalidOperationException("Proyecto no encontrado.");
 
+        // El precio se escribe a mano acá, así que vale la misma regla que al fijarlo desde
+        // Presupuestos: no puede quedar por debajo de lo que el cliente ya pagó.
+        PaymentService.RequireBudgetCoversPayments(context, id, budget);
+
         project.Title = title.Trim();
         project.ClientName = clientName.Trim();
         project.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();

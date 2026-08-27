@@ -171,6 +171,63 @@ public sealed class PaymentService
         }
     }
 
+    /// <summary>Lo cobrado hasta ahora de un trabajo.</summary>
+    /// <remarks>
+    /// El <c>AsEnumerable</c> antes del <c>Sum</c> no es capricho: en las instalaciones
+    /// viejas los importes son TEXT, y una suma que quede en SQL los trata como texto.
+    /// </remarks>
+    public static decimal ReadPaidTotal(AppDbContext context, int projectId) =>
+        context.ProjectPayments
+            .Where(p => p.ProjectId == projectId)
+            .AsEnumerable()
+            .Sum(p => p.Amount);
+
+    /// <summary>
+    /// Corta si el precio nuevo dejaría al cliente con plata a favor.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Es la otra mitad de la regla que <see cref="RegisterPayment"/> ya cuida desde el lado
+    /// del cobro: si no se puede cobrar de más, tampoco se puede bajar el precio hasta que
+    /// lo cobrado quede de más. Sin esto se tomaba una seña de $ 50.000, se cerraba el
+    /// trabajo en $ 30.000, y la pantalla decía «Cobrado por completo» con saldo cero: los
+    /// $ 20.000 que hay que devolver no figuraban en ningún lado y nadie se enteraba.
+    /// </para>
+    /// <para>
+    /// La llaman los dos caminos donde alguien <b>escribe</b> un precio. El recálculo
+    /// automático de la calculadora no pasa por acá a propósito: corre en cada salida de
+    /// campo, y cortarlo ahí llenaría la pantalla de errores a mitad de la carga. Ese caso
+    /// lo cubre el saldo, que ahora muestra la plata a favor en vez de esconderla en un cero.
+    /// </para>
+    /// </remarks>
+    public static void RequireBudgetCoversPayments(AppDbContext context, int projectId, decimal? newBudget)
+    {
+        var paid = ReadPaidTotal(context, projectId);
+
+        if (paid <= 0m)
+        {
+            return;
+        }
+
+        var price = newBudget ?? 0m;
+
+        if (price >= paid)
+        {
+            return;
+        }
+
+        var credit = AppCulture.Money(paid - price);
+
+        var intent = newBudget is null
+            ? "Dejarlo sin precio"
+            : $"Un precio de {AppCulture.Money(price)}";
+
+        throw new InvalidOperationException(
+            $"Ya se cobraron {AppCulture.Money(paid)} de este trabajo. {intent} le dejaría " +
+            $"{credit} a favor al cliente: anulá un cobro primero, o poné " +
+            $"{AppCulture.Money(paid)} o más.");
+    }
+
     private static int RegisterCashIncome(
         AppDbContext context,
         Project project,

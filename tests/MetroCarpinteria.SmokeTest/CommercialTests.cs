@@ -172,7 +172,8 @@ internal static class CommercialTests
         QuoteService quotes,
         PaymentService payments,
         CashRegisterService cash,
-        InventoryService inventory)
+        InventoryService inventory,
+        ProjectService projects)
     {
         run("Comercial: guardar IVA y descuento actualiza el total del presupuesto", () =>
         {
@@ -318,6 +319,69 @@ internal static class CommercialTests
             Assert.Equal(state.IncomeTotal, 2000m, "el ingreso original no se borra");
             Assert.Equal(state.ExpenseTotal, 2000m, "salida compensatoria");
             Assert.Equal(state.ExpectedBalance, 0m, "saldo de caja tras compensar");
+        });
+
+        run("Pagos: no se puede fijar un precio por debajo de lo ya cobrado", () =>
+        {
+            // La otra mitad de «no se puede cobrar más que el saldo». Sin esto se tomaba la
+            // seña, se cerraba el trabajo más barato, y el panel decía «Cobrado por completo»
+            // con saldo cero: la plata a devolver no figuraba en ningún lado.
+            var id = NewCalculatedQuote(quotes, inventory, "Alacena renegociada", "Cliente que negocia");
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, 92500m, "precio de partida");
+
+            payments.RegisterPayment(id, PaymentKind.Deposit, 40000m, PaymentMethod.Transfer);
+
+            Assert.Throws(() => quotes.SetFinalPrice(id, 30000m), "Ya se cobraron");
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, 92500m, "el precio no tendría que moverse");
+
+            // Justo lo cobrado sí entra: deja el trabajo saldado y sin plata a favor.
+            quotes.SetFinalPrice(id, 40000m);
+
+            var detail = RequireQuote(quotes, id);
+            Assert.Equal(detail.Balance, 0m, "saldo tras bajar el precio hasta lo cobrado");
+            Assert.False(detail.HasCredit, "no tendría que quedar plata a favor.");
+        });
+
+        run("Pagos: tampoco desde Proyectos, que es el otro lugar donde se escribe el precio", () =>
+        {
+            var id = NewCalculatedQuote(quotes, inventory, "Ropero renegociado", "Cliente de taller");
+            payments.RegisterPayment(id, PaymentKind.Deposit, 40000m, PaymentMethod.Transfer);
+
+            Assert.Throws(
+                () => projects.Update(id, "Ropero renegociado", "Cliente de taller", null, 30000m),
+                "Ya se cobraron");
+
+            // Y dejarlo sin precio es lo mismo: la seña quedaría sin nada contra qué medirse.
+            Assert.Throws(
+                () => projects.Update(id, "Ropero renegociado", "Cliente de taller", null, null),
+                "Ya se cobraron");
+
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, 92500m, "el precio no tendría que moverse");
+
+            projects.Update(id, "Ropero renegociado", "Cliente de taller", null, 50000m);
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, 50000m, "por encima de lo cobrado sí entra");
+        });
+
+        run("Pagos: si el recálculo deja plata a favor, el saldo lo dice en vez de mostrar cero", () =>
+        {
+            // El recálculo automático no se bloquea: corre en cada salida de campo y cortarlo
+            // llenaría la pantalla de errores a mitad de la carga. Lo que no puede pasar es
+            // que la plata a favor quede escondida detrás de un cero.
+            var id = NewCalculatedQuote(quotes, inventory, "Mesa achicada", "Cliente que recortó el trabajo");
+            payments.RegisterPayment(id, PaymentKind.Deposit, 90000m, PaymentMethod.Transfer);
+
+            // El cliente recorta el trabajo: menos material, menos días.
+            quotes.SaveCalculation(id, 500m, 1m, 10000m, BudgetRates.Defaults());
+
+            var detail = RequireQuote(quotes, id);
+
+            Assert.Equal(detail.Budget ?? 0m, 18625m, "precio recalculado");
+            Assert.Equal(detail.Balance, -71375m, "el saldo tiene que quedar en negativo");
+            Assert.True(detail.HasCredit, "tendría que figurar como plata a favor del cliente.");
+            Assert.Equal(detail.BalanceLabel, "SALDO A FAVOR", "rótulo del saldo");
+            Assert.True(
+                detail.BalanceDisplay.Contains("71.375", StringComparison.Ordinal),
+                $"el importe se muestra en positivo: «{detail.BalanceDisplay}»");
         });
     }
 

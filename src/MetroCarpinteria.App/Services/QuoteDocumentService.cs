@@ -196,7 +196,7 @@ public sealed class QuoteDocumentService
         if (quote.HasPrintedPayments)
         {
             document.Blocks.Add(BuildPaidRow(quote.PrintedPaidTotalDisplay, density));
-            document.Blocks.Add(BuildBalanceRow(quote.PrintedBalanceDisplay, density));
+            document.Blocks.Add(BuildBalanceRow(quote.PrintedBalanceDisplay, density, quote.HasPrintedCredit));
         }
 
         document.Blocks.Add(BuildObservationsBlock(density));
@@ -298,7 +298,7 @@ public sealed class QuoteDocumentService
         if (quote.HasPayments)
         {
             document.Blocks.Add(BuildPaidRow(quote.PaidTotalDisplay, Density.Roomy));
-            document.Blocks.Add(BuildBalanceRow(quote.BalanceDisplay, Density.Roomy));
+            document.Blocks.Add(BuildBalanceRow(quote.BalanceDisplay, Density.Roomy, quote.HasCredit));
         }
 
         document.Blocks.Add(BuildEffectiveMarginBlock(quote));
@@ -350,7 +350,7 @@ public sealed class QuoteDocumentService
         // registrar. El recibo no lista los adjuntos, así que tampoco puede mostrar un
         // saldo del conjunto sin decir de dónde sale.
         document.Blocks.Add(BuildPaidRow(quote.PaidTotalDisplay, Density.Roomy));
-        document.Blocks.Add(BuildBalanceRow(quote.BalanceDisplay, Density.Roomy));
+        document.Blocks.Add(BuildBalanceRow(quote.BalanceDisplay, Density.Roomy, quote.HasCredit));
 
         document.Blocks.Add(BuildObservationsBlock(Density.Roomy));
         document.Blocks.Add(BuildFooter());
@@ -1231,8 +1231,17 @@ public sealed class QuoteDocumentService
     /// <summary>
     /// Lo que el cliente quiere saber cuando ya adelantó plata: cuánto le queda.
     /// </summary>
-    private static Block BuildBalanceRow(string balanceDisplay, Density density) =>
-        BuildClosingRow("SALDO A PAGAR", balanceDisplay, BandBrush, density, emphasis: true);
+    /// <param name="isCredit">
+    /// Se cobró de más: el papel tiene que decir que la plata es del cliente, no un
+    /// «SALDO A PAGAR» en cero.
+    /// </param>
+    private static Block BuildBalanceRow(string balanceDisplay, Density density, bool isCredit = false) =>
+        BuildClosingRow(
+            isCredit ? "SALDO A FAVOR" : "SALDO A PAGAR",
+            balanceDisplay,
+            BandBrush,
+            density,
+            emphasis: true);
 
     private static Block BuildClosingRow(
         string label,

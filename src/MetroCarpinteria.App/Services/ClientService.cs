@@ -504,7 +504,10 @@ public sealed class ClientService
                 QuoteCount = own.Count,
                 ApprovedCount = approved.Count,
                 Invoiced = invoiced,
-                Balance = Math.Max(0m, invoiced - paid),
+
+                // Sin clamp: si se cobró de más, el clamp lo mostraba como cero y la plata
+                // que hay que devolverle al cliente no aparecía en su propia ficha.
+                Balance = invoiced - paid,
                 LastQuotedAtLocal = own
                     .Select(p => ToLocalDate(p.QuotedAtUtc))
                     .Where(d => d.HasValue)
