@@ -314,6 +314,29 @@ public class InventoryViewModel : ViewModelBase
         CommandManager.InvalidateRequerySuggested();
     }
 
+    /// <summary>
+    /// Deja abierto el producto recién creado, asegurándose de que la lista lo muestre.
+    /// </summary>
+    /// <remarks>
+    /// Acá el filtro muerde más que en las otras pantallas: con «solo bajo stock» puesto, un
+    /// producto nuevo cargado con existencias <b>no entra en la lista</b>, así que se acababa
+    /// de crear y no aparecía por ningún lado. Mismo criterio que en Presupuestos: los
+    /// filtros y el buscador se limpian solo si hace falta.
+    /// </remarks>
+    private void SelectEnsuringVisible(int productId)
+    {
+        LoadProducts();
+
+        if (Products.All(p => p.Id != productId))
+        {
+            SearchText = string.Empty;
+            LowStockOnly = false;
+            LoadProducts();
+        }
+
+        SelectedProduct = Products.FirstOrDefault(p => p.Id == productId);
+    }
+
     private void LoadMovementsForSelection()
     {
         RecentMovements.Clear();
@@ -395,8 +418,13 @@ public class InventoryViewModel : ViewModelBase
                 var product = AppHost.InventoryService.CreateProduct(
                     FormName, initialStock, minimumStock, FormUnit, costPrice);
                 SetStatus($"Producto «{product.Name}» creado.", isError: false);
+
+                CloseForm();
+                SelectEnsuringVisible(product.Id);
+                return;
             }
-            else if (_editingProductId is int productId)
+
+            if (_editingProductId is int productId)
             {
                 // Al que se abrió el formulario, no al que quedó seleccionado mientras tanto.
                 AppHost.InventoryService.UpdateProduct(

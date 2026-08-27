@@ -48,25 +48,42 @@ public partial class QuotesViewModel
         get => Detail?.IncludeAttachmentsInTotal ?? false;
         set
         {
-            if (Detail is null || Detail.IncludeAttachmentsInTotal == value)
+            if (Detail is not null && Detail.IncludeAttachmentsInTotal != value)
             {
-                return;
+                try
+                {
+                    AppHost.QuoteService.SaveIncludeAttachmentsInTotal(Detail.Id, value);
+                    LoadDetail();
+                }
+                catch (Exception ex)
+                {
+                    SetStatus(ex.Message, isError: true);
+                }
             }
 
-            try
-            {
-                AppHost.QuoteService.SaveIncludeAttachmentsInTotal(Detail.Id, value);
-                LoadDetail();
-
-                OnPropertyChanged(nameof(IncludeAttachmentsInTotal));
-                OnPropertyChanged(nameof(AttachmentsSummary));
-                OnPropertyChanged(nameof(AttachmentsTotalHint));
-            }
-            catch (Exception ex)
-            {
-                SetStatus(ex.Message, isError: true);
-            }
+            // Siempre, incluso cuando no se guardó nada: la vista ya movió el tilde por su
+            // cuenta y hay que mandarla a releer el valor real. Sin esto quedaba marcado en
+            // pantalla mientras la base decía que no, y el PDF salía con el total viejo.
+            NotifyAttachmentsTotalChanged();
         }
+    }
+
+    /// <summary>
+    /// El tilde solo se puede tocar mientras el presupuesto sea editable.
+    /// </summary>
+    /// <remarks>
+    /// Va aparte de <see cref="CanManageAttachments"/>: adjuntar y desadjuntar siguen
+    /// andando sobre un aprobado, pero el servicio no deja cambiar el número que se
+    /// entrega —«una vez aprobado, el papel que firmó el cliente no se retoca»—. El
+    /// checkbox se colgaba de CanManageAttachments y quedaba habilitado para tirar un error.
+    /// </remarks>
+    public bool CanIncludeAttachmentsInTotal => Detail is { IsEditable: true };
+
+    private void NotifyAttachmentsTotalChanged()
+    {
+        OnPropertyChanged(nameof(IncludeAttachmentsInTotal));
+        OnPropertyChanged(nameof(AttachmentsSummary));
+        OnPropertyChanged(nameof(AttachmentsTotalHint));
     }
 
     /// <summary>Lo que el papel va a decir, para que el tilde no se pruebe imprimiendo.</summary>
@@ -143,6 +160,7 @@ public partial class QuotesViewModel
         OnPropertyChanged(nameof(AttachmentsSummary));
         OnPropertyChanged(nameof(IncludeAttachmentsInTotal));
         OnPropertyChanged(nameof(AttachmentsTotalHint));
+        OnPropertyChanged(nameof(CanIncludeAttachmentsInTotal));
     }
 
     private void OpenAttachmentPicker()
@@ -246,8 +264,7 @@ public partial class QuotesViewModel
         {
             var id = AppHost.QuoteService.CreateSiblingQuote(Detail.Id, SiblingTitle);
             CloseSiblingForm();
-            LoadQuotes();
-            SelectedQuote = Quotes.FirstOrDefault(q => q.Id == id);
+            SelectEnsuringVisible(id);
             SetStatus("Presupuesto creado y adjunto al anterior. Cargá materiales y precio.", isError: false);
         }
         catch (Exception ex)

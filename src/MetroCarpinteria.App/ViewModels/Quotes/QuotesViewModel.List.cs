@@ -141,6 +141,34 @@ public partial class QuotesViewModel
     }
 
     /// <summary>
+    /// Deja abierto un presupuesto recién creado, asegurándose de que la lista lo muestre.
+    /// </summary>
+    /// <remarks>
+    /// Con un filtro puesto o algo escrito en el buscador, lo recién creado puede no entrar
+    /// en la lista: se acababa de crear y la pantalla mostraba «Ningún presupuesto
+    /// seleccionado», como si se hubiera esfumado. Los tres caminos de alta —guardar,
+    /// duplicar y crear un adjunto— necesitan lo mismo, así que vive acá y no copiado en
+    /// cada uno.
+    /// <para>
+    /// El filtro y el buscador se tocan <b>solo</b> si hace falta: si el nuevo ya se ve, no
+    /// hay motivo para desarmarle la vista al que estaba trabajando filtrado.
+    /// </para>
+    /// </remarks>
+    private void SelectEnsuringVisible(int quoteId)
+    {
+        LoadQuotes();
+
+        if (Quotes.All(q => q.Id != quoteId))
+        {
+            SearchText = string.Empty;
+            SelectedFilter = FilterOptions[0];
+            LoadQuotes();
+        }
+
+        SelectedQuote = Quotes.FirstOrDefault(q => q.Id == quoteId);
+    }
+
+    /// <summary>
     /// Actualiza el renglón de un presupuesto sin tocar el resto de la lista ni el
     /// formulario que se está editando.
     /// </summary>

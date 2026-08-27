@@ -119,16 +119,6 @@ public static class BudgetCalculatorService
     }
 
     /// <summary>
-    /// A qué total de costo hay que llegar para que el recorte en pesos coincida con lo
-    /// que se ve en la barra (el total con IVA/descuento).
-    /// </summary>
-    public static decimal TargetCostTotal(
-        decimal calculatedFinalPrice,
-        decimal commercialTotal,
-        decimal newBudget) =>
-        Round(calculatedFinalPrice - (commercialTotal - newBudget));
-
-    /// <summary>
     /// Reparte la diferencia del precio a mano sobre las líneas marcadas. La fórmula
     /// original no se toca: esto es un paso posterior.
     /// </summary>

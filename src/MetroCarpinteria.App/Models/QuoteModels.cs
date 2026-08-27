@@ -336,13 +336,32 @@ public sealed class QuoteDetail
     /// al día con cada cambio de precio y con cada cobro, y basta que una de las dos cosas
     /// falle para que la cuenta del cliente quede mal.
     /// </summary>
-    public decimal Balance => Math.Max(0m, (Budget ?? 0m) - PaidTotal);
+    /// <remarks>
+    /// Negativo cuando se cobró de más. Antes esto venía con un <c>Math.Max(0m, …)</c> que
+    /// convertía ese caso en un cero prolijo: bajar el precio por debajo de una seña ya
+    /// tomada dejaba la pantalla diciendo «Cobrado por completo» y la plata que había que
+    /// devolver no aparecía en ningún lado.
+    /// </remarks>
+    public decimal Balance => (Budget ?? 0m) - PaidTotal;
+
+    /// <summary>Se cobró más que el precio: esa diferencia es del cliente.</summary>
+    public bool HasCredit => Balance < 0m;
 
     public bool HasPayments => Payments.Count > 0;
     public bool IsFullyPaid => Budget is > 0 && PaidTotal >= Budget.Value;
 
     public string PaidTotalDisplay => AppCulture.Money(PaidTotal);
-    public string BalanceDisplay => AppCulture.Money(Balance);
+
+    /// <summary>
+    /// El saldo siempre en positivo: de qué lado está la plata lo dice el rótulo.
+    /// </summary>
+    /// <remarks>
+    /// Un «-$ 20.000» se lee como un error de tipeo, no como una deuda del taller.
+    /// </remarks>
+    public string BalanceDisplay => AppCulture.Money(Math.Abs(Balance));
+
+    /// <summary>Rótulo del saldo en pantalla, desde el lado del taller.</summary>
+    public string BalanceLabel => HasCredit ? "SALDO A FAVOR" : "SALDO A COBRAR";
 
     // --- Las cuentas del papel ------------------------------------------------
     //
@@ -367,14 +386,17 @@ public sealed class QuoteDetail
         ? PaidTotal + AttachmentsPaidTotal
         : PaidTotal;
 
-    public decimal PrintedBalance => Math.Max(0m, PrintedTotal - PrintedPaidTotal);
+    public decimal PrintedBalance => PrintedTotal - PrintedPaidTotal;
+
+    /// <summary>El papel tiene que decir que hay plata a favor, no un saldo en cero.</summary>
+    public bool HasPrintedCredit => PrintedBalance < 0m;
 
     /// <summary>Si el papel tiene que mostrar el bloque de entregado a cuenta y saldo.</summary>
     public bool HasPrintedPayments => PrintedPaidTotal > 0m;
 
     public string PrintedTotalDisplay => AppCulture.Money(PrintedTotal);
     public string PrintedPaidTotalDisplay => AppCulture.Money(PrintedPaidTotal);
-    public string PrintedBalanceDisplay => AppCulture.Money(PrintedBalance);
+    public string PrintedBalanceDisplay => AppCulture.Money(Math.Abs(PrintedBalance));
 
     public decimal MaterialsTotal => Lines.Sum(l => l.LineTotal);
     public string MaterialsTotalDisplay => AppCulture.Money(MaterialsTotal);

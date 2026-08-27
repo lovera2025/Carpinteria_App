@@ -291,6 +291,247 @@ internal static class UiSmokeTests
             Assert.True(viewModel.CanPrintForClient, "con precio y desglose tendría que poder imprimirse.");
         });
 
+        run("UI: rechazar con un filtro puesto avisa por el presupuesto que se rechazó", () =>
+        {
+            // Con cualquier filtro que no sea «Rechazados», el que se acaba de rechazar sale
+            // de la lista y la selección cae en otro. El aviso se armaba después de recargar,
+            // así que nombraba a ese otro: parecía que se había rechazado el que no era.
+            var victimId = AppHost.QuoteService.CreateQuote("Ropero de dos puertas", "Cliente que dijo que no", null).Id;
+            AppHost.QuoteService.CreateQuote("Mesa que sigue viva", "Otro cliente", null);
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+
+            // «Vigentes» es el que usa el taller. Los rechazados no entran, que es lo que
+            // hace caer la selección en otro renglón.
+            viewModel.SelectedFilter = viewModel.FilterOptions.First(o => o.Filter == QuoteFilter.Current);
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == victimId);
+
+            AppHost.NotificationService.Clear();
+            AppHost.DialogService.HasHost = true;
+
+            try
+            {
+                viewModel.RejectCommand.Execute(null);
+
+                // Sin capa visual real, la confirmación se responde acá.
+                Assert.NotNull(AppHost.DialogService.Current, "tendría que haber pedido confirmación");
+                AppHost.DialogService.Complete(true);
+
+                // El await vuelve por el Dispatcher: hay que bombear para que corra.
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            }
+            finally
+            {
+                AppHost.DialogService.HasHost = false;
+            }
+
+            Assert.Equal(
+                AppHost.QuoteService.GetDetail(victimId)!.Status,
+                ProjectStatus.Rejected,
+                "el presupuesto elegido tendría que haber quedado rechazado");
+
+            var message = AppHost.NotificationService.Items.LastOrDefault()?.Message ?? string.Empty;
+
+            Assert.True(
+                message.Contains("Ropero de dos puertas", StringComparison.Ordinal),
+                $"el aviso tendría que nombrar al que se rechazó: «{message}»");
+            Assert.False(
+                message.Contains("Mesa que sigue viva", StringComparison.Ordinal),
+                $"el aviso nombró a otro presupuesto: «{message}»");
+        });
+
+        run("UI: con el buscador escrito, el presupuesto adjunto recién creado queda a la vista", () =>
+        {
+            // Guardar y duplicar ya se aseguraban de esto; crear un adjunto se quedó sin el
+            // respaldo. Con algo escrito en el buscador el nuevo no entra en la lista, y la
+            // pantalla se vaciaba justo después de decir «cargá materiales y precio».
+            var parentId = AppHost.QuoteService.CreateQuote("Cocina completa", "Cliente de dos trabajos", null).Id;
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+
+            viewModel.SearchText = "Cocina completa";
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == parentId);
+
+            viewModel.OpenSiblingFormCommand.Execute(null);
+            viewModel.SiblingTitle = "Mesada de granito";
+            viewModel.CreateSiblingQuoteCommand.Execute(null);
+
+            Assert.NotNull(viewModel.Detail, "el adjunto recién creado tendría que quedar abierto.");
+            Assert.Equal(viewModel.Detail!.Title, "Mesada de granito", "presupuesto abierto tras crear el adjunto");
+            Assert.True(
+                viewModel.Quotes.Any(q => q.Id == viewModel.Detail.Id),
+                "y tendría que verse en la lista, no solo estar seleccionado.");
+        });
+
+        run("UI: con un filtro de estado puesto, el proyecto recién anotado queda a la vista", () =>
+        {
+            // El alta recargaba conservando la selección anterior, así que el trabajo recién
+            // cargado no quedaba abierto — y con un filtro puesto ni siquiera aparecía.
+            var viewModel = new ProjectsViewModel(() => { });
+            viewModel.Load();
+
+            // Un alta entra como «Presupuesto», así que este filtro la deja fuera.
+            viewModel.SelectedStatusFilter = viewModel.StatusFilterOptions
+                .First(o => o.Status == ProjectStatus.Completed);
+
+            viewModel.NewProjectCommand.Execute(null);
+            viewModel.FormTitle = "Banco de taller";
+            viewModel.FormClientName = "Cliente del banco";
+            viewModel.SaveProjectCommand.Execute(null);
+
+            Assert.NotNull(viewModel.SelectedProject, "el proyecto recién creado tendría que quedar seleccionado.");
+            Assert.Equal(viewModel.SelectedProject!.Title, "Banco de taller", "proyecto abierto tras el alta");
+        });
+
+        run("UI: sobre un aprobado, el tilde de sumar los adjuntos no puede quedar mintiendo", () =>
+        {
+            // El checkbox se colgaba de CanManageAttachments, que solo mira si está
+            // archivado, pero guardar exige que el presupuesto sea editable. Sobre un
+            // aprobado tiraba error, el setter salía sin avisar, y el tilde quedaba marcado
+            // en pantalla mientras la base decía que no: el PDF salía con el total viejo.
+            var parentId = NewPricedQuote("Placard con anexo", "Cliente con anexos");
+            var childId = NewPricedQuote("Zócalos del placard", "Cliente con anexos");
+
+            AppHost.QuoteService.AttachQuote(parentId, childId);
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == parentId);
+
+            Assert.True(viewModel.CanIncludeAttachmentsInTotal, "sin aprobar tendría que poder tocarse.");
+
+            AppHost.QuoteService.ApproveQuote(parentId);
+            viewModel.Load();
+            viewModel.ShowApproved = true;
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == parentId);
+
+            Assert.False(
+                viewModel.CanIncludeAttachmentsInTotal,
+                "aprobado, el tilde no tendría que poder tocarse.");
+
+            // Y si igual llega una escritura, el valor que se muestra sigue siendo el real.
+            viewModel.IncludeAttachmentsInTotal = true;
+
+            Assert.False(
+                viewModel.IncludeAttachmentsInTotal,
+                "el tilde no puede quedar marcado si no se guardó.");
+            Assert.False(
+                AppHost.QuoteService.GetDetail(parentId)!.IncludeAttachmentsInTotal,
+                "y en la base tampoco tendría que haberse guardado.");
+
+            // Adjuntar sigue andando sobre un aprobado: eso no se toca.
+            Assert.True(viewModel.CanManageAttachments, "adjuntar tendría que seguir disponible.");
+        });
+
+        run("UI: con «solo bajo stock» puesto, el producto recién creado queda a la vista", () =>
+        {
+            // Acá el filtro muerde más que en otras pantallas: un producto nuevo cargado con
+            // existencias no entra en «solo bajo stock», así que se acababa de crear y no
+            // aparecía por ningún lado.
+            var viewModel = new InventoryViewModel(() => { });
+            viewModel.LoadProducts();
+            viewModel.LowStockOnly = true;
+
+            viewModel.NewProductCommand.Execute(null);
+            viewModel.FormName = "Bisagra recién cargada";
+            viewModel.FormInitialStock = "50";
+            viewModel.FormMinimumStock = "5";
+            viewModel.SaveProductCommand.Execute(null);
+
+            Assert.NotNull(viewModel.SelectedProduct, "el producto recién creado tendría que quedar seleccionado.");
+            Assert.Equal(viewModel.SelectedProduct!.Name, "Bisagra recién cargada", "producto abierto tras el alta");
+        });
+
+        run("UI: dar de alta un empleado con el buscador escrito lo deja a la vista", () =>
+        {
+            var viewModel = new StaffViewModel(() => { });
+            viewModel.Load();
+            viewModel.SearchText = "zzz-no-existe";
+
+            viewModel.NewEmployeeCommand.Execute(null);
+            viewModel.FormFullName = "Ramón Carpintero";
+            viewModel.SaveEmployeeCommand.Execute(null);
+
+            Assert.NotNull(viewModel.SelectedEmployee, "el empleado recién creado tendría que quedar seleccionado.");
+            Assert.Equal(viewModel.SelectedEmployee!.FullName, "Ramón Carpintero", "empleado abierto tras el alta");
+        });
+
+        run("UI: quitar personal pide lo mismo que quitar material", () =>
+        {
+            // Uno se negaba sobre un proyecto archivado y el otro no, sin ninguna razón.
+            var viewModel = new ProjectsViewModel(() => { });
+            viewModel.Load();
+            viewModel.ShowArchived = true;
+
+            var projectId = AppHost.ProjectService.Create(
+                "Trabajo archivado", "Cliente viejo", null, 1000m, ProjectStatus.Completed).Id;
+            var employeeId = AppHost.EmployeeService.Create("Peón archivable", null, null).Id;
+
+            AppHost.ProjectService.AssignEmployee(projectId, employeeId, null);
+            AppHost.ProjectService.Archive(projectId);
+
+            var assignmentId = AppHost.ProjectService.GetProjectAssignments(projectId).Single().Id;
+
+            Assert.Throws(
+                () => AppHost.ProjectService.RemoveAssignment(assignmentId),
+                "archivados");
+
+            viewModel.Load();
+            viewModel.SelectedProject = viewModel.Projects.First(p => p.Id == projectId);
+
+            Assert.False(
+                viewModel.RemoveAssignmentCommand.CanExecute(null),
+                "sobre un archivado el botón tendría que estar apagado, igual que el de material.");
+            Assert.False(
+                viewModel.RemoveMaterialCommand.CanExecute(null),
+                "y su hermano sigue apagado, que es de donde sale la regla.");
+        });
+
+        run("UI: Esc contesta el diálogo abierto y no toca el formulario de abajo", () =>
+        {
+            // El PreviewKeyDown de la ventana se queda con la tecla antes de que llegue al
+            // botón IsCancel del diálogo, así que Esc no lo cerraba: se iba a cerrar el
+            // formulario que había quedado abajo. En Proyectos, Inventario, Personal y
+            // Clientes el formulario convive con la barra de acciones, o sea que se podía
+            // tener los dos abiertos y perder lo tipeado con el diálogo todavía esperando.
+            var window = new MetroCarpinteria.App.MainWindow();
+            var main = (MainViewModel)window.DataContext!;
+
+            main.SelectedNavItem = main.NavItems.First(i => i.Section == NavigationSection.Projects);
+            var projects = (ProjectsViewModel)main.CurrentViewModel;
+
+            projects.NewProjectCommand.Execute(null);
+            projects.FormTitle = "Lo que estaba tipeando";
+            Assert.True(projects.IsFormOpen, "la prueba necesita el formulario abierto.");
+
+            AppHost.DialogService.HasHost = true;
+
+            try
+            {
+                var pendiente = AppHost.DialogService.ConfirmAsync("Archivar proyecto", "¿Seguro?");
+                Assert.False(pendiente.IsCompleted, "el diálogo tendría que estar esperando.");
+
+                main.CloseOverlaysCommand.Execute(null);
+
+                Assert.True(pendiente.IsCompleted, "Esc tendría que haber contestado el diálogo.");
+                Assert.False(pendiente.Result, "y la respuesta segura es que no.");
+                Assert.True(AppHost.DialogService.Current is null, "el diálogo tendría que haberse cerrado.");
+
+                Assert.True(projects.IsFormOpen, "el formulario de abajo no se tiene que tocar.");
+                Assert.Equal(projects.FormTitle, "Lo que estaba tipeando", "ni perder lo tipeado");
+            }
+            finally
+            {
+                AppHost.DialogService.HasHost = false;
+            }
+
+            // Sin diálogo, Esc sigue cerrando el formulario como promete la chuleta.
+            main.CloseOverlaysCommand.Execute(null);
+            Assert.False(projects.IsFormOpen, "sin diálogo, Esc tendría que cerrar el formulario.");
+        });
+
         run("UI: el panel de fotos carga en un presupuesto", () =>
         {
             var viewModel = new QuotesViewModel(() => { });
@@ -1563,6 +1804,21 @@ internal static class UiSmokeTests
     }
 
     /// <summary>Un presupuesto con el jefe más los operarios que se le pasen.</summary>
+    /// <summary>
+    /// Un presupuesto con material y precio, listo para aprobar. Aprobar exige las dos
+    /// cosas, así que sin esto no se puede probar nada del otro lado de la aprobación.
+    /// </summary>
+    private static int NewPricedQuote(string title, string client)
+    {
+        var productId = AppHost.InventoryService.CreateProduct($"Material {title}", 100m, 0m, "Metro", 500m).Id;
+        var id = AppHost.QuoteService.CreateQuote(title, client, null).Id;
+
+        AppHost.QuoteService.AddInventoryLine(id, productId, 4m);
+        AppHost.QuoteService.SaveCalculation(id, 2000m, 2m, 25000m, BudgetRates.Defaults());
+
+        return id;
+    }
+
     private static QuoteDetail BuildQuoteWithWorkers(
         params (string Name, decimal Days, decimal Rate)[] workers)
     {

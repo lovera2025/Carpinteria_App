@@ -233,6 +233,10 @@ public sealed class ProjectService
         var project = context.Projects.FirstOrDefault(p => p.Id == id)
             ?? throw new InvalidOperationException("Proyecto no encontrado.");
 
+        // El precio se escribe a mano acá, así que vale la misma regla que al fijarlo desde
+        // Presupuestos: no puede quedar por debajo de lo que el cliente ya pagó.
+        PaymentService.RequireBudgetCoversPayments(context, id, budget);
+
         project.Title = title.Trim();
         project.ClientName = clientName.Trim();
         project.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
@@ -494,6 +498,13 @@ public sealed class ProjectService
             .Include(a => a.Project)
             .FirstOrDefault(a => a.Id == assignmentId)
             ?? throw new InvalidOperationException("Asignación no encontrada.");
+
+        // La misma regla que RemoveMaterial, que es la acción hermana: un proyecto archivado
+        // no se toca. Acá faltaba, y el botón tampoco lo pedía.
+        if (assignment.Project.IsArchived)
+        {
+            throw new InvalidOperationException("No se puede quitar personal de proyectos archivados.");
+        }
 
         assignment.Project.UpdatedAtUtc = DateTime.UtcNow;
         context.ProjectAssignments.Remove(assignment);

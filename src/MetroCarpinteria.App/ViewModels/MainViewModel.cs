@@ -234,9 +234,25 @@ public class MainViewModel : ObservableObject
     /// </remarks>
     private void CloseOverlays()
     {
+        // El diálogo va primero porque está por encima de todo —ZIndex 1000, arriba incluso
+        // de la ayuda— y porque está esperando una respuesta. Esc contesta que no, igual que
+        // el botón «Cancelar» que ya tiene el foco por defecto.
+        //
+        // Sin esto, Esc con un diálogo abierto no lo cerraba —el PreviewKeyDown de la
+        // ventana se quedaba con la tecla antes de que llegara al botón IsCancel— y encima
+        // se iba a cerrar el formulario que había quedado abajo: en Proyectos, Inventario,
+        // Personal y Clientes el formulario convive con la barra de acciones, así que se
+        // perdía lo tipeado mientras el diálogo seguía abierto.
+        if (AppHost.IsReady && AppHost.DialogService.Current is not null)
+        {
+            AppHost.DialogService.Complete(false);
+            return;
+        }
+
         if (AreShortcutsVisible)
         {
-            // La ayuda está encima de todo: primero se baja ella y el formulario queda.
+            // La ayuda está por encima del formulario: primero se baja ella y el
+            // formulario queda.
             AreShortcutsVisible = false;
             return;
         }

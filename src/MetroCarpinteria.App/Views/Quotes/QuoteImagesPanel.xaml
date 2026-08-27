@@ -120,7 +120,7 @@
                      una sola hoja, que no es lo mismo que cobrarlos juntos. -->
                 <CheckBox Content="Incluir en el monto final"
                           IsChecked="{Binding IncludeAttachmentsInTotal}"
-                          IsEnabled="{Binding CanManageAttachments}"
+                          IsEnabled="{Binding CanIncludeAttachmentsInTotal}"
                           Margin="0,0,0,6"
                           Foreground="{DynamicResource TextPrimaryBrush}"
                           Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVisibilityConverter}}"
