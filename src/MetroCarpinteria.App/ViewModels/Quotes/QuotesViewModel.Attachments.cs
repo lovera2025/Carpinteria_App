@@ -246,8 +246,7 @@ public partial class QuotesViewModel
         {
             var id = AppHost.QuoteService.CreateSiblingQuote(Detail.Id, SiblingTitle);
             CloseSiblingForm();
-            LoadQuotes();
-            SelectedQuote = Quotes.FirstOrDefault(q => q.Id == id);
+            SelectEnsuringVisible(id);
             SetStatus("Presupuesto creado y adjunto al anterior. Cargá materiales y precio.", isError: false);
         }
         catch (Exception ex)

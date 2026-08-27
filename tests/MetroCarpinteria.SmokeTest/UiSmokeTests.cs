@@ -341,6 +341,50 @@ internal static class UiSmokeTests
                 $"el aviso nombró a otro presupuesto: «{message}»");
         });
 
+        run("UI: con el buscador escrito, el presupuesto adjunto recién creado queda a la vista", () =>
+        {
+            // Guardar y duplicar ya se aseguraban de esto; crear un adjunto se quedó sin el
+            // respaldo. Con algo escrito en el buscador el nuevo no entra en la lista, y la
+            // pantalla se vaciaba justo después de decir «cargá materiales y precio».
+            var parentId = AppHost.QuoteService.CreateQuote("Cocina completa", "Cliente de dos trabajos", null).Id;
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+
+            viewModel.SearchText = "Cocina completa";
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == parentId);
+
+            viewModel.OpenSiblingFormCommand.Execute(null);
+            viewModel.SiblingTitle = "Mesada de granito";
+            viewModel.CreateSiblingQuoteCommand.Execute(null);
+
+            Assert.NotNull(viewModel.Detail, "el adjunto recién creado tendría que quedar abierto.");
+            Assert.Equal(viewModel.Detail!.Title, "Mesada de granito", "presupuesto abierto tras crear el adjunto");
+            Assert.True(
+                viewModel.Quotes.Any(q => q.Id == viewModel.Detail.Id),
+                "y tendría que verse en la lista, no solo estar seleccionado.");
+        });
+
+        run("UI: con un filtro de estado puesto, el proyecto recién anotado queda a la vista", () =>
+        {
+            // El alta recargaba conservando la selección anterior, así que el trabajo recién
+            // cargado no quedaba abierto — y con un filtro puesto ni siquiera aparecía.
+            var viewModel = new ProjectsViewModel(() => { });
+            viewModel.Load();
+
+            // Un alta entra como «Presupuesto», así que este filtro la deja fuera.
+            viewModel.SelectedStatusFilter = viewModel.StatusFilterOptions
+                .First(o => o.Status == ProjectStatus.Completed);
+
+            viewModel.NewProjectCommand.Execute(null);
+            viewModel.FormTitle = "Banco de taller";
+            viewModel.FormClientName = "Cliente del banco";
+            viewModel.SaveProjectCommand.Execute(null);
+
+            Assert.NotNull(viewModel.SelectedProject, "el proyecto recién creado tendría que quedar seleccionado.");
+            Assert.Equal(viewModel.SelectedProject!.Title, "Banco de taller", "proyecto abierto tras el alta");
+        });
+
         run("UI: el panel de fotos carga en un presupuesto", () =>
         {
             var viewModel = new QuotesViewModel(() => { });

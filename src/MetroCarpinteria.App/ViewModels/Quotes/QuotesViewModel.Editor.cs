@@ -429,19 +429,7 @@ public partial class QuotesViewModel
                 LinkClient(created.Id);
 
                 CloseForm();
-                LoadQuotes();
-
-                if (Quotes.All(q => q.Id != created.Id))
-                {
-                    // Con un filtro puesto o algo escrito en el buscador, el recién creado
-                    // no entra en la lista: se acababa de crear y la pantalla mostraba
-                    // «Ningún presupuesto seleccionado», como si se hubiera esfumado.
-                    SearchText = string.Empty;
-                    SelectedFilter = FilterOptions[0];
-                    LoadQuotes();
-                }
-
-                SelectedQuote = Quotes.FirstOrDefault(q => q.Id == created.Id);
+                SelectEnsuringVisible(created.Id);
                 SetStatus($"Presupuesto «{created.Title}» creado.", isError: false);
                 return;
             }

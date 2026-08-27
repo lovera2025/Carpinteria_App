@@ -457,6 +457,29 @@ public class ProjectsViewModel : ViewModelBase
         CommandManager.InvalidateRequerySuggested();
     }
 
+    /// <summary>
+    /// Deja abierto un proyecto recién creado, asegurándose de que la lista lo muestre.
+    /// </summary>
+    /// <remarks>
+    /// El alta recargaba y conservaba la selección anterior, así que el trabajo recién
+    /// anotado no quedaba abierto — y con el filtro de estado puesto ni siquiera aparecía en
+    /// la lista. Es el mismo caso que en Presupuestos, con el mismo criterio: el filtro y el
+    /// buscador se tocan solo si hace falta.
+    /// </remarks>
+    private void SelectEnsuringVisible(int projectId)
+    {
+        LoadProjects();
+
+        if (Projects.All(p => p.Id != projectId))
+        {
+            SearchText = string.Empty;
+            SelectedStatusFilter = StatusFilterOptions[0];
+            LoadProjects();
+        }
+
+        SelectedProject = Projects.FirstOrDefault(p => p.Id == projectId);
+    }
+
     private void LoadProjectDetails()
     {
         Materials.Clear();
@@ -550,11 +573,14 @@ public class ProjectsViewModel : ViewModelBase
                 budget = parsedBudget;
             }
 
+            int? createdId = null;
+
             if (IsCreating)
             {
                 var status = FormStatus?.Status ?? ProjectStatus.Quote;
                 var project = AppHost.ProjectService.Create(
                     FormTitle, FormClientName, FormDescription, budget, status);
+                createdId = project.Id;
                 SetStatus($"Proyecto «{project.Title}» creado.", isError: false);
             }
             else if (_editingProjectId is int projectId)
@@ -566,6 +592,14 @@ public class ProjectsViewModel : ViewModelBase
             }
 
             CloseForm();
+
+            if (createdId is int newId)
+            {
+                LoadPickers();
+                SelectEnsuringVisible(newId);
+                return;
+            }
+
             Load();
         }
         catch (Exception ex)

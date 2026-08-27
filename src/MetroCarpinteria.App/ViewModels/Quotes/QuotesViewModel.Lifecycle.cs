@@ -195,12 +195,7 @@ public partial class QuotesViewModel
         {
             var copyId = AppHost.QuoteService.DuplicateQuote(Detail.Id);
 
-            // El buscador también, no solo el filtro: con algo tipeado la copia quedaba
-            // fuera de la lista y la pantalla se vaciaba justo después de duplicar.
-            SearchText = string.Empty;
-            SelectedFilter = FilterOptions[0];
-            LoadQuotes();
-            SelectedQuote = Quotes.FirstOrDefault(q => q.Id == copyId);
+            SelectEnsuringVisible(copyId);
             SetStatus("Copia creada con los precios de hoy.", isError: false);
         }
         catch (Exception ex)
