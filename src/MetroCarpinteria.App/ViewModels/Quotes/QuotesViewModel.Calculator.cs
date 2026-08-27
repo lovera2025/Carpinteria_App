@@ -456,9 +456,9 @@ public partial class QuotesViewModel
 
         try
         {
-            var commercial = CommercialTermsService.Apply(Breakdown.FinalPrice, Detail?.Terms);
-            var targetCost = BudgetCalculatorService.TargetCostTotal(
-                Breakdown.FinalPrice, commercial.Total, price);
+            // El mismo camino que usa SetFinalPrice al guardar: lo que se ve antes de fijar
+            // tiene que ser lo que se guarda.
+            var targetCost = CommercialTermsService.ForTotal(price, Detail?.Terms).Subtotal;
             var adjusted = BudgetCalculatorService.ApplyPriceAdjustment(Breakdown, targets, targetCost);
 
             foreach (var line in BreakdownLines)

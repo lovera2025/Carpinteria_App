@@ -43,6 +43,96 @@ internal static class CommercialTests
             Assert.Equal(commercial.Total, 295179.50m, "total");
         });
 
+        run("Comercial: armar el bloque al revés devuelve el mismo bloque", () =>
+        {
+            // Es la regresión que protege a todo lo ya entregado: en el camino normal el
+            // precio guardado sale de Apply, así que ForTotal sobre ese precio tiene que
+            // reconstruir exactamente lo mismo. Si esto se mueve, cambian de número
+            // presupuestos que el cliente ya tiene en la mano.
+            CommercialTerms[] casos =
+            [
+                CommercialTerms.None(),
+                new() { VatPercent = 21m },
+                new() { VatPercent = 10.5m },
+                new() { DiscountMode = DiscountMode.Percentage, DiscountValue = 15m },
+                new() { DiscountMode = DiscountMode.Amount, DiscountValue = 12345.67m },
+                new() { DiscountMode = DiscountMode.Percentage, DiscountValue = 15m, VatPercent = 21m },
+                new() { DiscountMode = DiscountMode.Amount, DiscountValue = 5000m, VatPercent = 10.5m }
+            ];
+
+            decimal[] precios = [287000m, 92500m, 166666.64m, 1m, 999999.99m];
+
+            foreach (var terms in casos)
+            {
+                foreach (var precio in precios)
+                {
+                    var ida = CommercialTermsService.Apply(precio, terms);
+                    var vuelta = CommercialTermsService.ForTotal(ida.Total, terms);
+
+                    var que = $"{precio} con {Describe(terms)}";
+
+                    if (ida.Total == 0m)
+                    {
+                        // El descuento se comió el trabajo entero: desde un total de cero no
+                        // hay forma de saber de cuánto era, y no llega a pasar en la app
+                        // porque el bloque se arma al revés solo con un precio mayor a cero.
+                        // Lo que sí se exige es que no invente un subtotal.
+                        Assert.Equal(vuelta.Subtotal, 0m, $"no puede inventar un subtotal — {que}");
+                        continue;
+                    }
+
+                    Assert.Equal(vuelta.Total, ida.Total, $"total ida y vuelta — {que}");
+                    Assert.Equal(vuelta.Subtotal, ida.Subtotal, $"subtotal ida y vuelta — {que}");
+                    Assert.Equal(vuelta.Discount, ida.Discount, $"descuento ida y vuelta — {que}");
+                    Assert.Equal(vuelta.TaxableBase, ida.TaxableBase, $"neto ida y vuelta — {que}");
+                    Assert.Equal(vuelta.Vat, ida.Vat, $"IVA ida y vuelta — {que}");
+                }
+            }
+        });
+
+        run("Comercial: el bloque armado al revés cierra exacto en el total pedido", () =>
+        {
+            // Acá el total NO sale de un cálculo: es un precio redondeado a mano, que es
+            // justo el caso donde el papel no cerraba.
+            CommercialTerms[] casos =
+            [
+                new() { VatPercent = 21m },
+                new() { VatPercent = 10.5m },
+                new() { DiscountMode = DiscountMode.Percentage, DiscountValue = 15m, VatPercent = 21m },
+                new() { DiscountMode = DiscountMode.Amount, DiscountValue = 5000m, VatPercent = 21m }
+            ];
+
+            decimal[] totales = [110000m, 100000m, 87654.321m, 250000m, 33333.33m];
+
+            foreach (var terms in casos)
+            {
+                foreach (var total in totales)
+                {
+                    var bloque = CommercialTermsService.ForTotal(total, terms);
+                    var que = $"{total} con {Describe(terms)}";
+
+                    Assert.Equal(bloque.Total, total, $"el bloque tiene que cerrar en el total pedido — {que}");
+
+                    // Y la columna impresa suma ese mismo número: subtotal − descuento + IVA.
+                    // El neto gravado es informativo y no se suma dos veces.
+                    var impreso = bloque.Subtotal - bloque.Discount + bloque.Vat;
+                    Assert.Equal(impreso, total, $"la columna impresa tiene que sumar el total — {que}");
+                }
+            }
+        });
+
+        run("Comercial: con IVA, fijar un precio a mano deja el bloque cerrando en ese precio", () =>
+        {
+            // El caso concreto que estaba mal: cálculo $ 100.000 + IVA 21% da $ 121.000, y
+            // fijar $ 110.000 dejaba el bloque sumando 121.000 contra un TOTAL de 110.000.
+            var terms = new CommercialTerms { VatPercent = 21m };
+            var bloque = CommercialTermsService.ForTotal(110000m, terms);
+
+            Assert.Equal(bloque.TaxableBase, 90909.09m, "neto gravado");
+            Assert.Equal(bloque.Vat, 19090.91m, "IVA");
+            Assert.Equal(bloque.Total, 110000m, "total");
+        });
+
         run("Comercial: el bloque impreso suma exactamente el total", () =>
         {
             // El mismo invariante que ya tiene el desglose: el total es la suma de los
@@ -321,6 +411,54 @@ internal static class CommercialTests
             Assert.Equal(state.ExpectedBalance, 0m, "saldo de caja tras compensar");
         });
 
+        run("Comercial: con IVA, un precio fijado a mano deja el papel cerrando", () =>
+        {
+            // El bloque comercial salía del cálculo y el TOTAL del precio guardado: con IVA
+            // pactado, el papel del cliente mostraba una columna que sumaba $ 111.925 y
+            // abajo un TOTAL de $ 110.000. Las dos cifras en la misma hoja.
+            var id = NewCalculatedQuote(quotes, inventory, "Bajomesada con IVA", "Cliente que factura");
+
+            quotes.SaveCommercialTerms(id, new CommercialTerms { VatPercent = 21m });
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, 111925m, "total con IVA antes de redondear");
+
+            quotes.SetFinalPrice(id, 110000m);
+
+            var detail = RequireQuote(quotes, id);
+            var commercial = detail.Commercial
+                ?? throw new InvalidOperationException("Con IVA pactado tendría que haber bloque comercial.");
+
+            Assert.Equal(commercial.Total, detail.Budget ?? 0m, "el bloque tiene que cerrar en el TOTAL impreso");
+            Assert.Equal(detail.PrintedTotal, 110000m, "el número grande del papel");
+            Assert.Equal(commercial.TaxableBase, 90909.09m, "neto gravado");
+            Assert.Equal(commercial.Vat, 19090.91m, "IVA");
+        });
+
+        run("Comercial: con IVA y recorte, el desglose recortado suma el subtotal del bloque", () =>
+        {
+            // La otra mitad: el recorte se aplicaba restando del costo neto una diferencia
+            // medida sobre el total con IVA, así que caía $ 1.909 más abajo de lo que
+            // correspondía y el desglose no coincidía con el bloque.
+            var id = NewCalculatedQuote(quotes, inventory, "Vitrina recortada", "Cliente que redondea");
+
+            quotes.SaveCommercialTerms(id, new CommercialTerms { VatPercent = 21m });
+            var sinRecortar = RequireQuote(quotes, id).Breakdown!.Profit;
+
+            quotes.SetFinalPrice(id, 110000m, [BudgetLineKind.Profit]);
+
+            var detail = RequireQuote(quotes, id);
+            var commercial = detail.Commercial!;
+
+            Assert.Equal(commercial.Total, detail.Budget ?? 0m, "el bloque cierra en el TOTAL impreso");
+            Assert.Equal(
+                detail.Breakdown!.FinalPrice,
+                commercial.Subtotal,
+                "el desglose recortado tiene que sumar el subtotal del bloque");
+
+            // Y el recorte salió de ganancia, que es lo que se marcó.
+            Assert.Equal(detail.Breakdown.Profit, sinRecortar - 1590.91m, "ganancia recortada");
+            Assert.Equal(detail.UnadjustedBreakdown!.Profit, sinRecortar, "el cálculo original sigue ahí");
+        });
+
         run("Pagos: no se puede fijar un precio por debajo de lo ya cobrado", () =>
         {
             // La otra mitad de «no se puede cobrar más que el saldo». Sin esto se tomaba la
@@ -398,6 +536,31 @@ internal static class CommercialTests
         quotes.SaveCalculation(id, 2000m, 2m, 25000m, BudgetRates.Defaults());
 
         return id;
+    }
+
+    /// <summary>Para que el mensaje de una aserción diga con qué condiciones falló.</summary>
+    private static string Describe(CommercialTerms terms)
+    {
+        if (terms.IsEmpty)
+        {
+            return "sin condiciones";
+        }
+
+        var parts = new List<string>();
+
+        if (terms.DiscountValue > 0)
+        {
+            parts.Add(terms.DiscountMode == DiscountMode.Percentage
+                ? $"descuento {terms.DiscountValue}%"
+                : $"descuento ${terms.DiscountValue}");
+        }
+
+        if (terms.VatPercent is > 0)
+        {
+            parts.Add($"IVA {terms.VatPercent}%");
+        }
+
+        return string.Join(" + ", parts);
     }
 
     private static QuoteDetail RequireQuote(QuoteService quotes, int id) =>

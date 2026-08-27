@@ -209,9 +209,7 @@ public sealed class QuoteService
         return new QuoteDetail
         {
             Terms = terms,
-            Commercial = breakdown is null
-                ? null
-                : CommercialTermsService.Apply(breakdown.FinalPrice, terms),
+            Commercial = BuildCommercial(project, breakdown, terms),
             Payments = ReadPayments(context, projectId),
             Id = project.Id,
             Title = project.Title,
@@ -240,6 +238,32 @@ public sealed class QuoteService
             CommitmentAmount = project.CommitmentAmount,
             CommitmentText = project.CommitmentText
         };
+    }
+
+    /// <summary>
+    /// El pie comercial que se imprime: subtotal, descuento e IVA.
+    /// </summary>
+    /// <remarks>
+    /// Sale del precio guardado y no del cálculo. Derivándolo del cálculo, un precio fijado
+    /// a mano dejaba el bloque cerrando en un número y el TOTAL de abajo —que es
+    /// <c>Budget</c>— en otro: con IVA del 21% sobre un cálculo de $ 100.000, fijar
+    /// $ 110.000 imprimía un bloque que sumaba $ 121.000. Las dos cifras en la misma hoja.
+    /// <para>
+    /// Sin precio todavía no hay nada que el cliente pague, así que ahí sí se muestra lo que
+    /// daría el cálculo.
+    /// </para>
+    /// </remarks>
+    private static CommercialBreakdown? BuildCommercial(
+        Project project,
+        BudgetBreakdown? breakdown,
+        CommercialTerms terms)
+    {
+        if (project.Budget is > 0)
+        {
+            return CommercialTermsService.ForTotal(project.Budget.Value, terms);
+        }
+
+        return breakdown is null ? null : CommercialTermsService.Apply(breakdown.FinalPrice, terms);
     }
 
     private static CommercialTerms ReadTerms(Project project) => new()
@@ -1029,9 +1053,11 @@ public sealed class QuoteService
                 ?? throw new InvalidOperationException(
                     "Falta calcular el precio antes de recortar el desglose.");
 
-            var commercial = CommercialTermsService.Apply(raw.FinalPrice, ReadTerms(project));
-            var targetCost = BudgetCalculatorService.TargetCostTotal(
-                raw.FinalPrice, commercial.Total, finalPrice.Value);
+            // A cuánto tiene que bajar el costo para que el cliente pague finalPrice. Se
+            // saca del bloque comercial armado al revés y no restando la diferencia a secas:
+            // con IVA o descuento pactado, esa diferencia está medida sobre el total y el
+            // recorte se aplica sobre el neto, así que caía en el lugar equivocado.
+            var targetCost = CommercialTermsService.ForTotal(finalPrice.Value, ReadTerms(project)).Subtotal;
 
             BudgetCalculatorService.ApplyPriceAdjustment(raw, targets, targetCost);
             project.PriceAdjustmentTargets = BudgetLineKinds.FormatTargets(targets);
@@ -1737,9 +1763,9 @@ public sealed class QuoteService
             return calculated;
         }
 
-        var commercial = CommercialTermsService.Apply(calculated.FinalPrice, ReadTerms(project));
-        var targetCost = BudgetCalculatorService.TargetCostTotal(
-            calculated.FinalPrice, commercial.Total, project.Budget.Value);
+        // El mismo cálculo que al fijar el precio: el costo a alcanzar sale del bloque
+        // comercial armado desde lo que el cliente paga.
+        var targetCost = CommercialTermsService.ForTotal(project.Budget.Value, ReadTerms(project)).Subtotal;
 
         try
         {
