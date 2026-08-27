@@ -291,6 +291,56 @@ internal static class UiSmokeTests
             Assert.True(viewModel.CanPrintForClient, "con precio y desglose tendría que poder imprimirse.");
         });
 
+        run("UI: rechazar con un filtro puesto avisa por el presupuesto que se rechazó", () =>
+        {
+            // Con cualquier filtro que no sea «Rechazados», el que se acaba de rechazar sale
+            // de la lista y la selección cae en otro. El aviso se armaba después de recargar,
+            // así que nombraba a ese otro: parecía que se había rechazado el que no era.
+            var victimId = AppHost.QuoteService.CreateQuote("Ropero de dos puertas", "Cliente que dijo que no", null).Id;
+            AppHost.QuoteService.CreateQuote("Mesa que sigue viva", "Otro cliente", null);
+
+            var viewModel = new QuotesViewModel(() => { });
+            viewModel.Load();
+
+            // «Vigentes» es el que usa el taller. Los rechazados no entran, que es lo que
+            // hace caer la selección en otro renglón.
+            viewModel.SelectedFilter = viewModel.FilterOptions.First(o => o.Filter == QuoteFilter.Current);
+            viewModel.SelectedQuote = viewModel.Quotes.First(q => q.Id == victimId);
+
+            AppHost.NotificationService.Clear();
+            AppHost.DialogService.HasHost = true;
+
+            try
+            {
+                viewModel.RejectCommand.Execute(null);
+
+                // Sin capa visual real, la confirmación se responde acá.
+                Assert.NotNull(AppHost.DialogService.Current, "tendría que haber pedido confirmación");
+                AppHost.DialogService.Complete(true);
+
+                // El await vuelve por el Dispatcher: hay que bombear para que corra.
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            }
+            finally
+            {
+                AppHost.DialogService.HasHost = false;
+            }
+
+            Assert.Equal(
+                AppHost.QuoteService.GetDetail(victimId)!.Status,
+                ProjectStatus.Rejected,
+                "el presupuesto elegido tendría que haber quedado rechazado");
+
+            var message = AppHost.NotificationService.Items.LastOrDefault()?.Message ?? string.Empty;
+
+            Assert.True(
+                message.Contains("Ropero de dos puertas", StringComparison.Ordinal),
+                $"el aviso tendría que nombrar al que se rechazó: «{message}»");
+            Assert.False(
+                message.Contains("Mesa que sigue viva", StringComparison.Ordinal),
+                $"el aviso nombró a otro presupuesto: «{message}»");
+        });
+
         run("UI: el panel de fotos carga en un presupuesto", () =>
         {
             var viewModel = new QuotesViewModel(() => { });

@@ -92,9 +92,17 @@ public partial class QuotesViewModel
             return;
         }
 
+        // Título e id se toman ahora, como en DeleteRejectedAsync: recargar la lista cambia
+        // el presupuesto abierto. Con cualquier filtro que no sea «Rechazados» —y en el
+        // taller siempre hay uno puesto— el que se acaba de rechazar sale de la lista, la
+        // selección cae en otro, y el aviso terminaba nombrando a ese otro. Leído desde
+        // afuera parecía que se había rechazado el que no era.
+        var title = Detail.Title;
+        var id = Detail.Id;
+
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             "Marcar como rechazado",
-            $"«{Detail.Title}» queda guardado en el historial de lo que cotizaste.\n\n" +
+            $"«{title}» queda guardado en el historial de lo que cotizaste.\n\n" +
             "No se toca el inventario, y lo podés reabrir cuando quieras.",
             confirmText: "Marcar rechazado");
 
@@ -105,9 +113,9 @@ public partial class QuotesViewModel
 
         try
         {
-            AppHost.QuoteService.RejectQuote(Detail.Id);
+            AppHost.QuoteService.RejectQuote(id);
             ReloadListAndDetail();
-            AppHost.NotificationService.Info($"«{Detail?.Title ?? "El presupuesto"}» quedó como rechazado.");
+            AppHost.NotificationService.Info($"«{title}» quedó como rechazado.");
         }
         catch (Exception ex)
         {
