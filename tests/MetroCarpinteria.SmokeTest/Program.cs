@@ -219,47 +219,47 @@ internal static class Program
                 }
             });
 
-            Run("Cash: open session", () =>
-            {
-                var session = cash.OpenSession(500m, "Apertura test");
-                if (session.OpeningAmount != 500m)
-                {
-                    throw new InvalidOperationException("Monto de apertura incorrecto.");
-                }
-            });
-
             Run("Cash: register movements", () =>
             {
+                var before = cash.GetBalance().Balance;
+
                 cash.RegisterMovement(CashMovementType.Income, 150m, "Venta test");
                 cash.RegisterMovement(CashMovementType.Expense, 50m, "Gasto test");
 
-                var state = cash.GetOpenSessionState()
-                    ?? throw new InvalidOperationException("No hay sesión abierta.");
-                if (state.ExpectedBalance != 600m)
+                var balance = cash.GetBalance().Balance;
+                if (balance != before + 100m)
                 {
-                    throw new InvalidOperationException($"Saldo esperado 600, actual {state.ExpectedBalance}.");
+                    throw new InvalidOperationException($"Saldo esperado {before + 100m}, actual {balance}.");
                 }
             });
 
-            Run("Cash: validation (double open)", () =>
+            Run("Cash: la caja no necesita abrirse", () =>
+            {
+                // Antes había que abrir una sesión antes de mover plata, y cerrarla al
+                // final del día. La caja fuerte no se abre: registrar es siempre posible.
+                cash.RegisterMovement(CashMovementType.Income, 25m, "Sin abrir nada");
+            });
+
+            Run("Cash: validation (monto y motivo)", () =>
             {
                 try
                 {
-                    cash.OpenSession(100m, null);
-                    throw new InvalidOperationException("Debía fallar al abrir segunda caja.");
+                    cash.RegisterMovement(CashMovementType.Income, 0m, "Sin plata");
+                    throw new InvalidOperationException("Debía fallar con monto cero.");
                 }
-                catch (InvalidOperationException ex) when (ex.Message.Contains("Ya hay una caja abierta", StringComparison.OrdinalIgnoreCase))
+                catch (InvalidOperationException ex) when (ex.Message.Contains("mayor a cero", StringComparison.OrdinalIgnoreCase))
                 {
                     // expected
                 }
-            });
 
-            Run("Cash: close session", () =>
-            {
-                var closed = cash.CloseSession(600m, "Cierre test");
-                if (closed.Difference != 0m)
+                try
                 {
-                    throw new InvalidOperationException($"Diferencia esperada 0, actual {closed.Difference}.");
+                    cash.RegisterMovement(CashMovementType.Income, 10m, "   ");
+                    throw new InvalidOperationException("Debía fallar sin motivo.");
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("motivo", StringComparison.OrdinalIgnoreCase))
+                {
+                    // expected
                 }
             });
 
@@ -358,14 +358,23 @@ internal static class Program
                 }
             });
 
-            Run("Cash: close with difference", () =>
+            Run("Cash: corregir un importe compensa, no lo edita", () =>
             {
-                cash.OpenSession(100m, "Segunda sesión");
-                cash.RegisterMovement(CashMovementType.Income, 50m, "Ingreso extra");
-                var closed = cash.CloseSession(140m, "Cierre con diferencia");
-                if (closed.Difference != -10m)
+                var movement = cash.RegisterMovement(CashMovementType.Income, 100m, "Cobro mal tipeado");
+                var before = cash.GetBalance();
+
+                cash.CorrectAmount(movement.Id, 80m, "Había tipeado de más");
+
+                var after = cash.GetBalance();
+                if (after.Balance != before.Balance - 20m)
                 {
-                    throw new InvalidOperationException($"Diferencia esperada -10, actual {closed.Difference}.");
+                    throw new InvalidOperationException($"Saldo esperado {before.Balance - 20m}, actual {after.Balance}.");
+                }
+
+                // Lo importante: el original sigue estando. Se corrige, no se borra.
+                if (after.MovementCount != before.MovementCount + 1)
+                {
+                    throw new InvalidOperationException("La corrección tenía que agregar un renglón, no reemplazar el viejo.");
                 }
             });
 
@@ -1422,7 +1431,9 @@ internal static class Program
         [
             "Abrir la app y verificar que el logo y colores se ven bien",
             "Inventario: crear producto con precio de costo, movimiento, buscar y filtrar",
-            "Caja: abrir sesión, registrar ingreso/egreso, cerrar",
+            "Caja: registrar un ingreso y un egreso, y ver el saldo y el desglose por medio",
+            "Caja: cobrar una seña por transferencia y verla en el historial con el nombre del cliente",
+            "Caja: filtrar por medio y que el saldo de arriba NO cambie al filtrar",
             "Presupuestos: armar uno con ítems del inventario y uno suelto",
             "Presupuestos: verificar en Inventario que el stock NO se movió",
             "Presupuestos: calcular con 100000 / 3 días / 30000 y ver $ 287.000,00",

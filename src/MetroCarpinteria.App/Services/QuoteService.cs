@@ -274,6 +274,14 @@ public sealed class QuoteService
         DiscountValue = project.DiscountValue ?? 0m
     };
 
+    /// <summary>
+    /// Los cobros de un trabajo, incluidos los anulados.
+    /// </summary>
+    /// <remarks>
+    /// Los anulados vienen marcados y no se filtran acá a propósito: son parte de la
+    /// historia del trabajo y el cliente puede preguntar por ellos. Quien suma —
+    /// <c>PaidTotal</c>— es el que los descuenta.
+    /// </remarks>
     private static List<ProjectPaymentItem> ReadPayments(AppDbContext context, int projectId) =>
         context.ProjectPayments
             .AsNoTracking()
@@ -288,7 +296,11 @@ public sealed class QuoteService
                 Method = p.Method,
                 Notes = p.Notes,
                 CreatedAtLocal = DateTime.SpecifyKind(p.CreatedAtUtc, DateTimeKind.Utc).ToLocalTime(),
-                IsLinkedToCash = p.CashMovementId.HasValue
+                IsLinkedToCash = p.CashMovementId.HasValue,
+                CancelledAtLocal = p.CancelledAtUtc.HasValue
+                    ? DateTime.SpecifyKind(p.CancelledAtUtc.Value, DateTimeKind.Utc).ToLocalTime()
+                    : null,
+                CancelReason = p.CancelReason
             })
             .ToList();
 
@@ -317,7 +329,7 @@ public sealed class QuoteService
         // también lo que ya se cobró de ellos, o el saldo sale de más.
         var paid = context.ProjectPayments
             .AsNoTracking()
-            .Where(p => ids.Contains(p.ProjectId))
+            .Where(p => ids.Contains(p.ProjectId) && p.CancelledAtUtc == null)
             .Select(p => new { p.ProjectId, p.Amount })
             .ToList()
             .GroupBy(p => p.ProjectId)
@@ -1287,7 +1299,7 @@ public sealed class QuoteService
                     "Solo se puede eliminar un presupuesto rechazado. Rechazalo primero o archivalo.");
             }
 
-            if (context.ProjectPayments.Any(p => p.ProjectId == projectId))
+            if (context.ProjectPayments.Any(p => p.ProjectId == projectId && p.CancelledAtUtc == null))
             {
                 throw new InvalidOperationException(
                     "Tiene cobros registrados. Anulá los cobros o archivalo.");

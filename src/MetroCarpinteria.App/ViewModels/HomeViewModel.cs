@@ -71,8 +71,7 @@ public class HomeViewModel : ViewModelBase
         _lowStockCount = AppHost.DatabaseService.GetLowStockCount();
         _lowStockValue = _lowStockCount.ToString();
 
-        var cashOpen = AppHost.CashRegisterService.HasOpenSession();
-        var cashState = AppHost.CashRegisterService.GetOpenSessionState();
+        var cash = AppHost.CashRegisterService.GetBalance();
         var activeProjects = AppHost.DatabaseService.GetActiveProjectCount();
         var approvedProjects = AppHost.DatabaseService.GetApprovedProjectCount();
         var overdueProjects = AppHost.ProjectService.GetOverdueCount();
@@ -97,14 +96,16 @@ public class HomeViewModel : ViewModelBase
                     : "Productos por debajo del mínimo",
                 AccentColor = "#C45C26"
             },
+            // La caja no se abre ni se cierra: el dato útil es cuánta plata hay, y cuánta
+            // de esa está en billetes.
             new DashboardCard
             {
                 Title = "Caja",
-                Value = cashOpen ? "Abierta" : "Cerrada",
-                Description = cashOpen && cashState is not null
-                    ? $"Esperado: {cashState.ExpectedDisplay}"
-                    : "Sin sesión abierta",
-                AccentColor = cashOpen ? "#4A7C59" : "#6B4423"
+                Value = cash.BalanceDisplay,
+                Description = cash.MovementCount == 0
+                    ? "Todavía sin movimientos"
+                    : $"En efectivo: {cash.CashOnHandDisplay}",
+                AccentColor = "#4A7C59"
             },
             new DashboardCard
             {

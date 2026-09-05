@@ -73,12 +73,30 @@ public class AppDbContext : DbContext
         {
             entity.HasIndex(m => m.CashSessionId);
             entity.HasIndex(m => m.CreatedAtUtc);
+            entity.HasIndex(m => m.ProjectId);
+            entity.HasIndex(m => m.ProjectLaborLineId);
             entity.Property(m => m.Amount).HasPrecision(18, 2);
             entity.Property(m => m.Reason).HasMaxLength(500).IsRequired();
+
+            // SetNull en todo, y no Cascade: un movimiento es plata que se movió de verdad.
+            // Borrar la ficha de un empleado o una sesión vieja no puede llevarse puesto el
+            // registro de que esa plata entró o salió.
             entity.HasOne(m => m.CashSession)
                 .WithMany(s => s.Movements)
                 .HasForeignKey(m => m.CashSessionId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.Project)
+                .WithMany()
+                .HasForeignKey(m => m.ProjectId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.Employee)
+                .WithMany()
+                .HasForeignKey(m => m.EmployeeId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(m => m.ProjectLaborLine)
+                .WithMany()
+                .HasForeignKey(m => m.ProjectLaborLineId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Project>(entity =>
@@ -119,6 +137,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(p => p.CreatedAtUtc);
             entity.Property(p => p.Amount).HasPrecision(18, 2);
             entity.Property(p => p.Notes).HasMaxLength(500);
+            entity.Property(p => p.CancelReason).HasMaxLength(500);
             entity.HasOne(p => p.Project)
                 .WithMany(p => p.Payments)
                 .HasForeignKey(p => p.ProjectId)

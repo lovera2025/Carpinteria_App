@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 13;
+    public const int LatestVersion = 14;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -82,7 +82,8 @@ public sealed class SchemaMigrator
         new(10, "Aviso de seña y presupuestos adjuntos", ApplyCommitmentAndAttachments),
         new(11, "Ajuste de desglose y jornales pagados", ApplyPriceAdjustmentAndAssignmentPaid),
         new(12, "Ciclo del taller y adjuntos en el total", ApplyWorkshopCycle, TransformsData: true),
-        new(13, "Precio pactado a mano", ApplyManualPriceFlag, TransformsData: true)
+        new(13, "Precio pactado a mano", ApplyManualPriceFlag, TransformsData: true),
+        new(14, "La caja fuerte del taller", ApplyCashSafe, TransformsData: true)
     ];
 
     /// <summary>
@@ -446,6 +447,223 @@ public sealed class SchemaMigrator
              WHERE Budget IS NOT NULL
                AND PriceAdjustmentTargets IS NOT NULL
                AND TRIM(PriceAdjustmentTargets) <> '';
+            """);
+    }
+
+    /// <summary>
+    /// La caja deja de ser una registradora con sesiones y pasa a ser la caja fuerte del
+    /// taller: un saldo que corre, con todos los movimientos y su origen.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Es el paso más delicado de la app: cambia de dónde sale el número que el taller
+    /// mira todos los días. Por eso <b>solo agrega filas</b> —ninguna se borra ni se
+    /// reescribe— y deja todo lo que crea identificable, para poder explicar después de
+    /// dónde salió cada peso.
+    /// </para>
+    /// <para>
+    /// La conversión tiene tres partes: rellenar el origen de los movimientos que ya
+    /// existían, disolver las sesiones en movimientos (la apertura y el ajuste de arqueo
+    /// eran plata real que no tenía renglón), y asentar los cobros que nunca entraron a
+    /// caja porque no fueron en efectivo — que son los que el taller reclamó como
+    /// desaparecidos.
+    /// </para>
+    /// </remarks>
+    private static void ApplyCashSafe(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        AddColumnIfMissing(connection, transaction, "CashMovements", "Method", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(connection, transaction, "CashMovements", "ProjectId", "INTEGER NULL");
+        AddColumnIfMissing(connection, transaction, "CashMovements", "ProjectPaymentId", "INTEGER NULL");
+        AddColumnIfMissing(connection, transaction, "CashMovements", "EmployeeId", "INTEGER NULL");
+        AddColumnIfMissing(connection, transaction, "CashMovements", "ProjectLaborLineId", "INTEGER NULL");
+
+        AddColumnIfMissing(connection, transaction, "ProjectPayments", "CancelledAtUtc", "TEXT NULL");
+        AddColumnIfMissing(connection, transaction, "ProjectPayments", "CancelReason", "TEXT NULL");
+
+        MakeCashSessionOptional(connection, transaction);
+        FillMovementOrigin(connection, transaction);
+        DissolveCashSessions(connection, transaction);
+        PostPaymentsThatNeverReachedCash(connection, transaction);
+    }
+
+    /// <summary>
+    /// <c>CashMovements.CashSessionId</c> deja de ser obligatorio, porque los movimientos
+    /// nuevos no pertenecen a ninguna sesión.
+    /// </summary>
+    /// <remarks>
+    /// SQLite no sabe aflojar un <c>NOT NULL</c>, así que hay que rehacer la tabla. Se
+    /// escribe el DDL a mano y no con <see cref="NormalizeAffinity"/> —que resuelve otra
+    /// cosa— porque acá las columnas son conocidas y fijas. Los <c>Id</c> se copian tal
+    /// cual: <c>ProjectPayments.CashMovementId</c> apunta a ellos.
+    /// </remarks>
+    private static void MakeCashSessionOptional(
+        SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        var columns = ReadColumns(connection, transaction, "CashMovements");
+
+        if (columns.Count == 0
+            || !columns.Any(c => c.Name.Equals("CashSessionId", StringComparison.OrdinalIgnoreCase)
+                && c.NotNull))
+        {
+            return;
+        }
+
+        var indexes = ReadIndexDefinitions(connection, transaction, "CashMovements");
+
+        Execute(connection, transaction, """
+            CREATE TABLE "CashMovements__caja" (
+                "Id" INTEGER NOT NULL CONSTRAINT PK_CashMovements PRIMARY KEY AUTOINCREMENT,
+                "CashSessionId" INTEGER NULL,
+                "Type" INTEGER NOT NULL,
+                "Amount" TEXT NOT NULL,
+                "Method" INTEGER NOT NULL DEFAULT 0,
+                "ProjectId" INTEGER NULL,
+                "ProjectPaymentId" INTEGER NULL,
+                "EmployeeId" INTEGER NULL,
+                "ProjectLaborLineId" INTEGER NULL,
+                "Reason" TEXT NOT NULL,
+                "CreatedAtUtc" TEXT NOT NULL,
+                CONSTRAINT FK_CashMovements_CashSessions_CashSessionId FOREIGN KEY ("CashSessionId") REFERENCES "CashSessions" ("Id") ON DELETE SET NULL,
+                CONSTRAINT FK_CashMovements_Projects_ProjectId FOREIGN KEY ("ProjectId") REFERENCES "Projects" ("Id") ON DELETE SET NULL,
+                CONSTRAINT FK_CashMovements_Employees_EmployeeId FOREIGN KEY ("EmployeeId") REFERENCES "Employees" ("Id") ON DELETE SET NULL,
+                CONSTRAINT FK_CashMovements_ProjectLaborLines_ProjectLaborLineId FOREIGN KEY ("ProjectLaborLineId") REFERENCES "ProjectLaborLines" ("Id") ON DELETE SET NULL
+            );
+            """);
+
+        Execute(connection, transaction, """
+            INSERT INTO "CashMovements__caja"
+                (Id, CashSessionId, Type, Amount, Method, ProjectId, ProjectPaymentId,
+                 EmployeeId, ProjectLaborLineId, Reason, CreatedAtUtc)
+            SELECT Id, CashSessionId, Type, Amount, Method, ProjectId, ProjectPaymentId,
+                   EmployeeId, ProjectLaborLineId, Reason, CreatedAtUtc
+              FROM "CashMovements";
+            """);
+
+        Execute(connection, transaction, "DROP TABLE \"CashMovements\";");
+        Execute(connection, transaction, "ALTER TABLE \"CashMovements__caja\" RENAME TO \"CashMovements\";");
+
+        foreach (var index in indexes)
+        {
+            Execute(connection, transaction, index);
+        }
+    }
+
+    /// <summary>
+    /// Los movimientos que ya existían aprenden de dónde salieron, cruzando por el vínculo
+    /// que el cobro guardaba.
+    /// </summary>
+    private static void FillMovementOrigin(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        Execute(connection, transaction, """
+            UPDATE CashMovements
+               SET ProjectId = (
+                       SELECT p.ProjectId FROM ProjectPayments p
+                        WHERE p.CashMovementId = CashMovements.Id),
+                   ProjectPaymentId = (
+                       SELECT p.Id FROM ProjectPayments p
+                        WHERE p.CashMovementId = CashMovements.Id),
+                   Method = COALESCE((
+                       SELECT p.Method FROM ProjectPayments p
+                        WHERE p.CashMovementId = CashMovements.Id), Method)
+             WHERE EXISTS (
+                       SELECT 1 FROM ProjectPayments p
+                        WHERE p.CashMovementId = CashMovements.Id);
+            """);
+    }
+
+    /// <summary>
+    /// La apertura de cada caja y su diferencia de arqueo pasan a ser movimientos.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Sin sesiones, esa plata no tendría dónde figurar y el saldo arrancaría corto. La
+    /// apertura entra con la fecha en que se abrió la caja y la diferencia con la del
+    /// cierre, así el saldo termina igual a lo último que el taller contó de verdad.
+    /// </para>
+    /// <para>
+    /// Las comparaciones usan <c>CAST</c> solo para mirar el signo; el importe se copia
+    /// como texto tal cual está. Pasarlo por un número lo convertiría a punto flotante y
+    /// le movería los centavos, que es justo lo que la v7 vino a arreglar.
+    /// </para>
+    /// </remarks>
+    private static void DissolveCashSessions(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        // Apertura: plata que ya estaba en la caja cuando se abrió.
+        Execute(connection, transaction, """
+            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Reason, CreatedAtUtc)
+            SELECT s.Id, 1, s.OpeningAmount, 0,
+                   'Apertura de caja — ' || STRFTIME('%d/%m/%Y', s.OpenedAtUtc),
+                   s.OpenedAtUtc
+              FROM CashSessions s
+             WHERE CAST(s.OpeningAmount AS REAL) > 0;
+            """);
+
+        // Arqueo con sobrante: había más plata de la que la cuenta esperaba.
+        Execute(connection, transaction, """
+            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Reason, CreatedAtUtc)
+            SELECT s.Id, 1, s.Difference, 0,
+                   'Ajuste de arqueo — ' || STRFTIME('%d/%m/%Y', s.ClosedAtUtc),
+                   s.ClosedAtUtc
+              FROM CashSessions s
+             WHERE s.ClosedAtUtc IS NOT NULL
+               AND s.Difference IS NOT NULL
+               AND CAST(s.Difference AS REAL) > 0;
+            """);
+
+        // Arqueo con faltante: el signo va en el tipo, no en el importe.
+        Execute(connection, transaction, """
+            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Reason, CreatedAtUtc)
+            SELECT s.Id, 2, LTRIM(s.Difference, '-'), 0,
+                   'Ajuste de arqueo — ' || STRFTIME('%d/%m/%Y', s.ClosedAtUtc),
+                   s.ClosedAtUtc
+              FROM CashSessions s
+             WHERE s.ClosedAtUtc IS NOT NULL
+               AND s.Difference IS NOT NULL
+               AND CAST(s.Difference AS REAL) < 0;
+            """);
+    }
+
+    /// <summary>
+    /// Los cobros que nunca dejaron asiento porque no fueron en efectivo.
+    /// </summary>
+    /// <remarks>
+    /// Es la plata que el taller reclamó como desaparecida: la caja solo asentaba el
+    /// efectivo, así que una seña por transferencia bajaba el saldo del cliente y no
+    /// figuraba en ningún lado. Entran con <b>la fecha original del cobro</b> y no la de
+    /// hoy, para que el historial siga contando lo que pasó y cuándo. Se excluyen los que
+    /// ya tienen movimiento: contarlos de nuevo duplicaría cada seña en efectivo.
+    /// </remarks>
+    private static void PostPaymentsThatNeverReachedCash(
+        SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        Execute(connection, transaction, """
+            INSERT INTO CashMovements
+                (CashSessionId, Type, Amount, Method, ProjectId, ProjectPaymentId, Reason, CreatedAtUtc)
+            SELECT NULL, 1, p.Amount, p.Method, p.ProjectId, p.Id,
+                   CASE p.Kind
+                       WHEN 0 THEN 'Seña: '
+                       WHEN 1 THEN 'Pago a cuenta: '
+                       ELSE 'Saldo final: '
+                   END || pr.Title || ' — ' || pr.ClientName,
+                   p.CreatedAtUtc
+              FROM ProjectPayments p
+              JOIN Projects pr ON pr.Id = p.ProjectId
+             WHERE p.CashMovementId IS NULL;
+            """);
+
+        // El vínculo también se guarda del lado del cobro, para que anularlo encuentre su
+        // movimiento sin tener que adivinar cuál era.
+        Execute(connection, transaction, """
+            UPDATE ProjectPayments
+               SET CashMovementId = (
+                       SELECT m.Id FROM CashMovements m
+                        WHERE m.ProjectPaymentId = ProjectPayments.Id)
+             WHERE CashMovementId IS NULL
+               AND EXISTS (
+                       SELECT 1 FROM CashMovements m
+                        WHERE m.ProjectPaymentId = ProjectPayments.Id);
             """);
     }
 

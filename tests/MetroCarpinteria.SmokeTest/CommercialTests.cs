@@ -320,44 +320,55 @@ internal static class CommercialTests
                 "descuento");
         });
 
-        run("Pagos: una seña en efectivo exige caja abierta y queda asentada en el arqueo", () =>
+        run("Pagos: una seña en efectivo entra a la caja sin abrir nada", () =>
         {
             var id = NewCalculatedQuote(quotes, inventory, "Puerta con seña", "Cliente que adelanta");
             var total = RequireQuote(quotes, id).Budget ?? 0m;
+            var before = cash.GetBalance();
 
-            // Sin caja abierta, el cobro en efectivo rebota con un error propio: la
-            // pantalla lo distingue para ofrecer «Abrir caja».
-            Assert.Throws<CashRegisterClosedException>(
-                () => payments.RegisterPayment(id, PaymentKind.Deposit, 1000m, PaymentMethod.Cash),
-                "caja abierta");
-
-            cash.OpenSession(0m, "Apertura para la seña");
             payments.RegisterPayment(id, PaymentKind.Deposit, 1000m, PaymentMethod.Cash, "Adelanto");
 
             var detail = RequireQuote(quotes, id);
             Assert.Equal(detail.PaidTotal, 1000m, "cobrado");
             Assert.Equal(detail.Balance, total - 1000m, "saldo");
-            Assert.True(detail.Payments.Single().IsLinkedToCash, "la seña tendría que estar atada a Caja.");
+            Assert.True(detail.Payments.Single().IsLinkedToCash, "la seña tendría que estar asentada en Caja.");
 
-            // Y el ingreso está en la caja del día.
-            var state = cash.GetOpenSessionState()
-                ?? throw new InvalidOperationException("No hay caja abierta.");
-            Assert.Equal(state.ExpectedBalance, 1000m, "saldo de caja tras la seña");
+            var after = cash.GetBalance();
+            Assert.Equal(after.Balance, before.Balance + 1000m, "saldo de la caja tras la seña");
+            Assert.Equal(after.CashOnHand, before.CashOnHand + 1000m, "efectivo tras la seña");
         });
 
-        run("Pagos: una transferencia no necesita caja abierta", () =>
+        run("Pagos: una transferencia también entra a la caja, y no la cuenta como efectivo", () =>
         {
-            // No toda la plata pasa por la caja chica del taller.
+            // Este es el problema que reportó el taller: solo asentaba el efectivo, así que
+            // una seña por transferencia bajaba el saldo del cliente y no figuraba en
+            // ningún lado. Ahora entra, con su medio, sin sumarse a los billetes del cajón.
             var id = NewCalculatedQuote(quotes, inventory, "Mesa por transferencia", "Cliente bancarizado");
-
-            cash.CloseSession(cash.GetOpenSessionState()!.ExpectedBalance, "Cierre antes de la transferencia");
-            Assert.False(cash.HasOpenSession(), "la prueba necesita la caja cerrada.");
+            var before = cash.GetBalance();
 
             payments.RegisterPayment(id, PaymentKind.Deposit, 500m, PaymentMethod.Transfer);
 
             var detail = RequireQuote(quotes, id);
             Assert.Equal(detail.PaidTotal, 500m, "cobrado por transferencia");
-            Assert.False(detail.Payments.Single().IsLinkedToCash, "una transferencia no toca Caja.");
+            Assert.True(detail.Payments.Single().IsLinkedToCash, "una transferencia también deja asiento.");
+
+            var after = cash.GetBalance();
+            Assert.Equal(after.Balance, before.Balance + 500m, "saldo de la caja tras la transferencia");
+            Assert.Equal(after.CashOnHand, before.CashOnHand, "el efectivo del cajón no se tocó");
+        });
+
+        run("Pagos: el movimiento dice de quién es la plata", () =>
+        {
+            // «Seña: Mostrador» sin nombre no le dice al taller de quién es el dinero. El
+            // proyecto queda vinculado además del texto, para poder cruzarlo.
+            var id = NewCalculatedQuote(quotes, inventory, "Bajomesada rastreable", "María González");
+
+            payments.RegisterPayment(id, PaymentKind.Deposit, 700m, PaymentMethod.Transfer);
+
+            var movement = cash.GetMovements().First(m => m.ProjectId == id);
+            Assert.True(movement.Reason.Contains("María González", StringComparison.Ordinal),
+                "el motivo tendría que nombrar al cliente.");
+            Assert.Equal(movement.OriginDisplay, "Bajomesada rastreable · María González", "origen del movimiento");
         });
 
         run("Pagos: no se puede cobrar más que el saldo", () =>
@@ -387,28 +398,35 @@ internal static class CommercialTests
                 "precio");
         });
 
-        run("Pagos: anular un cobro de Caja lo compensa, no lo borra del arqueo", () =>
+        run("Pagos: anular un cobro no borra nada, ni en Caja ni en el trabajo", () =>
         {
-            // Borrar un ingreso de una sesión ya cerrada descuadraría un arqueo que alguien
-            // contó y firmó ese día.
             var id = NewCalculatedQuote(quotes, inventory, "Ropero anulado", "Cliente que se arrepintió");
+            var before = cash.GetBalance();
 
-            cash.OpenSession(0m, "Apertura para anular");
             payments.RegisterPayment(id, PaymentKind.Deposit, 2000m, PaymentMethod.Cash);
 
             var paymentId = RequireQuote(quotes, id).Payments.Single().Id;
-            Assert.Equal(cash.GetOpenSessionState()!.IncomeTotal, 2000m, "ingreso asentado");
+            Assert.Equal(cash.GetBalance().Income, before.Income + 2000m, "ingreso asentado");
 
             payments.CancelPayment(paymentId, "El cliente se arrepintió");
 
             var detail = RequireQuote(quotes, id);
-            Assert.Equal(detail.Payments.Count, 0, "cobros tras anular");
 
-            // El ingreso sigue en el arqueo y aparece una salida que lo compensa.
-            var state = cash.GetOpenSessionState()!;
-            Assert.Equal(state.IncomeTotal, 2000m, "el ingreso original no se borra");
-            Assert.Equal(state.ExpenseTotal, 2000m, "salida compensatoria");
-            Assert.Equal(state.ExpectedBalance, 0m, "saldo de caja tras compensar");
+            // El cobro sigue en la ficha del trabajo, marcado. Antes se borraba la fila y
+            // del proyecto no quedaba rastro de que ese cobro hubiera existido.
+            Assert.Equal(detail.Payments.Count, 1, "el cobro anulado sigue en la ficha");
+            Assert.True(detail.Payments.Single().IsCancelled, "tendría que figurar como anulado.");
+            Assert.Equal(detail.PaidTotal, 0m, "un cobro anulado no cuenta para el saldo");
+            Assert.False(detail.HasPayments, "sin cobros vigentes");
+
+            // Y en Caja el ingreso original queda, con una salida que lo compensa.
+            var after = cash.GetBalance();
+            Assert.Equal(after.Income, before.Income + 2000m, "el ingreso original no se borra");
+            Assert.Equal(after.Expense, before.Expense + 2000m, "salida compensatoria");
+            Assert.Equal(after.Balance, before.Balance, "el saldo vuelve a donde estaba");
+
+            // Anular dos veces no duplica la compensación.
+            Assert.Throws(() => payments.CancelPayment(paymentId, "de nuevo"), "ya estaba anulado");
         });
 
         run("Comercial: con IVA, un precio fijado a mano deja el papel cerrando", () =>

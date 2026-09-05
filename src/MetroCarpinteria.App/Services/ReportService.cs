@@ -35,34 +35,19 @@ public sealed class ReportService
         var lowStock = activeStock.Count(p => StockRules.IsLowOrOut(p.CurrentStock, p.MinimumStock));
         var outOfStock = activeStock.Count(p => StockRules.IsOut(p.CurrentStock));
 
-        var openCash = context.CashSessions.Any(s => s.ClosedAtUtc == null);
-        var closedSessions = context.CashSessions.Count(s => s.ClosedAtUtc != null);
-        var lastClosed = context.CashSessions
+        // Los importes se suman en memoria: la columna es TEXT y un SUM() de SQL la
+        // pasaría por punto flotante. Ver CashRegisterService.GetBalance.
+        var cashRows = context.CashMovements
             .AsNoTracking()
-            .Where(s => s.ClosedAtUtc != null)
-            .OrderByDescending(s => s.ClosedAtUtc)
-            .Select(s => new
-            {
-                s.ClosingExpectedAmount,
-                s.ClosingCountedAmount,
-                s.ClosedAtUtc
-            })
-            .FirstOrDefault();
+            .Select(m => new { m.Type, m.Amount, m.Method })
+            .AsEnumerable()
+            .ToList();
 
-        var openSession = context.CashSessions
-            .Include(s => s.Movements)
-            .FirstOrDefault(s => s.ClosedAtUtc == null);
-
-        decimal? todayIncome = null;
-        decimal? todayExpense = null;
-        decimal? todayExpected = null;
-
-        if (openSession is not null)
-        {
-            todayIncome = openSession.Movements.Where(m => m.Type == CashMovementType.Income).Sum(m => m.Amount);
-            todayExpense = openSession.Movements.Where(m => m.Type == CashMovementType.Expense).Sum(m => m.Amount);
-            todayExpected = openSession.OpeningAmount + todayIncome - todayExpense;
-        }
+        var cashIncome = cashRows.Where(m => m.Type == CashMovementType.Income).Sum(m => m.Amount);
+        var cashExpense = cashRows.Where(m => m.Type == CashMovementType.Expense).Sum(m => m.Amount);
+        var cashOnHand = cashRows
+            .Where(m => m.Method == PaymentMethod.Cash)
+            .Sum(m => m.Type == CashMovementType.Income ? m.Amount : -m.Amount);
 
         var projectsQuote = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Quote);
         var projectsApproved = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Approved);
@@ -90,15 +75,7 @@ public sealed class ReportService
                 Title = "Caja",
                 Icon = "💰",
                 Metrics = BuildCashMetrics(
-                    openCash,
-                    closedSessions,
-                    lastClosed?.ClosingExpectedAmount,
-                    lastClosed?.ClosingCountedAmount,
-                    lastClosed?.ClosedAtUtc,
-                    todayIncome,
-                    todayExpense,
-                    todayExpected,
-                    culture)
+                    cashIncome, cashExpense, cashOnHand, cashRows.Count, culture)
             },
             new ReportSection
             {
@@ -117,53 +94,34 @@ public sealed class ReportService
         ];
     }
 
+    /// <summary>
+    /// La plata del taller. Ya no hay sesiones que abrir ni cerrar, así que lo que se
+    /// informa es el saldo real y cuánto de él está en billetes.
+    /// </summary>
+    /// <remarks>
+    /// Antes esto decía «Estado actual: Abierta/Cerrada» y contaba cajas cerradas: números
+    /// que ya no significan nada y que la pantalla igual mostraría, siempre iguales.
+    /// </remarks>
     private static List<ReportMetric> BuildCashMetrics(
-        bool openCash,
-        int closedSessions,
-        decimal? lastExpected,
-        decimal? lastCounted,
-        DateTime? lastClosedUtc,
-        decimal? todayIncome,
-        decimal? todayExpense,
-        decimal? todayExpected,
-        System.Globalization.CultureInfo culture)
-    {
-        var metrics = new List<ReportMetric>
-        {
-            new() { Label = "Estado actual", Value = openCash ? "Abierta" : "Cerrada" },
-            new() { Label = "Cajas cerradas", Value = closedSessions.ToString() }
-        };
-
-        if (openCash && todayExpected.HasValue)
-        {
-            metrics.Add(new ReportMetric
+        decimal income,
+        decimal expense,
+        decimal onHand,
+        int movements,
+        System.Globalization.CultureInfo culture) =>
+        [
+            new ReportMetric
             {
-                Label = "Ingresos (sesión abierta)",
-                Value = (todayIncome ?? 0).ToString("C", culture)
-            });
-            metrics.Add(new ReportMetric
+                Label = "En la caja",
+                Value = (income - expense).ToString("C", culture),
+                Detail = movements == 1 ? "1 movimiento" : $"{movements} movimientos"
+            },
+            new ReportMetric
             {
-                Label = "Egresos (sesión abierta)",
-                Value = (todayExpense ?? 0).ToString("C", culture)
-            });
-            metrics.Add(new ReportMetric
-            {
-                Label = "Efectivo esperado",
-                Value = todayExpected.Value.ToString("C", culture)
-            });
-        }
-
-        if (lastClosedUtc.HasValue)
-        {
-            metrics.Add(new ReportMetric
-            {
-                Label = "Último cierre",
-                Value = lastClosedUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm", culture),
-                Detail = $"Esperado {lastExpected?.ToString("C", culture) ?? "—"} · " +
-                         $"Contado {lastCounted?.ToString("C", culture) ?? "—"}"
-            });
-        }
-
-        return metrics;
-    }
+                Label = "En efectivo",
+                Value = onHand.ToString("C", culture),
+                Detail = "Lo que tendría que haber en billetes"
+            },
+            new ReportMetric { Label = "Entró", Value = income.ToString("C", culture) },
+            new ReportMetric { Label = "Salió", Value = expense.ToString("C", culture) }
+        ];
 }

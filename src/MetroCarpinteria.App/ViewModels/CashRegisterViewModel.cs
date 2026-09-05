@@ -1,6 +1,4 @@
-﻿using System.Collections.ObjectModel;
-using System.Globalization;
-using System.Windows;
+using System.Collections.ObjectModel;
 using System.Windows.Input;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
@@ -9,17 +7,26 @@ using MetroCarpinteria.App.Services;
 
 namespace MetroCarpinteria.App.ViewModels;
 
+/// <summary>
+/// La caja fuerte del taller: cuánta plata hay y el historial de todo lo que entró y salió.
+/// </summary>
+/// <remarks>
+/// Sin sesiones que abrir ni cerrar. Los totales que se muestran salen de
+/// <see cref="CashRegisterService.GetBalance"/>, calculados sobre todos los movimientos —
+/// nunca sumando la lista cargada, que está recortada y filtrada.
+/// </remarks>
 public class CashRegisterViewModel : ViewModelBase
 {
+    /// <summary>Cuántos renglones se traen. Alcanza para años de un taller.</summary>
+    private const int MovementLimit = 500;
+
     private readonly Action _onDataChanged;
-    private OpenCashSessionState? _currentSession;
-    private string _openAmount = "0";
-    private string _openNotes = string.Empty;
+    private CashBalance _balance = CashBalance.Empty;
     private string _movementAmount = string.Empty;
     private string _movementReason = string.Empty;
     private bool _movementIsIncome = true;
-    private string _closeCountedAmount = string.Empty;
-    private string _closeNotes = string.Empty;
+    private MethodOption _movementMethod;
+    private MethodOption _filterMethod;
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
 
@@ -27,51 +34,64 @@ public class CashRegisterViewModel : ViewModelBase
     {
         _onDataChanged = onDataChanged;
         Movements = new ObservableCollection<CashMovementListItem>();
-        SessionHistory = new ObservableCollection<CashSessionListItem>();
+        MethodTotals = new ObservableCollection<CashMethodTotal>();
+
+        MovementMethods = PaymentRules.Methods.Select(m => new MethodOption(m)).ToList();
+        FilterMethods = new List<MethodOption> { MethodOption.Any }
+            .Concat(PaymentRules.Methods.Select(m => new MethodOption(m)))
+            .ToList();
+
+        _movementMethod = MovementMethods[0];
+        _filterMethod = FilterMethods[0];
 
         LoadCommand = new RelayCommand(_ => Load());
-        OpenSessionCommand = new RelayCommand(_ => OpenSession(), _ => !HasOpenSession);
-        RegisterMovementCommand = new RelayCommand(_ => RegisterMovement(), _ => HasOpenSession);
-        CloseSessionCommand = new AsyncRelayCommand(CloseSessionAsync, () => HasOpenSession);
+        RegisterMovementCommand = new RelayCommand(_ => RegisterMovement());
     }
 
     public ObservableCollection<CashMovementListItem> Movements { get; }
-    public ObservableCollection<CashSessionListItem> SessionHistory { get; }
 
-    public bool HasOpenSession => CurrentSession is not null;
+    /// <summary>Cuánto hay por cada medio: el efectivo es lo único que está en el cajón.</summary>
+    public ObservableCollection<CashMethodTotal> MethodTotals { get; }
 
-    public OpenCashSessionState? CurrentSession
+    public IReadOnlyList<MethodOption> MovementMethods { get; }
+    public IReadOnlyList<MethodOption> FilterMethods { get; }
+
+    public CashBalance Balance
     {
-        get => _currentSession;
+        get => _balance;
         private set
         {
-            if (SetProperty(ref _currentSession, value))
+            if (SetProperty(ref _balance, value))
             {
-                OnPropertyChanged(nameof(HasOpenSession));
-                OnPropertyChanged(nameof(SessionSummary));
-                OnPropertyChanged(nameof(OpenedAtDisplay));
+                OnPropertyChanged(nameof(BalanceSummary));
+                OnPropertyChanged(nameof(HasMovements));
             }
         }
     }
 
-    public string SessionSummary => CurrentSession is null
-        ? "No hay caja abierta"
-        : $"Caja abierta · Esperado: {CurrentSession.ExpectedDisplay}";
+    public bool HasMovements => Balance.MovementCount > 0;
 
-    public string OpenedAtDisplay => CurrentSession is null
-        ? string.Empty
-        : $"Desde {CurrentSession.OpenedAtLocal:dd/MM/yyyy HH:mm}";
+    public string BalanceSummary => HasMovements
+        ? $"En efectivo: {Balance.CashOnHandDisplay} · Movimientos: {Balance.MovementCount}"
+        : "Todavía no hay movimientos en la caja";
 
-    public string OpenAmount
+    public MethodOption MovementMethod
     {
-        get => _openAmount;
-        set => SetProperty(ref _openAmount, value);
+        get => _movementMethod;
+        set => SetProperty(ref _movementMethod, value);
     }
 
-    public string OpenNotes
+    /// <summary>Qué medio se está mirando. Cambiarlo recarga la lista.</summary>
+    public MethodOption FilterMethod
     {
-        get => _openNotes;
-        set => SetProperty(ref _openNotes, value);
+        get => _filterMethod;
+        set
+        {
+            if (SetProperty(ref _filterMethod, value))
+            {
+                Load();
+            }
+        }
     }
 
     public string MovementAmount
@@ -92,18 +112,6 @@ public class CashRegisterViewModel : ViewModelBase
         set => SetProperty(ref _movementIsIncome, value);
     }
 
-    public string CloseCountedAmount
-    {
-        get => _closeCountedAmount;
-        set => SetProperty(ref _closeCountedAmount, value);
-    }
-
-    public string CloseNotes
-    {
-        get => _closeNotes;
-        set => SetProperty(ref _closeNotes, value);
-    }
-
     public string StatusMessage
     {
         get => _statusMessage;
@@ -117,51 +125,32 @@ public class CashRegisterViewModel : ViewModelBase
     }
 
     public ICommand LoadCommand { get; }
-    public ICommand OpenSessionCommand { get; }
     public ICommand RegisterMovementCommand { get; }
-    public ICommand CloseSessionCommand { get; }
 
     public void Load() => SafeLoad(LoadCore, "Caja");
 
     private void LoadCore()
     {
-        CurrentSession = AppHost.CashRegisterService.GetOpenSessionState();
+        // El saldo se pide aparte y no se saca de la lista: la lista viene filtrada y
+        // recortada, así que sumarla daría un total que no es el de la caja.
+        Balance = AppHost.CashRegisterService.GetBalance();
+
+        MethodTotals.Clear();
+        foreach (var total in Balance.ByMethod)
+        {
+            MethodTotals.Add(total);
+        }
+
+        var filter = new CashMovementFilter { Method = FilterMethod.Method };
 
         Movements.Clear();
-        foreach (var movement in AppHost.CashRegisterService.GetCurrentMovements())
+        foreach (var movement in AppHost.CashRegisterService.GetMovements(filter, MovementLimit))
         {
             Movements.Add(movement);
         }
 
-        SessionHistory.Clear();
-        foreach (var session in AppHost.CashRegisterService.GetSessionHistory())
-        {
-            SessionHistory.Add(session);
-        }
-
         _onDataChanged();
-        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
-    }
-
-    private void OpenSession()
-    {
-        try
-        {
-            if (!NumberInput.TryParseMoney(OpenAmount, out var amount))
-            {
-                throw new InvalidOperationException("Monto inicial inválido.");
-            }
-
-            AppHost.CashRegisterService.OpenSession(amount, OpenNotes);
-            OpenAmount = "0";
-            OpenNotes = string.Empty;
-            SetStatus("Caja abierta correctamente.", isError: false);
-            Load();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message, isError: true);
-        }
+        CommandManager.InvalidateRequerySuggested();
     }
 
     private void RegisterMovement()
@@ -174,7 +163,12 @@ public class CashRegisterViewModel : ViewModelBase
             }
 
             var type = MovementIsIncome ? CashMovementType.Income : CashMovementType.Expense;
-            AppHost.CashRegisterService.RegisterMovement(type, amount, MovementReason);
+
+            AppHost.CashRegisterService.RegisterMovement(
+                type,
+                amount,
+                MovementReason,
+                MovementMethod.Method ?? PaymentMethod.Cash);
 
             MovementAmount = string.Empty;
             MovementReason = string.Empty;
@@ -185,62 +179,6 @@ public class CashRegisterViewModel : ViewModelBase
         catch (Exception ex)
         {
             SetStatus(ex.Message, isError: true);
-        }
-    }
-
-    private async Task CloseSessionAsync()
-    {
-        if (CurrentSession is null)
-        {
-            return;
-        }
-
-        if (!NumberInput.TryParseMoney(CloseCountedAmount, out var counted))
-        {
-            AppHost.NotificationService.Warning("El monto contado no es un número válido.");
-            return;
-        }
-
-        var expected = CurrentSession.ExpectedBalance;
-        var difference = counted - expected;
-
-        // El desglose completo antes de confirmar: cerrar con diferencia es una decisión
-        // que hay que poder tomar con los tres números a la vista, no de memoria.
-        // Todos con AppCulture; antes dos de ellos usaban el formato del sistema.
-        var message = difference == 0
-            ? $"Contaste {AppCulture.Money(counted)} y es exactamente lo esperado."
-            : $"Esperado: {AppCulture.Money(expected)}\n" +
-              $"Contado: {AppCulture.Money(counted)}\n" +
-              $"Diferencia: {AppCulture.Money(difference)} " +
-              (difference > 0 ? "(sobra)" : "(falta)") +
-              "\n\nLa diferencia queda registrada en el cierre.";
-
-        var confirmed = await AppHost.DialogService.ConfirmAsync(
-            "Cerrar la caja del día",
-            message,
-            confirmText: "Cerrar caja",
-            isDestructive: false);
-
-        if (!confirmed)
-        {
-            return;
-        }
-
-        try
-        {
-            AppHost.CashRegisterService.CloseSession(counted, CloseNotes);
-            CloseCountedAmount = string.Empty;
-            CloseNotes = string.Empty;
-
-            AppHost.NotificationService.Success(difference == 0
-                ? "Caja cerrada. Cuadró exacto."
-                : $"Caja cerrada con una diferencia de {AppCulture.Money(difference)}.");
-
-            Load();
-        }
-        catch (Exception ex)
-        {
-            AppHost.NotificationService.Error(ex.Message, ex);
         }
     }
 
@@ -275,5 +213,26 @@ public class CashRegisterViewModel : ViewModelBase
         {
             AppHost.NotificationService.Success(message);
         }
+    }
+
+    /// <summary>Un medio de pago para los combos. <c>Method</c> null es «todos».</summary>
+    public sealed class MethodOption
+    {
+        public MethodOption(PaymentMethod method)
+        {
+            Method = method;
+            Label = PaymentRules.GetMethodLabel(method);
+        }
+
+        private MethodOption()
+        {
+            Method = null;
+            Label = "Todos los medios";
+        }
+
+        public PaymentMethod? Method { get; }
+        public string Label { get; }
+
+        public static MethodOption Any { get; } = new();
     }
 }

@@ -38,15 +38,27 @@ public class ProjectPayment
     public decimal Amount { get; set; }
     public PaymentMethod Method { get; set; }
 
-    /// <summary>
-    /// Movimiento de Caja que generó este cobro, si entró en efectivo.
-    /// </summary>
+    /// <summary>Movimiento de Caja que generó este cobro. Todo cobro asienta uno.</summary>
     /// <remarks>
-    /// Un pago con este vínculo <b>no se borra</b>: se compensa con un movimiento inverso.
-    /// Borrar un ingreso de una sesión de caja ya cerrada descuadraría el arqueo de ese
-    /// día, que es un número que alguien ya contó y firmó.
+    /// Un pago <b>no se borra</b>: se compensa con un movimiento inverso. Borrar un
+    /// ingreso deja el saldo bien y la historia muda, y después nadie puede explicar por
+    /// qué la cuenta del cliente dice lo que dice.
     /// </remarks>
     public int? CashMovementId { get; set; }
+
+    /// <summary>Cuándo se anuló, si se anuló. Null es un cobro vigente.</summary>
+    /// <remarks>
+    /// Se anula por baja lógica y no borrando la fila: un cobro que existió es parte de la
+    /// historia del trabajo, y el cliente puede preguntar por él meses después. Antes se
+    /// borraba de verdad y del proyecto no quedaba ni rastro de que hubiera pasado.
+    /// </remarks>
+    public DateTime? CancelledAtUtc { get; set; }
+
+    /// <summary>Por qué se anuló. Lo escribe quien anula.</summary>
+    public string? CancelReason { get; set; }
+
+    /// <summary>Un cobro que sigue contando para el saldo del cliente.</summary>
+    public bool IsActive => CancelledAtUtc is null;
 
     public string? Notes { get; set; }
     public DateTime CreatedAtUtc { get; set; }

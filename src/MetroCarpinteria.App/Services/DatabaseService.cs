@@ -205,12 +205,17 @@ public sealed class DatabaseService
         context.Database.ExecuteSqlRaw("""
             CREATE TABLE IF NOT EXISTS CashMovements (
                 Id INTEGER NOT NULL CONSTRAINT PK_CashMovements PRIMARY KEY AUTOINCREMENT,
-                CashSessionId INTEGER NOT NULL,
+                CashSessionId INTEGER NULL,
                 Type INTEGER NOT NULL,
                 Amount TEXT NOT NULL,
+                Method INTEGER NOT NULL DEFAULT 0,
+                ProjectId INTEGER NULL,
+                ProjectPaymentId INTEGER NULL,
+                EmployeeId INTEGER NULL,
+                ProjectLaborLineId INTEGER NULL,
                 Reason TEXT NOT NULL,
                 CreatedAtUtc TEXT NOT NULL,
-                CONSTRAINT FK_CashMovements_CashSessions_CashSessionId FOREIGN KEY (CashSessionId) REFERENCES CashSessions (Id) ON DELETE CASCADE
+                CONSTRAINT FK_CashMovements_CashSessions_CashSessionId FOREIGN KEY (CashSessionId) REFERENCES CashSessions (Id) ON DELETE SET NULL
             );
             """);
 

@@ -520,6 +520,10 @@ public sealed class ClientService
     private static Dictionary<int, decimal> ReadPaidByProject(AppDbContext context) =>
         context.ProjectPayments
             .AsNoTracking()
+
+            // Un cobro anulado deja de contar para la cuenta del cliente, pero la fila
+            // queda: se anula por baja lógica para no perder que existió.
+            .Where(x => x.CancelledAtUtc == null)
             .Select(x => new { x.ProjectId, x.Amount })
             .AsEnumerable()
             .GroupBy(x => x.ProjectId)

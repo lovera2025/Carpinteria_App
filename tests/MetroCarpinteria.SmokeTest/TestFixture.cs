@@ -99,13 +99,11 @@ internal sealed class TestFixture : IDisposable
             .Create("Placard empotrado", "Cliente en curso", "Melamina blanca", 250000m, ProjectStatus.InProgress)
             .Id;
 
-        // Una caja abierta y cerrada, para que el historial y los reportes tengan
-        // algo que mostrar sin dejar una sesión abierta que condicione otros tests.
+        // Algo de plata en la caja fuerte, para que el historial y los reportes tengan qué
+        // mostrar. Ya no hay sesión que abrir ni cerrar.
         var cash = AppHost.CashRegisterService;
-        cash.OpenSession(5000m, "Apertura de prueba");
         cash.RegisterMovement(CashMovementType.Income, 12000m, "Cobro de prueba");
         cash.RegisterMovement(CashMovementType.Expense, 2000m, "Gasto de prueba");
-        cash.CloseSession(15000m, "Cierre de prueba");
     }
 
     public void Dispose()

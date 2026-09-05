@@ -61,10 +61,7 @@ public sealed class PaymentService
                     "Falta el precio del trabajo: sin total no se puede saber cuánto queda por cobrar.");
             }
 
-            var alreadyPaid = context.ProjectPayments
-                .Where(p => p.ProjectId == projectId)
-                .AsEnumerable()
-                .Sum(p => p.Amount);
+            var alreadyPaid = ReadPaidTotal(context, projectId);
 
             var balance = project.Budget.Value - alreadyPaid;
 
@@ -77,12 +74,10 @@ public sealed class PaymentService
             }
 
             var now = DateTime.UtcNow;
-            int? cashMovementId = null;
 
-            if (method == PaymentMethod.Cash)
-            {
-                cashMovementId = RegisterCashIncome(context, project, kind, amount, now);
-            }
+            // Todo cobro asienta, sea efectivo o no: la caja es el libro de la plata del
+            // taller, no solo del cajón.
+            int? cashMovementId = RegisterIncome(context, project, kind, amount, method, now);
 
             var payment = new ProjectPayment
             {
@@ -120,12 +115,20 @@ public sealed class PaymentService
     }
 
     /// <summary>
-    /// Deshace un cobro.
+    /// Anula un cobro: lo saca de la cuenta del cliente y compensa la plata en Caja.
     /// </summary>
     /// <remarks>
-    /// Si el cobro pasó por Caja no se borra el movimiento: se asienta uno inverso. Borrar
-    /// un ingreso de una sesión ya cerrada descuadraría un arqueo que alguien contó y
-    /// firmó ese día. Y el movimiento inverso necesita una caja abierta donde asentarse.
+    /// <para>
+    /// <b>No se borra nada.</b> El movimiento original queda y se asienta uno inverso; el
+    /// cobro queda marcado como anulado, con su motivo, en vez de desaparecer de la ficha
+    /// del trabajo. Antes la fila se borraba de verdad: la plata quedaba compensada en
+    /// Caja, pero del proyecto no quedaba ni rastro de que ese cobro hubiera existido, y
+    /// meses después nadie podía contestarle al cliente por qué la cuenta decía lo que
+    /// decía.
+    /// </para>
+    /// <para>
+    /// Anular no depende del estado de nada: la caja no se abre ni se cierra.
+    /// </para>
     /// </remarks>
     public void CancelPayment(int paymentId, string reason)
     {
@@ -139,27 +142,30 @@ public sealed class PaymentService
                 .FirstOrDefault(p => p.Id == paymentId)
                 ?? throw new InvalidOperationException("Cobro no encontrado.");
 
-            if (payment.CashMovementId.HasValue)
+            if (!payment.IsActive)
             {
-                var session = context.CashSessions.FirstOrDefault(s => s.ClosedAtUtc == null)
-                    ?? throw new CashRegisterClosedException(
-                        "Este cobro entró por Caja, así que para anularlo hay que asentar la salida " +
-                        "en una caja abierta.");
-
-                context.CashMovements.Add(new CashMovement
-                {
-                    CashSessionId = session.Id,
-                    Type = CashMovementType.Expense,
-                    Amount = payment.Amount,
-                    Reason = $"Anulación de {PaymentRules.GetKindLabel(payment.Kind).ToLowerInvariant()}: " +
-                             $"{payment.Project.Title}" +
-                             (string.IsNullOrWhiteSpace(reason) ? string.Empty : $" ({reason.Trim()})"),
-                    CreatedAtUtc = DateTime.UtcNow
-                });
+                throw new InvalidOperationException("Este cobro ya estaba anulado.");
             }
 
-            payment.Project.UpdatedAtUtc = DateTime.UtcNow;
-            context.ProjectPayments.Remove(payment);
+            var now = DateTime.UtcNow;
+            var trimmed = reason?.Trim();
+
+            context.CashMovements.Add(new CashMovement
+            {
+                Type = CashMovementType.Expense,
+                Amount = payment.Amount,
+                Method = payment.Method,
+                ProjectId = payment.ProjectId,
+                ProjectPaymentId = payment.Id,
+                Reason = $"Anulación de {PaymentRules.GetKindLabel(payment.Kind).ToLowerInvariant()}: " +
+                         $"{payment.Project.Title} — {payment.Project.ClientName}" +
+                         (string.IsNullOrWhiteSpace(trimmed) ? string.Empty : $" ({trimmed})"),
+                CreatedAtUtc = now
+            });
+
+            payment.CancelledAtUtc = now;
+            payment.CancelReason = string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+            payment.Project.UpdatedAtUtc = now;
 
             context.SaveChanges();
             transaction.Commit();
@@ -171,14 +177,20 @@ public sealed class PaymentService
         }
     }
 
-    /// <summary>Lo cobrado hasta ahora de un trabajo.</summary>
+    /// <summary>Lo cobrado hasta ahora de un trabajo, sin contar lo anulado.</summary>
     /// <remarks>
+    /// <para>
     /// El <c>AsEnumerable</c> antes del <c>Sum</c> no es capricho: en las instalaciones
     /// viejas los importes son TEXT, y una suma que quede en SQL los trata como texto.
+    /// </para>
+    /// <para>
+    /// El filtro de anulados tampoco: los cobros anulados ya no se borran, así que sin
+    /// esto seguirían contando y el cliente aparecería debiendo de menos.
+    /// </para>
     /// </remarks>
     public static decimal ReadPaidTotal(AppDbContext context, int projectId) =>
         context.ProjectPayments
-            .Where(p => p.ProjectId == projectId)
+            .Where(p => p.ProjectId == projectId && p.CancelledAtUtc == null)
             .AsEnumerable()
             .Sum(p => p.Amount);
 
@@ -228,24 +240,33 @@ public sealed class PaymentService
             $"{AppCulture.Money(paid)} o más.");
     }
 
-    private static int RegisterCashIncome(
+    /// <summary>
+    /// Asienta el cobro en la caja fuerte, sea cual sea el medio.
+    /// </summary>
+    /// <remarks>
+    /// Antes solo entraba el efectivo: un cobro por transferencia bajaba el saldo del
+    /// cliente y no dejaba rastro en ningún lado. El taller lo reportó como plata que
+    /// había cobrado y no le figuraba. El medio se guarda en el movimiento, que es lo que
+    /// después permite separar lo que está en el cajón de lo que está en el banco.
+    /// </remarks>
+    private static int RegisterIncome(
         AppDbContext context,
         Project project,
         PaymentKind kind,
         decimal amount,
+        PaymentMethod method,
         DateTime now)
     {
-        var session = context.CashSessions.FirstOrDefault(s => s.ClosedAtUtc == null)
-            ?? throw new CashRegisterClosedException(
-                "Para cobrar en efectivo tiene que haber una caja abierta, así el ingreso queda " +
-                "asentado en el arqueo del día.");
-
         var movement = new CashMovement
         {
-            CashSessionId = session.Id,
             Type = CashMovementType.Income,
             Amount = amount,
-            Reason = $"{PaymentRules.GetKindLabel(kind)}: {project.Title}",
+            Method = method,
+            ProjectId = project.Id,
+
+            // El cliente va en el texto además de la relación: el taller mira el renglón,
+            // no la base, y «Seña: Mostrador» sin nombre no le dice de quién es la plata.
+            Reason = $"{PaymentRules.GetKindLabel(kind)}: {project.Title} — {project.ClientName}",
             CreatedAtUtc = now
         };
 

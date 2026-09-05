@@ -33,6 +33,7 @@ internal static class MigrationTests
         RunPriceAdjustmentMigrationTests(run);
         RunWorkshopCycleMigrationTests(run);
         RunManualPriceMigrationTests(run);
+        RunCashSafeMigrationTests(run);
     }
 
     // --- v7: afinidad de las columnas de dinero -------------------------------
@@ -92,8 +93,11 @@ internal static class MigrationTests
 
             new SchemaMigrator(legacy.Path).MigrateToLatest();
 
-            Assert.Equal(legacy.Count("CashMovements"), 2, "movimientos de caja");
-            Assert.Equal(legacy.Count("CashSessions"), 1, "sesiones de caja");
+            // Los dos movimientos que había, más el que la v14 crea a partir de la apertura
+            // de la sesión: sin sesiones, esa plata necesita su propio renglón o el saldo
+            // arrancaría corto.
+            Assert.Equal(legacy.Count("CashMovements"), 3, "movimientos de caja");
+            Assert.Equal(legacy.Count("CashSessions"), 1, "la tabla de sesiones se conserva");
             Assert.Equal(legacy.Count("Projects"), 4, "proyectos");
             Assert.Equal(legacy.Count("ProjectMaterials"), 1, "materiales entregados");
 
@@ -147,12 +151,12 @@ internal static class MigrationTests
                 41.5m,
                 "stock tras el movimiento");
 
-            cash.OpenSession(1000m, "Apertura tras migrar");
+            var before = cash.GetBalance().Balance;
             cash.RegisterMovement(MetroCarpinteria.App.Data.Entities.CashMovementType.Income, 2500.75m, "Venta");
 
-            var state = cash.GetOpenSessionState()
-                ?? throw new InvalidOperationException("No quedó una sesión abierta.");
-            Assert.Equal(state.ExpectedBalance, 3500.75m, "saldo esperado tras migrar");
+            // Los centavos son lo que se está probando: la columna es TEXT justamente para
+            // que 2500,75 no se convierta en 2500,749999… al pasar por punto flotante.
+            Assert.Equal(cash.GetBalance().Balance, before + 2500.75m, "saldo tras migrar");
 
             legacy.AssertIntegrity();
         });
@@ -589,6 +593,200 @@ internal static class MigrationTests
                 0,
                 "marcas puestas sin rastro que las justifique");
 
+            legacy.AssertIntegrity();
+        });
+    }
+
+    // --- v14: la caja fuerte ----------------------------------------------------
+
+    private static void RunCashSafeMigrationTests(Action<string, Action> run)
+    {
+        run("Migración v14: el saldo queda igual a lo último que el taller contó", () =>
+        {
+            // Es la prueba que más importa de toda la tanda: la conversión cambia de dónde
+            // sale el número que el taller mira todos los días. Si la apertura y la
+            // diferencia de arqueo no se convirtieran en movimientos, el saldo arrancaría
+            // corto y nadie sabría por qué.
+            using var legacy = LegacyDatabase.Create();
+
+            legacy.Execute("""
+                INSERT INTO CashSessions
+                    (Id, OpeningAmount, ClosingExpectedAmount, ClosingCountedAmount, Difference,
+                     OpenedAtUtc, ClosedAtUtc)
+                VALUES (50, 1000, 1300, 1310, 10, '2026-07-10T09:00:00Z', '2026-07-10T18:00:00Z');
+                """);
+
+            legacy.Execute("""
+                INSERT INTO CashMovements (CashSessionId, Type, Amount, Reason, CreatedAtUtc)
+                VALUES (50, 1, 500, 'Venta del día', '2026-07-10T12:00:00Z'),
+                       (50, 2, 200, 'Compra de tornillos', '2026-07-10T15:00:00Z');
+                """);
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            // 1000 de apertura + 500 − 200 + 10 de ajuste = 1310, que es exactamente lo
+            // que se contó al cerrar esa caja. Se mira solo esa sesión: la base de prueba
+            // trae movimientos propios y el total incluiría también los suyos.
+            Assert.Equal(
+                legacy.ReadDecimal("""
+                    SELECT COALESCE(SUM(CASE WHEN Type = 1 THEN CAST(Amount AS REAL)
+                                             ELSE -CAST(Amount AS REAL) END), 0)
+                      FROM CashMovements
+                     WHERE CashSessionId = 50;
+                    """),
+                1310m,
+                "lo que aporta la sesión disuelta tiene que ser lo que se contó al cerrarla");
+
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "CashSessionId = 50 AND Reason LIKE 'Apertura de caja%'"),
+                1,
+                "la apertura tiene que tener su renglón");
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "CashSessionId = 50 AND Reason LIKE 'Ajuste de arqueo%'"),
+                1,
+                "la diferencia de arqueo también");
+            Assert.True(legacy.Count("CashSessions") > 0, "la tabla de sesiones se conserva.");
+
+            legacy.AssertIntegrity();
+        });
+
+        run("Migración v14: un faltante de arqueo entra como egreso, no como importe negativo", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+
+            legacy.Execute("""
+                INSERT INTO CashSessions
+                    (Id, OpeningAmount, ClosingExpectedAmount, ClosingCountedAmount, Difference,
+                     OpenedAtUtc, ClosedAtUtc)
+                VALUES (51, 0, 500, 480, -20, '2026-07-11T09:00:00Z', '2026-07-11T18:00:00Z');
+                """);
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            // El signo va en el tipo del movimiento. Un importe negativo rompería cualquier
+            // suma que asuma que los importes son positivos.
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "Reason LIKE 'Ajuste de arqueo%' AND Type = 2"),
+                1,
+                "el faltante tiene que ser un egreso");
+            Assert.Equal(
+                legacy.ReadDecimal("SELECT CAST(Amount AS REAL) FROM CashMovements WHERE Reason LIKE 'Ajuste de arqueo%';"),
+                20m,
+                "el importe va en positivo");
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "CAST(Amount AS REAL) < 0"),
+                0,
+                "ningún movimiento con importe negativo");
+
+            legacy.AssertIntegrity();
+        });
+
+        run("Migración v14: los cobros que nunca entraron a Caja se asientan, y los que sí no se duplican", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+
+            // La tabla de cobros nace en la v6. Se crea acá con esa forma para poder
+            // sembrarla antes de migrar y que la conversión corra una sola vez.
+            legacy.Execute("""
+                CREATE TABLE ProjectPayments (
+                    Id INTEGER NOT NULL CONSTRAINT PK_ProjectPayments PRIMARY KEY AUTOINCREMENT,
+                    ProjectId INTEGER NOT NULL,
+                    Kind INTEGER NOT NULL,
+                    Amount TEXT NOT NULL,
+                    Method INTEGER NOT NULL,
+                    CashMovementId INTEGER NULL,
+                    Notes TEXT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    CONSTRAINT FK_ProjectPayments_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE
+                );
+                """);
+
+            legacy.Execute("""
+                INSERT INTO Projects (Id, Title, ClientName, Budget, Status, IsArchived, CreatedAtUtc, UpdatedAtUtc)
+                VALUES (95, 'Mostrador', 'María González', 730, 1, 0,
+                        '2026-07-01T10:00:00Z', '2026-07-01T10:00:00Z');
+                """);
+
+            // Una seña en efectivo que YA tenía su movimiento, y una por transferencia que
+            // nunca dejó rastro: el caso que el taller reclamó como plata desaparecida.
+            legacy.Execute("""
+                INSERT INTO CashSessions (Id, OpeningAmount, OpenedAtUtc) VALUES (52, 0, '2026-07-05T09:00:00Z');
+                INSERT INTO CashMovements (Id, CashSessionId, Type, Amount, Reason, CreatedAtUtc)
+                VALUES (900, 52, 1, 365, 'Seña: Mostrador', '2026-07-05T10:00:00Z');
+                INSERT INTO ProjectPayments (Id, ProjectId, Kind, Amount, Method, CashMovementId, CreatedAtUtc)
+                VALUES (800, 95, 0, 365, 0, 900, '2026-07-05T10:00:00Z'),
+                       (801, 95, 1, 150, 1, NULL, '2026-07-20T16:00:00Z');
+                """);
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            // El de efectivo no se duplica: contarlo de nuevo sería inventar plata.
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "ProjectPaymentId = 800"),
+                1,
+                "la seña en efectivo tenía que quedar con un solo movimiento");
+
+            // El de transferencia ahora existe, con su fecha original y no la de hoy.
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "ProjectPaymentId = 801"),
+                1,
+                "el cobro por transferencia tenía que asentarse");
+            Assert.Equal(
+                legacy.ReadText("SELECT CreatedAtUtc FROM CashMovements WHERE ProjectPaymentId = 801;"),
+                "2026-07-20T16:00:00Z",
+                "la fecha del cobro por transferencia");
+            Assert.Equal(
+                legacy.ReadInt("SELECT Method FROM CashMovements WHERE ProjectPaymentId = 801;"),
+                1,
+                "el medio del cobro por transferencia");
+
+            // El movimiento viejo aprende de qué trabajo salió, que es lo que faltaba para
+            // poder explicar de dónde vino la plata.
+            Assert.Equal(
+                legacy.ReadInt("SELECT ProjectId FROM CashMovements WHERE Id = 900;"),
+                95,
+                "el movimiento viejo tiene que quedar atado a su trabajo");
+
+            // Y el cobro por transferencia queda vinculado del otro lado también.
+            Assert.Equal(
+                legacy.CountWhere("ProjectPayments", "Id = 801 AND CashMovementId IS NOT NULL"),
+                1,
+                "el cobro tiene que apuntar a su movimiento");
+
+            // El nombre del cliente entra en el texto: es lo que el taller lee de un vistazo.
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "ProjectPaymentId = 801 AND Reason LIKE '%María González%'"),
+                1,
+                "el motivo tendría que nombrar al cliente");
+
+            legacy.AssertIntegrity();
+        });
+
+        run("Migración v14: CashSessionId deja de ser obligatorio y los índices sobreviven", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+            var indexesBefore = legacy.ReadIndexNames("CashMovements");
+            Assert.True(indexesBefore.Count > 0, "la prueba necesita índices para tener sentido.");
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            // Sin esto, un cobro por transferencia seguiría necesitando una caja abierta
+            // donde asentarse — que es la fricción que hacía perder la plata de vista.
+            Assert.True(
+                legacy.ReadTableSql("CashMovements").Contains("\"CashSessionId\" INTEGER NULL", StringComparison.Ordinal),
+                "CashSessionId tendría que aceptar nulos.");
+
+            Assert.Equal(legacy.ReadAffinity("CashMovements", "Amount"), "TEXT", "afinidad del importe");
+            Assert.Equal(legacy.ReadAffinity("CashMovements", "Method"), "INTEGER", "tipo del medio");
+
+            foreach (var index in indexesBefore)
+            {
+                Assert.True(
+                    legacy.ReadIndexNames("CashMovements").Contains(index),
+                    $"el índice {index} tendría que sobrevivir al rebuild.");
+            }
+
+            Assert.Equal(legacy.ReadForeignKeyViolations(), 0, "claves foráneas rotas");
             legacy.AssertIntegrity();
         });
     }

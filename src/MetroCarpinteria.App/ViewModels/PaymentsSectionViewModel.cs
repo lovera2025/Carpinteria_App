@@ -144,20 +144,8 @@ public sealed class PaymentsSectionViewModel : ObservableObject
     public PaymentMethodOption PaymentMethod
     {
         get => _paymentMethod;
-        set
-        {
-            if (SetProperty(ref _paymentMethod, value))
-            {
-                OnPropertyChanged(nameof(NeedsOpenRegister));
-            }
-        }
+        set => SetProperty(ref _paymentMethod, value);
     }
-
-    /// <summary>Avisa antes de intentar, para no hacer tipear todo y después rebotar.</summary>
-    public bool NeedsOpenRegister =>
-        PaymentMethod?.Method == Data.Entities.PaymentMethod.Cash
-        && AppHost.IsReady
-        && !AppHost.CashRegisterService.HasOpenSession();
 
     public string Notes
     {
@@ -194,7 +182,6 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         OnPropertyChanged(nameof(BalanceDisplay));
         OnPropertyChanged(nameof(BalanceLabel));
         OnPropertyChanged(nameof(Summary));
-        OnPropertyChanged(nameof(NeedsOpenRegister));
     }
 
     // --- Acciones -------------------------------------------------------------
@@ -221,14 +208,16 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         Notes = string.Empty;
 
         IsFormOpen = true;
-        OnPropertyChanged(nameof(NeedsOpenRegister));
     }
 
-    private async Task ConfirmAsync()
+    /// <summary>
+    /// Registra el cobro. Ya no depende del estado de la caja: cobrar asienta y punto.
+    /// </summary>
+    private Task ConfirmAsync()
     {
         if (_detail is null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         try
@@ -246,43 +235,12 @@ public sealed class PaymentsSectionViewModel : ObservableObject
 
             OfferReceipt(payment);
         }
-        catch (CashRegisterClosedException)
-        {
-            // El único error de cobro que se resuelve con un botón y no corrigiendo lo
-            // tipeado: se ofrece abrir la caja sin perder lo que venía cargado.
-            await OfferToOpenRegisterAsync();
-        }
         catch (Exception ex)
         {
             AppHost.NotificationService.Warning(ex.Message);
         }
-    }
 
-    private async Task OfferToOpenRegisterAsync()
-    {
-        var confirmed = await AppHost.DialogService.ConfirmAsync(
-            "No hay una caja abierta",
-            "Un cobro en efectivo se asienta en el arqueo del día, así que necesita la caja abierta.\n\n" +
-            "Podés abrirla ahora con saldo inicial en cero, o registrar el cobro por otro medio.",
-            confirmText: "Abrir caja y cobrar");
-
-        if (!confirmed)
-        {
-            return;
-        }
-
-        try
-        {
-            AppHost.CashRegisterService.OpenSession(0m, "Apertura para registrar un cobro");
-            OnPropertyChanged(nameof(NeedsOpenRegister));
-
-            // Y se reintenta el cobro, que es lo que el usuario venía a hacer.
-            await ConfirmAsync();
-        }
-        catch (Exception ex)
-        {
-            AppHost.NotificationService.Error(ex.Message, ex);
-        }
+        return Task.CompletedTask;
     }
 
     private async Task RemoveAsync(object? parameter)
@@ -295,10 +253,9 @@ public sealed class PaymentsSectionViewModel : ObservableObject
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             $"Anular {PaymentRules.GetKindLabel(payment.Kind).ToLowerInvariant()}",
             $"Se anula el cobro de {payment.AmountDisplay} del {payment.DateDisplay}.\n\n" +
-            (payment.IsLinkedToCash
-                ? "Como entró por Caja, el movimiento no se borra: se asienta una salida que lo " +
-                  "compensa, para no descuadrar un arqueo ya cerrado. Necesita la caja abierta."
-                : "El saldo del trabajo vuelve a subir."),
+            "El saldo del trabajo vuelve a subir. No se borra nada: el cobro queda en la " +
+            "ficha marcado como anulado, y en Caja se asienta una salida que compensa la " +
+            "entrada original.",
             confirmText: "Anular cobro",
             isDestructive: true);
 

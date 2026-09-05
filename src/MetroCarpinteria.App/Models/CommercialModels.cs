@@ -57,15 +57,31 @@ public sealed class ProjectPaymentItem
     public string? Notes { get; init; }
     public DateTime CreatedAtLocal { get; init; }
 
-    /// <summary>Entró por Caja: no se borra, se compensa.</summary>
+    /// <summary>Quedó asentado en la caja fuerte. Todo cobro lo hace.</summary>
     public bool IsLinkedToCash { get; init; }
+
+    /// <summary>Cuándo se anuló, si se anuló.</summary>
+    public DateTime? CancelledAtLocal { get; init; }
+
+    /// <summary>Por qué se anuló.</summary>
+    public string? CancelReason { get; init; }
+
+    /// <summary>Un cobro anulado sigue en la lista, pero no cuenta para el saldo.</summary>
+    public bool IsCancelled => CancelledAtLocal.HasValue;
 
     public string AmountDisplay => AppCulture.Money(Amount);
     public string KindLabel => PaymentRules.GetKindLabel(Kind);
     public string MethodLabel => PaymentRules.GetMethodLabel(Method);
     public string DateDisplay => AppCulture.ShortDate(CreatedAtLocal);
 
-    public string Summary => $"{KindLabel} · {MethodLabel} · {DateDisplay}";
+    public string Summary => IsCancelled
+        ? $"{KindLabel} · {MethodLabel} · {DateDisplay} · ANULADO el {AppCulture.ShortDate(CancelledAtLocal!.Value)}"
+        : $"{KindLabel} · {MethodLabel} · {DateDisplay}";
+
+    /// <summary>El motivo de la anulación, para mostrarlo bajo el renglón tachado.</summary>
+    public string CancelNote => IsCancelled && !string.IsNullOrWhiteSpace(CancelReason)
+        ? $"Motivo: {CancelReason}"
+        : string.Empty;
 }
 
 public static class PaymentRules

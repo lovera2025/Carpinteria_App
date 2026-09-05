@@ -309,7 +309,9 @@ public sealed class ProjectService
         // cargado a mano —con el precio escrito directo y sin materiales ni personal— se
         // llevaba puesta la seña y no quedaba rastro de una plata que el cliente sí pagó.
         // Presupuestos ya lo cubría en DeleteRejected; acá faltaba.
-        if (context.ProjectPayments.Any(p => p.ProjectId == id))
+        // Solo los vigentes: el mensaje ofrece anular como salida, así que contar también
+        // los anulados dejaría al usuario haciendo lo que se le pide sin que se destrabe.
+        if (context.ProjectPayments.Any(p => p.ProjectId == id && p.CancelledAtUtc == null))
         {
             throw new InvalidOperationException(
                 "No se puede eliminar un proyecto con cobros registrados. Anulá los cobros o archivalo.");
@@ -521,7 +523,7 @@ public sealed class ProjectService
         var materials = context.ProjectMaterials.Count(m => m.ProjectId == projectId);
         var assignments = context.ProjectAssignments.Count(a => a.ProjectId == projectId);
         var budgetLines = context.ProjectBudgetLines.Count(l => l.ProjectId == projectId);
-        var payments = context.ProjectPayments.Count(p => p.ProjectId == projectId);
+        var payments = context.ProjectPayments.Count(p => p.ProjectId == projectId && p.CancelledAtUtc == null);
 
         if (materials == 0 && assignments == 0 && budgetLines == 0 && payments == 0)
         {

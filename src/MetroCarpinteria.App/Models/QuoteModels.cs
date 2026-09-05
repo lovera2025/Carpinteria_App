@@ -328,8 +328,13 @@ public sealed class QuoteDetail
         }
     }
 
-    /// <summary>Lo cobrado hasta ahora.</summary>
-    public decimal PaidTotal => Payments.Sum(p => p.Amount);
+    /// <summary>Lo cobrado hasta ahora, sin contar lo anulado.</summary>
+    /// <remarks>
+    /// Los cobros anulados siguen en <see cref="Payments"/> —se anulan por baja lógica
+    /// para no perder que existieron— así que hay que descontarlos acá. Sumarlos dejaría
+    /// al cliente debiendo de menos.
+    /// </remarks>
+    public decimal PaidTotal => Payments.Where(p => !p.IsCancelled).Sum(p => p.Amount);
 
     /// <summary>
     /// Lo que falta cobrar. Se calcula, no se guarda: un saldo guardado hay que mantenerlo
@@ -347,7 +352,7 @@ public sealed class QuoteDetail
     /// <summary>Se cobró más que el precio: esa diferencia es del cliente.</summary>
     public bool HasCredit => Balance < 0m;
 
-    public bool HasPayments => Payments.Count > 0;
+    public bool HasPayments => Payments.Any(p => !p.IsCancelled);
     public bool IsFullyPaid => Budget is > 0 && PaidTotal >= Budget.Value;
 
     public string PaidTotalDisplay => AppCulture.Money(PaidTotal);
