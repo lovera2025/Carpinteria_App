@@ -32,6 +32,7 @@ internal static class MigrationTests
         RunCommitmentAndAttachmentMigrationTests(run);
         RunPriceAdjustmentMigrationTests(run);
         RunWorkshopCycleMigrationTests(run);
+        RunManualPriceMigrationTests(run);
     }
 
     // --- v7: afinidad de las columnas de dinero -------------------------------
@@ -498,6 +499,95 @@ internal static class MigrationTests
                 legacy.ReadInt("SELECT COUNT(*) FROM Projects WHERE IncludeAttachmentsInTotal != 0;"),
                 0,
                 "el tilde de adjuntos arranca apagado");
+
+            legacy.AssertIntegrity();
+        });
+    }
+
+    // --- v13: precio pactado a mano --------------------------------------------
+
+    private static void RunManualPriceMigrationTests(Action<string, Action> run)
+    {
+        run("Migración v13: se marcan como pactados los que tienen recorte repartido", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+
+            legacy.Execute("""
+                INSERT INTO Projects (Id, Title, ClientName, Budget, Status, IsArchived, CreatedAtUtc, UpdatedAtUtc)
+                VALUES (91, 'Con recorte repartido', 'Cliente que negoció', 110000, 1, 0,
+                        '2026-07-01T10:00:00Z', '2026-07-01T10:00:00Z'),
+                       (92, 'Solo redondeado', 'Cliente que redondeó', 110000, 1, 0,
+                        '2026-07-02T10:00:00Z', '2026-07-02T10:00:00Z'),
+                       (93, 'Sin precio', 'Cliente sin cotizar', NULL, 1, 0,
+                        '2026-07-03T10:00:00Z', '2026-07-03T10:00:00Z');
+                """);
+
+            var projects = legacy.Count("Projects");
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            // La columna del recorte la crea la v11, así que el caso solo se puede sembrar
+            // después de migrar. Para reejecutar el paso v13 sobre él —y solo ese— se
+            // vuelve la versión a 12: es la forma de probar un paso aislado sin rehacer
+            // toda la cadena a mano.
+            legacy.Execute("""
+                UPDATE Projects SET PriceAdjustmentTargets = 'Profit' WHERE Id = 91;
+                UPDATE Projects SET IsPriceManual = 0;
+                PRAGMA user_version = 12;
+                """);
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "versión del esquema");
+            Assert.Equal(legacy.ReadAffinity("Projects", "IsPriceManual"), "INTEGER", "tipo de la marca");
+            Assert.Equal(legacy.Count("Projects"), projects, "proyectos preservados");
+
+            Assert.Equal(
+                legacy.ReadInt("SELECT IsPriceManual FROM Projects WHERE Id = 91;"),
+                1,
+                "el que repartió el recorte tiene precio pactado");
+            Assert.Equal(
+                legacy.ReadInt("SELECT IsPriceManual FROM Projects WHERE Id = 92;"),
+                0,
+                "el que solo redondeó no dejó rastro");
+            Assert.Equal(
+                legacy.ReadInt("SELECT IsPriceManual FROM Projects WHERE Id = 93;"),
+                0,
+                "sin precio no hay nada que pactar");
+
+            legacy.AssertIntegrity();
+        });
+
+        run("Migración v13: la marca arranca apagada y no se inventa en los que no dejaron rastro", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+
+            legacy.Execute("""
+                INSERT INTO Projects (Id, Title, ClientName, Budget, Status, IsArchived, CreatedAtUtc, UpdatedAtUtc)
+                VALUES (94, 'Solo redondeado', 'Cliente que redondeó', 110000, 1, 0,
+                        '2026-07-02T10:00:00Z', '2026-07-02T10:00:00Z');
+                """);
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            // Un presupuesto redondeado a mano sin repartir la diferencia no dejó ningún
+            // rastro en la base, así que no hay forma honesta de reconocerlo. Marcarlo por
+            // las dudas le congelaría el precio a presupuestos que sí tienen que seguir a
+            // la fórmula: se prefiere el falso negativo, que se corrige solo la próxima
+            // vez que le toquen el precio.
+            Assert.Equal(
+                legacy.ReadInt("SELECT IsPriceManual FROM Projects WHERE Id = 94;"),
+                0,
+                "un redondeo sin rastro no se puede reconocer");
+
+            Assert.Equal(
+                legacy.ReadInt("""
+                    SELECT COUNT(*) FROM Projects
+                     WHERE IsPriceManual != 0
+                       AND (PriceAdjustmentTargets IS NULL OR TRIM(PriceAdjustmentTargets) = '');
+                    """),
+                0,
+                "marcas puestas sin rastro que las justifique");
 
             legacy.AssertIntegrity();
         });

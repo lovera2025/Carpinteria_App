@@ -543,15 +543,16 @@ public partial class QuotesViewModel
             return;
         }
 
-        // Se vuelve al total <b>con las condiciones aplicadas</b>, no al precio pelado:
-        // restaurar al calculado no puede significar tirar a la basura el IVA pactado.
-        // El display se toma antes de recargar, que reemplaza la instancia.
-        var calculated = detail.CalculatedTotal ?? detail.Commercial.Total;
-        var display = AppCulture.Money(calculated);
+        // Solo para el aviso: el número que manda lo recalcula el servicio, que es el
+        // único lugar donde vive la fórmula. El display se toma antes de recargar, que
+        // reemplaza la instancia.
+        var display = AppCulture.Money(detail.CalculatedTotal ?? detail.Commercial.Total);
 
         try
         {
-            AppHost.QuoteService.SetFinalPrice(Detail.Id, calculated);
+            // No es SetFinalPrice con el número calculado: eso volvería a marcarlo como
+            // pactado a mano y el precio quedaría clavado igual que antes.
+            AppHost.QuoteService.RestoreCalculatedPrice(Detail.Id);
             ReloadListAndDetail();
 
             SetStatus($"Precio final vuelto al calculado: {display}.", isError: false);

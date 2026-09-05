@@ -30,6 +30,18 @@ public class Project
     public decimal? Budget { get; set; }
 
     /// <summary>
+    /// Si <see cref="Budget"/> es un precio pactado con el cliente y no la salida de la
+    /// fórmula.
+    /// </summary>
+    /// <remarks>
+    /// El campo existe porque <see cref="Budget"/> guarda dos cosas que no se distinguen
+    /// solas: lo que da el cálculo y lo que se acordó. Sin esta marca, recalcular pisaba
+    /// el precio negociado con el del cálculo —y como el recálculo corre en cada salida de
+    /// campo de la calculadora, alcanzaba con tocar cualquier dato para perderlo.
+    /// </remarks>
+    public bool IsPriceManual { get; set; }
+
+    /// <summary>
     /// Líneas del desglose que absorben el recorte a mano, separadas por coma
     /// (<c>Waste,Profit</c>). Null o vacío es «solo cambió lo que se le cobra».
     /// </summary>

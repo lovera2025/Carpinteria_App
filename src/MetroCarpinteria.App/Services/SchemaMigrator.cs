@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 12;
+    public const int LatestVersion = 13;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -81,7 +81,8 @@ public sealed class SchemaMigrator
         new(9, "Mano de obra por operario", ApplyLaborLines),
         new(10, "Aviso de seña y presupuestos adjuntos", ApplyCommitmentAndAttachments),
         new(11, "Ajuste de desglose y jornales pagados", ApplyPriceAdjustmentAndAssignmentPaid),
-        new(12, "Ciclo del taller y adjuntos en el total", ApplyWorkshopCycle, TransformsData: true)
+        new(12, "Ciclo del taller y adjuntos en el total", ApplyWorkshopCycle, TransformsData: true),
+        new(13, "Precio pactado a mano", ApplyManualPriceFlag, TransformsData: true)
     ];
 
     /// <summary>
@@ -414,6 +415,38 @@ public sealed class SchemaMigrator
 
         AddColumnIfMissing(
             connection, transaction, "ProjectAssignments", "IsPaid", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    /// <summary>
+    /// La marca que distingue un precio pactado con el cliente del que sale de la fórmula.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Sin ella, <c>Budget</c> guardaba las dos cosas sin diferenciarlas y el recálculo
+    /// —que corre en cada salida de campo de la calculadora— pisaba el precio negociado.
+    /// </para>
+    /// <para>
+    /// El relleno solo puede reconocer los presupuestos donde el recorte se repartió sobre
+    /// el desglose, porque ahí quedó <c>PriceAdjustmentTargets</c> como rastro. Los que
+    /// solo redondearon el total no dejaron ninguno: distinguirlos exigiría recalcular
+    /// cada presupuesto viejo acá adentro, y un número inventado es peor que uno que
+    /// todavía no sabemos. Esos siguen como hasta ahora hasta que se les toque el precio.
+    /// </para>
+    /// </remarks>
+    private static void ApplyManualPriceFlag(
+        SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        AddColumnIfMissing(
+            connection, transaction, "Projects", "IsPriceManual", "INTEGER NOT NULL DEFAULT 0");
+
+        Execute(connection, transaction, """
+            UPDATE Projects
+               SET IsPriceManual = 1
+             WHERE Budget IS NOT NULL
+               AND PriceAdjustmentTargets IS NOT NULL
+               AND TRIM(PriceAdjustmentTargets) <> '';
+            """);
     }
 
     /// <summary>

@@ -413,17 +413,41 @@ public sealed class QuoteDetail
 
     public bool IsEditable => Status == ProjectStatus.Quote && !IsArchived;
 
+    /// <summary>El precio se pactó a mano y ya no sigue al cálculo.</summary>
+    public bool IsPriceManual { get; init; }
+
     /// <summary>
-    /// El precio guardado no coincide con el que sale del cálculo: lo redondearon a mano.
+    /// El precio guardado no coincide con el que sale del cálculo: lo pactaron a mano.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Manda <see cref="IsPriceManual"/>, que es el dato guardado. La comparación de
+    /// números queda como respaldo para los presupuestos anteriores a que existiera la
+    /// marca, donde el único rastro es que los dos totales no coinciden.
+    /// </para>
+    /// <para>
     /// Se compara contra el total <b>con descuento e IVA</b>, no contra el precio pelado:
     /// si no, pactar un 21% haría que todo presupuesto pareciera ajustado a mano.
+    /// </para>
     /// </remarks>
     public bool BudgetAdjustedManually =>
-        Budget.HasValue
-        && CalculatedTotal.HasValue
-        && (Budget.Value != CalculatedTotal.Value || PriceAdjustmentTargets.Count > 0);
+        IsPriceManual
+        || (Budget.HasValue
+            && CalculatedTotal.HasValue
+            && (Budget.Value != CalculatedTotal.Value || PriceAdjustmentTargets.Count > 0));
+
+    /// <summary>
+    /// El aviso del precio pactado, con los dos números a la vista.
+    /// </summary>
+    /// <remarks>
+    /// Decir solo «no coincide con el cálculo» obliga a buscar el otro número en otra
+    /// parte. Y como ahora recalcular ya no pisa el pactado, este aviso es la única señal
+    /// de que el precio dejó de seguir a la fórmula.
+    /// </remarks>
+    public string ManualPriceNotice => CalculatedTotal.HasValue && Budget.HasValue
+        ? $"Precio pactado a mano: {AppCulture.Money(Budget.Value)} " +
+          $"(el cálculo da {AppCulture.Money(CalculatedTotal.Value)}). Recalcular no lo toca."
+        : "El precio final se pactó a mano y no sigue al cálculo.";
 
     public bool HasPendingStock => Lines.Any(l => l.IsFromInventory && l.AppliedQuantity < l.Quantity)
         && Status != ProjectStatus.Quote

@@ -112,7 +112,7 @@
 
                 <Button Content="Recalcular" Style="{StaticResource SecondaryButtonStyle}"
                         HorizontalAlignment="Left" Command="{Binding CalculateCommand}"
-                        ToolTip="El precio ya se actualiza solo. Esto lo fuerza a mano." />
+                        ToolTip="Rehace el desglose. Si fijaste un precio a mano, ese no se toca." />
             </StackPanel>
         </Border>
 

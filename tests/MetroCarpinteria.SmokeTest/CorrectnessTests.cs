@@ -136,11 +136,78 @@ internal static class CorrectnessTests
             Assert.Equal(detail.Breakdown!.FinalPrice, calculated.FinalPrice, "desglose tras ajustar");
             Assert.True(detail.BudgetAdjustedManually, "tendría que quedar marcado como ajustado a mano.");
 
-            // Volver al calculado usa el mismo camino, y el cartel se apaga.
-            quotes.SetFinalPrice(id, calculated.FinalPrice);
+            // Volver al calculado es su propio camino, y el cartel se apaga. No sirve
+            // SetFinalPrice con el número calculado: eso sigue siendo fijarlo a mano, y
+            // dejaría el precio clavado contra los recálculos que vengan.
+            quotes.RestoreCalculatedPrice(id);
             Assert.False(
                 RequireQuote(quotes, id).BudgetAdjustedManually,
                 "al volver al calculado ya no habría que avisar de un ajuste.");
+        });
+
+        run("Correctitud: recalcular no pisa el precio pactado con el cliente", () =>
+        {
+            // El caso que reportó el taller como «al darle recalcular se descajetaba
+            // todo». Budget guardaba dos cosas sin distinguirlas —lo que da la fórmula y
+            // lo que se acordó— así que cualquier recálculo se llevaba puesto el precio
+            // negociado. Y como el recálculo corre al salir de cada campo de la
+            // calculadora, alcanzaba con tocar un dato para perderlo sin apretar nada.
+            var productId = inventory.CreateProduct("Roble pactado", 40m, 0m, "Metro", 1200m).Id;
+            var id = quotes.CreateQuote("Mostrador pactado", "Cliente que cerró en 730", null).Id;
+            quotes.AddInventoryLine(id, productId, 5m);
+
+            quotes.SaveCalculation(id, 6000m, 3m, 30000m, BudgetRates.Defaults());
+            quotes.SetFinalPrice(id, 730000m);
+
+            // Tocar la calculadora: materiales, días y jornal, uno por uno.
+            quotes.SaveCalculation(id, 9000m, 4m, 35000m, BudgetRates.Defaults());
+
+            var detail = RequireQuote(quotes, id);
+            Assert.Equal(detail.Budget ?? 0m, 730000m, "el precio pactado tras recalcular");
+            Assert.True(detail.IsPriceManual, "tendría que seguir marcado como pactado a mano.");
+
+            // El desglose sí se rehace contra los datos nuevos: lo que no se mueve es el
+            // total. Si el cálculo no hubiera corrido, el precio estaría congelado por la
+            // razón equivocada.
+            Assert.True(
+                (detail.CalculatedTotal ?? 0m) > 0m && detail.CalculatedTotal != 730000m,
+                "el cálculo tendría que haberse actualizado con los datos nuevos.");
+
+            // Cambiar el IVA tampoco mueve lo acordado: reparte distinto por dentro.
+            quotes.SaveCommercialTerms(id, new CommercialTerms { VatPercent = 21m });
+            Assert.Equal(
+                RequireQuote(quotes, id).Budget ?? 0m, 730000m, "el precio pactado tras cambiar el IVA");
+
+            // Y volver al calculado sí lo mueve, que es la única forma de soltarlo.
+            quotes.RestoreCalculatedPrice(id);
+            var restored = RequireQuote(quotes, id);
+            Assert.False(restored.IsPriceManual, "volver al calculado tiene que soltar la marca.");
+            Assert.Equal(restored.Budget ?? 0m, restored.CalculatedTotal ?? 0m, "precio tras soltarlo");
+        });
+
+        run("Correctitud: con precio pactado y recorte, el desglose se reacomoda sin mover el total", () =>
+        {
+            // El recorte se guarda como claves, no como importes, así que al cambiar la
+            // base tiene que repartirse de nuevo sobre los números nuevos. Antes esto no
+            // llegaba a pasar nunca: el recálculo borraba las claves antes de aplicarlas.
+            var productId = inventory.CreateProduct("Pino pactado", 25m, 0m, "Metro", 700m).Id;
+            var id = quotes.CreateQuote("Vitrina pactada", "Cliente que negoció", null).Id;
+            quotes.AddInventoryLine(id, productId, 4m);
+
+            var calculated = quotes.SaveCalculation(id, 5000m, 3m, 25000m, BudgetRates.Defaults());
+            var pactado = calculated.FinalPrice - 5000m;
+            quotes.SetFinalPrice(id, pactado, [BudgetLineKind.Profit]);
+
+            // Baja el costo de materiales: el desglose cambia, el total no.
+            quotes.SaveCalculation(id, 3000m, 3m, 25000m, BudgetRates.Defaults());
+
+            var detail = RequireQuote(quotes, id);
+            Assert.Equal(detail.Budget ?? 0m, pactado, "el total pactado tras cambiar la base");
+            Assert.Equal(detail.Breakdown!.FinalPrice, pactado, "el desglose tiene que cerrar en el pactado");
+            Assert.Equal(detail.Breakdown.MaterialsCost, 3000m, "los materiales sí se actualizan");
+            Assert.True(
+                detail.PriceAdjustmentTargets.Contains(BudgetLineKind.Profit),
+                "el reparto del recorte tiene que sobrevivir al recálculo.");
         });
 
         run("Correctitud: recortar de ganancia baja esa línea y el desglose suma el nuevo total", () =>
@@ -183,21 +250,26 @@ internal static class CorrectnessTests
             Assert.Equal(detail.PriceAdjustmentTargets.Count, 0, "no quedó recorte a medias");
         });
 
-        run("Correctitud: recalcular limpia el recorte del desglose", () =>
+        run("Correctitud: sin precio pactado, recalcular sí actualiza el precio", () =>
         {
+            // La contracara de proteger el precio pactado: el camino normal —donde el jefe
+            // nunca fijó un precio a mano— tiene que seguir siguiendo a la fórmula. Si
+            // esto se congelara, un presupuesto quedaría con el precio de la primera
+            // cuenta para siempre, que es peor que el bug que vinimos a arreglar.
             var productId = inventory.CreateProduct("Cedro recálculo", 12m, 0m, "Metro", 1100m).Id;
             var id = quotes.CreateQuote("Mesa de cedro", "Cliente indeciso", null).Id;
             quotes.AddInventoryLine(id, productId, 2m);
 
-            var calculated = quotes.SaveCalculation(id, 2500m, 1m, 15000m, BudgetRates.Defaults());
-            quotes.SetFinalPrice(id, calculated.FinalPrice - 1000m, [BudgetLineKind.Profit]);
+            var primera = quotes.SaveCalculation(id, 2500m, 1m, 15000m, BudgetRates.Defaults());
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, primera.FinalPrice, "precio de la primera cuenta");
 
-            var after = quotes.SaveCalculation(id, 2500m, 1m, 15000m, BudgetRates.Defaults());
+            var segunda = quotes.SaveCalculation(id, 4000m, 2m, 18000m, BudgetRates.Defaults());
             var detail = RequireQuote(quotes, id);
 
-            Assert.Equal(detail.PriceAdjustmentTargets.Count, 0, "el recálculo tiene que borrar las marcas");
-            Assert.Equal(detail.Breakdown!.Profit, after.Profit, "ganancia vuelta al cálculo");
-            Assert.Equal(detail.Budget ?? 0m, after.FinalPrice, "precio vuelto al calculado");
+            Assert.False(detail.IsPriceManual, "nunca se fijó un precio a mano.");
+            Assert.Equal(detail.Budget ?? 0m, segunda.FinalPrice, "precio actualizado por el recálculo");
+            Assert.Equal(detail.Breakdown!.Profit, segunda.Profit, "ganancia actualizada");
+            Assert.Equal(detail.PriceAdjustmentTargets.Count, 0, "sin recorte no hay marcas que guardar");
         });
 
         run("Correctitud: no se puede recortar de materiales ni de mano de obra", () =>

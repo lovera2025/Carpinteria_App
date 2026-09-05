@@ -230,6 +230,7 @@ public sealed class QuoteService
             Breakdown = breakdown,
             UnadjustedBreakdown = unadjusted,
             PriceAdjustmentTargets = BudgetLineKinds.ParseTargets(project.PriceAdjustmentTargets),
+            IsPriceManual = project.IsPriceManual,
             CalculatedTotal = calculatedTotal,
             Images = _imageService?.List(projectId) ?? [],
             Attachments = ReadAttachments(context, projectId),
@@ -935,11 +936,18 @@ public sealed class QuoteService
         project.OverheadPercent = breakdown.Rates.OverheadPercent;
         project.ProfitPercent = breakdown.Rates.ProfitPercent;
 
-        // Budget es lo que el cliente paga: el precio calculado ya con descuento e IVA.
-        // Es el número que necesitan Caja, Reportes y el saldo de la seña, y por eso vale
-        // más que guardar el precio pelado y que cada pantalla rehaga la cuenta.
-        project.Budget = CommercialTermsService.Apply(breakdown.FinalPrice, ReadTerms(project)).Total;
-        project.PriceAdjustmentTargets = null;
+        // Un precio pactado a mano le gana al cálculo hasta que el jefe diga lo contrario.
+        // Esto corre en cada salida de campo de la calculadora, así que pisarlo acá era
+        // perder el precio negociado con el cliente por tocar cualquier dato.
+        if (!project.IsPriceManual)
+        {
+            // Budget es lo que el cliente paga: el precio calculado ya con descuento e IVA.
+            // Es el número que necesitan Caja, Reportes y el saldo de la seña, y por eso vale
+            // más que guardar el precio pelado y que cada pantalla rehaga la cuenta.
+            project.Budget = CommercialTermsService.Apply(breakdown.FinalPrice, ReadTerms(project)).Total;
+            project.PriceAdjustmentTargets = null;
+        }
+
         project.UpdatedAtUtc = DateTime.UtcNow;
 
         context.SaveChanges();
@@ -973,14 +981,26 @@ public sealed class QuoteService
         var breakdown = RebuildRaw(
             project, ReadRates(project), lines, ReadLaborLines(context, projectId));
 
-        var commercial = CommercialTermsService.Apply(breakdown?.FinalPrice ?? 0m, terms);
+        CommercialBreakdown commercial;
 
-        // Sin cálculo todavía no hay precio que ajustar: las condiciones quedan guardadas
-        // y se aplican solas en cuanto se calcule.
-        if (breakdown is not null)
+        if (project.IsPriceManual && project.Budget is > 0)
         {
-            project.Budget = commercial.Total;
-            project.PriceAdjustmentTargets = null;
+            // Con precio pactado el total no se mueve: cambiar el IVA cambia cómo se
+            // reparte por dentro, no lo que se acordó cobrar. Por eso el bloque se arma al
+            // revés desde el total, y no desde el cálculo —que da otro número.
+            commercial = CommercialTermsService.ForTotal(project.Budget.Value, terms);
+        }
+        else
+        {
+            commercial = CommercialTermsService.Apply(breakdown?.FinalPrice ?? 0m, terms);
+
+            // Sin cálculo todavía no hay precio que ajustar: las condiciones quedan
+            // guardadas y se aplican solas en cuanto se calcule.
+            if (breakdown is not null)
+            {
+                project.Budget = commercial.Total;
+                project.PriceAdjustmentTargets = null;
+            }
         }
 
         project.UpdatedAtUtc = DateTime.UtcNow;
@@ -1068,6 +1088,46 @@ public sealed class QuoteService
         }
 
         project.Budget = finalPrice;
+
+        // A partir de acá el precio es del jefe, no de la fórmula: recalcular deja de
+        // pisarlo. Se apaga con RestoreCalculatedPrice, que es la otra mitad de esto.
+        project.IsPriceManual = finalPrice is > 0;
+
+        project.UpdatedAtUtc = DateTime.UtcNow;
+        context.SaveChanges();
+    }
+
+    /// <summary>
+    /// Devuelve el precio al que sale del cálculo y suelta el pactado a mano.
+    /// </summary>
+    /// <remarks>
+    /// Es una intención distinta de <see cref="SetFinalPrice"/>, no la misma con otro
+    /// valor: acá el jefe está diciendo «volvé a seguir la fórmula». Por eso apaga
+    /// <see cref="Project.IsPriceManual"/> y suelta el reparto del recorte.
+    /// </remarks>
+    public void RestoreCalculatedPrice(int projectId)
+    {
+        using var context = _databaseService.CreateContext();
+        var project = RequireEditableQuote(context, projectId);
+
+        var lines = context.ProjectBudgetLines
+            .Where(l => l.ProjectId == projectId)
+            .AsEnumerable()
+            .Sum(l => l.LineTotal);
+
+        var breakdown = RebuildRaw(project, ReadRates(project), lines, ReadLaborLines(context, projectId))
+            ?? throw new InvalidOperationException(
+                "Todavía no hay un precio calculado al que volver.");
+
+        var calculated = CommercialTermsService.Apply(breakdown.FinalPrice, ReadTerms(project)).Total;
+
+        // Bajar el precio por debajo de lo ya cobrado deja plata del cliente sin explicar.
+        // Vale igual cuando el número lo pone el cálculo y no el jefe.
+        PaymentService.RequireBudgetCoversPayments(context, projectId, calculated);
+
+        project.Budget = calculated;
+        project.PriceAdjustmentTargets = null;
+        project.IsPriceManual = false;
         project.UpdatedAtUtc = DateTime.UtcNow;
         context.SaveChanges();
     }
