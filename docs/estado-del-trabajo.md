@@ -1,0 +1,147 @@
+# Estado del trabajo — la caja del taller
+
+Última actualización: **2026-09-05**. Rama: `caja-fuerte` (sale de `precio-pactado-no-se-pisa`, que sale de `master`).
+
+Este documento existe para poder retomar desde cero. Si arrancás una conversación nueva, leé esto primero.
+
+---
+
+## De dónde salió todo esto
+
+Una grabación del carpintero que usa la app (Metro Carpintería, en producción, una sola notebook). Reportó tres cosas que resultaron ser cinco problemas distintos:
+
+1. **Las señas y pagos a cuenta no aparecían en su Caja.** Un cobro solo entraba si el medio era Efectivo; una transferencia bajaba el saldo del cliente y no dejaba rastro en ningún lado, sin aviso.
+2. **Los movimientos no decían de dónde venía la plata.** *"Yo sé que me pagó María"*, pero el renglón decía solo `Seña: Mostrador`.
+3. **No podía aprobar un presupuesto sin materiales cargados.**
+4. **«Al darle recalcular se descajetaba todo»** — el precio que pactaba con el cliente se borraba solo.
+5. Los **16.000 sin explicar** que había reportado en agosto.
+
+Y debajo de todo eso, la causa de fondo: **la app modelaba una caja registradora y él tiene una caja fuerte.**
+
+---
+
+## Decisiones de producto (no se deducen del código)
+
+Están en la memoria del proyecto, en `caja-es-caja-fuerte-no-registradora`. Resumen:
+
+- **La caja no tiene sesiones.** No se abre ni se cierra, no hay arqueo. Es un saldo que corre y nunca se reinicia.
+- **Entra toda la plata cobrada**, sea cual sea el medio.
+- **La plata es una sola.** No se parte el total en «en el banco» / «en el cajón» — el taller no hace esa división. El medio se muestra **en cada movimiento**, no en el total. *(Esto se probó y se revirtió: ver «Lo que se descartó».)*
+- **Aprobar un presupuesto no mueve plata.** Lo corrigió él expresamente: aprobar es que el cliente dijo que sí, no que pagó. Solo «Registrar cobro» mueve la caja.
+- **Nada se descuenta por estar «marcado».** La caja se mueve cuando él registra que cobró o pagó.
+- **Se corrige, no se borra.** Ningún borrado duro: las correcciones compensan y los dos renglones quedan visibles.
+- **Lo ya cargado no se toca.** Los pagos que marcó a mano antes quedan como están: sin etiqueta nueva, sin cartel, sin registro retroactivo.
+- **Sin ceremonia.** Pedirle que lea un desglose y apriete un botón para seguir usando la app es ceremonia. Los avisos aparecen solo cuando hay algo real que decir.
+
+Reglas de trabajo que puso él:
+
+- **Los números primero.** Un bug de pantalla molesta; uno de números le hace perder confianza en todo lo demás.
+- **Nada de errores en silencio.** Ver «Barandas» abajo.
+- **No se borra ningún test.** Las aserciones se pliegan en los archivos que ya existen.
+
+---
+
+## Lo que está hecho
+
+Todo commiteado, **291/291 tests en verde**, y probado abriendo la app contra la base local real.
+
+### Tanda A2 — el precio pactado (rama `precio-pactado-no-se-pisa`)
+
+`feacfe2` · **Migración v13**
+
+`Project.Budget` guardaba dos cosas que no se distinguían: la salida de la fórmula y el precio acordado con el cliente. Como `SaveCalculation` corre **en cada salida de campo de la calculadora**, alcanzaba con tocar cualquier dato para perder el precio negociado.
+
+- `Project.IsPriceManual` separa las dos cosas.
+- `SaveCalculation` y `SaveCommercialTerms` ya no pisan el total pactado.
+- Con IVA, el bloque comercial se arma **al revés desde el total pactado**.
+- `QuoteService.RestoreCalculatedPrice(projectId)` es su propio método: `SetFinalPrice` con el número calculado seguía marcándolo como manual.
+- El relleno solo marca los presupuestos que repartieron el recorte (los únicos que dejaron rastro). Los que solo redondearon no se pueden reconocer sin recalcularlos, y marcarlos por las dudas congelaría precios que deben seguir a la fórmula.
+
+### Tanda B — la caja fuerte (rama `caja-fuerte`)
+
+`7db60ac` · **Migración v14** — el núcleo
+
+- Todo cobro asienta en Caja, con su medio. Se fue el `if (method == Cash)`.
+- `CashMovement` gana `Method`, `Origin`, `ProjectId`, `ProjectPaymentId`, `EmployeeId`, `ProjectLaborLineId`. `CashSessionId` pasa a nullable.
+- La migración **no borra nada**: rellena el origen de lo ya cargado, convierte aperturas y diferencias de arqueo en movimientos, y asienta los cobros que nunca entraron **con su fecha original**. Excluye los que ya tenían movimiento (si no, cada seña en efectivo se duplicaría).
+- Anular un cobro pasa a **baja lógica** (`CancelledAtUtc`, `CancelReason`). Hubo que revisar **ocho lugares** donde se suman cobros.
+- `CashRegisterService` reescrito: se van las sesiones, entran `GetBalance`, `GetMovements`, `CorrectAmount`, `UpdateReason`, `GetPaidByLaborLine`.
+- Blast radius arreglado: `ReportService` y `HomeViewModel` informaban estado de sesiones que ya no existen.
+
+`7b36771` · el aviso de aperturas dudosas
+`290accd` · **la pantalla salía en blanco** — faltaba el trigger de opacidad
+`639f016` · **bindings rotos** dejan de pasar en silencio
+`a0c7ec3` · un cobro anulado se lee como anulado y no puede emitir recibo
+`ba0631c`, `f09e61e`, `e4fd3b7` · la tarjeta de la caja, simplificada en tres pasadas
+
+---
+
+## Barandas nuevas (por qué ya no falla en silencio)
+
+WPF falla callado de dos formas, y las dos ahora tienen test:
+
+1. **Pantalla invisible.** Cada vista arranca en `Opacity 0` y un trigger la muestra. Si se pierde, la pantalla se dibuja entera y no se ve nada — no falla al compilar, no tira excepción, no sale en el log. Un test recorre las diez pantallas y exige el trigger. *Verificado sacándolo a propósito.*
+2. **Binding roto.** Un binding a una propiedad que no existe deja el valor por omisión y sigue. Un test escucha las trazas de WPF mientras dibuja las diez pantallas, cada una con su ViewModel. **Encontró uno al primer intento.**
+
+Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`) y **se suma en memoria, nunca con `SUM()` de SQL** — `Amount` es `TEXT` y SQLite lo pasaría por punto flotante, devolviendo un número parecido y mal.
+
+---
+
+## Lo que falta
+
+### Parte C — liquidación de trabajos terminados (no empezada)
+
+Es lo que él pidió en la grabación: *"una vez terminado tendría que ir a Proyectos terminados… ahí tiene que estar el desglose… cuánto es del desperdicio, cuánto de las herramientas, cuánto es lo mío, cuánto lo de Alejandro y cuánto lo de Javi. Entonces yo a Alejandro le pongo Pagar."*
+
+**El cálculo ya existe entero.** `BudgetBreakdown` trae materiales, desperdicio, desgaste, mano de obra, gastos y ganancia; `LaborShares` ya reparte por persona, con el jefe llevándose overhead y ganancia. Falta la pantalla y la acción, no la matemática.
+
+Diseño acordado:
+
+- **Pantalla propia «Terminados»**, no un filtro: hace falta el total agregado de todos los trabajos cerrados.
+- **El registro del pago es el `CashMovement`**, no un campo en `ProjectAssignment`. Con `ProjectId` + `EmployeeId` + `ProjectLaborLineId` alcanza para todo, permite pagar en varias veces y no hay dos números que puedan discrepar. **`ProjectAssignment` no se toca.**
+- `ProjectLaborLineId` va aparte de `EmployeeId` porque **no todo operario tiene ficha** en Personal.
+- **Un solo camino para pagar**: `SetAssignmentPaid` deja de ser un tilde suelto. Hoy prende un booleano sin mover un peso, y se lee desde tres pantallas.
+- **El importe lo pone él a mano**, precargado pero editable.
+- **«Saldado» es `pagado >= le toca`**, no `==`: con pagos parciales, exigir igualdad deja a alguien pendiente por un centavo para siempre.
+- **Avisos de a quién le debe**, reusando el patrón de la banda de atrasados. Diálogo real solo al archivar un trabajo con pagos pendientes.
+- Lo suyo (*"esto lo puedo sacar yo: mi ganancia"*) no pasa por acá: el jefe no es línea de mano de obra, es un egreso normal con el proyecto anotado.
+
+### Parte A — aprobar sin materiales (no empezada)
+
+La más chica de todas y la última en la lista porque **no toca un solo número**.
+
+- Borrar la validación de `QuoteService.cs:1106`. Mantener la de precio.
+- El comentario que la justifica dice que aprobar es irreversible, y `CancelApproval` existe.
+- Con cero líneas el resumen diría *"Se descontaron todos los materiales"*, que es falso.
+- El diálogo promete descontar stock y el botón dice «Aprobar y descontar».
+- El test `CorrectnessTests.cs:72` fija hoy lo contrario: hay que invertirlo.
+
+### Pendientes de publicación
+
+- **Mergear a `master` y publicar.** Nada se mergeó todavía. Orden acordado: **A2 sola primero** (no le pide aprender nada), después B, después C.
+- **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
+- **Recorrer las pantallas que se tocaron.** Solo se abrió Caja y Proyectos. Presupuestos, Clientes, Personal y Reportes se vieron afectados y nunca se miraron. Ahí aparecieron dos errores que ningún test veía.
+- **Opcional: ensayar la migración con la base del carpintero.** La app ya hace respaldo al cerrar (hasta 30 copias). Cierra la app antes de copiar (la base corre en modo WAL). Guardarla en `.local/` — **agregar `.local/` al `.gitignore` antes**, tiene nombres y teléfonos de sus clientes.
+
+---
+
+## Lo que se descartó, y por qué
+
+Para no volver a proponerlo:
+
+- **Partir el saldo en «en el banco» / «en el cajón».** Se implementó y se sacó: el taller no hace esa división, la plata es toda de uno.
+- **Una tarjeta de «revisá el saldo y confirmalo»** después de migrar. Se implementó y se sacó: era ceremonia, y repetía lo que el historial ya dice renglón por renglón.
+- **Mostrar «Entró / Salió» al lado del saldo por medio.** Cuatro números para decir dos cosas, y dos de ellos dando igual sin explicación.
+- **Registrar retroactivamente en Caja los pagos a operarios que él ya marcó.** Serían movimientos con fecha de hoy por plata que salió hace semanas.
+- **Borrar los 16.000.** Si son un monto de apertura, borrarlos le descuadra el saldo real.
+
+---
+
+## Datos útiles
+
+- **Base de pruebas local**: `Documentos\MetroCarpinteria\data\carpinteria.db`. Tiene datos de tecleo (`Casdasdasdasdasdasd`, `blabla`, `wwwwwmax`) — **no sirve para validar la migración de la caja**, no tiene historia real que contrastar.
+- Respaldo previo a la v14: `Documentos\MetroCarpinteria\PRE_v14_*.db`.
+- La base quedó con datos de prueba metidos el 2026-09-05: un egreso de $3.500 y una seña de $100.000.
+- **Correr todo**: `dotnet build -warnaserror` y después `dotnet run --no-build` en `tests\MetroCarpinteria.SmokeTest`.
+- **Abrir la app**: `src\MetroCarpinteria.App\bin\Debug\net8.0-windows\MetroCarpinteria.exe`. Cerrarla antes de recompilar o el build falla por archivo bloqueado.
+- El plan completo original está en `~/.claude/plans/fijate-esto-me-dijo-jaunty-penguin.md`.
