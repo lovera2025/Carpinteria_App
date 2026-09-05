@@ -86,6 +86,7 @@ public class CashRegisterViewModel : ViewModelBase
             if (SetProperty(ref _balance, value))
             {
                 OnPropertyChanged(nameof(BalanceSummary));
+                OnPropertyChanged(nameof(HistorySummary));
                 OnPropertyChanged(nameof(HasMovements));
             }
         }
@@ -93,9 +94,24 @@ public class CashRegisterViewModel : ViewModelBase
 
     public bool HasMovements => Balance.MovementCount > 0;
 
-    public string BalanceSummary => HasMovements
-        ? $"En efectivo: {Balance.CashOnHandDisplay} · Movimientos: {Balance.MovementCount}"
-        : "Todavía no hay movimientos en la caja";
+    /// <summary>
+    /// El subtítulo de la pantalla. No repite plata: el saldo ya está grande abajo, y
+    /// arrancar el encabezado con un número en rojo asusta sin explicar nada.
+    /// </summary>
+    public string BalanceSummary => Balance.MovementCount switch
+    {
+        0 => "Todavía no hay movimientos en la caja",
+        1 => "1 movimiento registrado",
+        var n => $"{n} movimientos registrados"
+    };
+
+    /// <summary>
+    /// El histórico, en una línea. Va abajo y chico a propósito: es un dato de contexto,
+    /// no algo que se mire todos los días, y arriba competía con el saldo.
+    /// </summary>
+    public string HistorySummary => HasMovements
+        ? $"Desde siempre entraron {Balance.IncomeDisplay} y salieron {Balance.ExpenseDisplay}."
+        : string.Empty;
 
     public MethodOption MovementMethod
     {

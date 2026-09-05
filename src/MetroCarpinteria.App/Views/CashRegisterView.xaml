@@ -96,39 +96,47 @@
                         <TextBlock Text="{Binding Balance.BalanceDisplay}"
                                    FontSize="34" FontWeight="Bold" Margin="0,8,0,0"
                                    Foreground="{DynamicResource PrimaryBrownBrush}" />
-                        <TextBlock Text="Todo lo que entró menos todo lo que salió, desde siempre."
-                                   Style="{StaticResource SubtitleStyle}" Margin="0,2,0,12" />
+                        <TextBlock Text="Lo que hay hoy en el taller."
+                                   Style="{StaticResource SubtitleStyle}" Margin="0,2,0,16" />
 
-                        <Grid Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="Entró" Style="{StaticResource SubtitleStyle}" />
-                                <TextBlock Text="{Binding Balance.IncomeDisplay}" FontWeight="SemiBold" FontSize="16" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1">
-                                <TextBlock Text="Salió" Style="{StaticResource SubtitleStyle}" />
-                                <TextBlock Text="{Binding Balance.ExpenseDisplay}" FontWeight="SemiBold" FontSize="16" />
-                            </StackPanel>
-                        </Grid>
+                        <!-- Antes acá había cuatro números: «Entró/Salió» al lado del
+                             saldo por medio. Los dos pueden dar lo mismo queriendo decir
+                             cosas distintas —uno es el total histórico, el otro el saldo—
+                             y puestos juntos confunden. Queda una sola pregunta: dónde
+                             está la plata. El histórico va abajo, en una línea. -->
+                        <TextBlock Text="Dónde está" Style="{StaticResource SubtitleStyle}"
+                                   FontWeight="SemiBold" Margin="0,0,0,6" />
 
                         <ItemsControl ItemsSource="{Binding MethodTotals}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="0,3">
+                                    <Grid Margin="0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding MethodLabel}" FontSize="13" />
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding MethodLabel}" FontSize="14" />
+                                                <TextBlock Text="{Binding WhereDisplay}" FontSize="12" Margin="6,0,0,0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding NegativeNote}" FontSize="11" FontStyle="Italic"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       Visibility="{Binding IsNegative, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </StackPanel>
                                         <TextBlock Grid.Column="1" Text="{Binding BalanceDisplay}"
-                                                   FontSize="13" FontWeight="SemiBold" />
+                                                   FontSize="15" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="12"
+                                   Margin="0,14,0,0" TextWrapping="Wrap"
+                                   Text="{Binding HistorySummary}" />
                     </StackPanel>
                 </Border>
 

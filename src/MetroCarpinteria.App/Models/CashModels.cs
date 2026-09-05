@@ -85,6 +85,33 @@ public sealed class CashMethodTotal
     public string IncomeDisplay => AppCulture.Money(Income);
     public string ExpenseDisplay => AppCulture.Money(Expense);
     public string BalanceDisplay => AppCulture.Money(Balance);
+
+    /// <summary>
+    /// Dónde está físicamente esa plata.
+    /// </summary>
+    /// <remarks>
+    /// El medio de pago dice cómo entró; lo que el taller necesita saber es dónde está
+    /// ahora. «Efectivo» y «Transferencia» son la misma plata en dos lugares distintos, y
+    /// el que se puede contar con la mano es uno solo.
+    /// </remarks>
+    public string WhereDisplay => Method switch
+    {
+        PaymentMethod.Cash => "en el cajón",
+        PaymentMethod.Transfer or PaymentMethod.Card => "en el banco",
+        PaymentMethod.Check => "en cheques",
+        _ => string.Empty
+    };
+
+    /// <summary>Salió más de lo que entró por este medio.</summary>
+    /// <remarks>
+    /// No es un error de la app: pasa cuando se paga en efectivo una plata que entró por
+    /// el banco. Vale explicarlo, porque un número en rojo asusta.
+    /// </remarks>
+    public bool IsNegative => Balance < 0m;
+
+    public string NegativeNote => IsNegative
+        ? "salió más de lo que entró por acá"
+        : string.Empty;
 }
 
 /// <summary>
