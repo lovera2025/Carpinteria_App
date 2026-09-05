@@ -36,7 +36,6 @@ public class CashRegisterViewModel : ViewModelBase
         _onDataChanged = onDataChanged;
         Movements = new ObservableCollection<CashMovementListItem>();
         MethodTotals = new ObservableCollection<CashMethodTotal>();
-        ReviewOrigins = new ObservableCollection<CashOriginTotal>();
         SuspiciousOpenings = new ObservableCollection<SuspiciousOpening>();
 
         MovementMethods = PaymentRules.Methods.Select(m => new MethodOption(m)).ToList();
@@ -49,7 +48,7 @@ public class CashRegisterViewModel : ViewModelBase
 
         LoadCommand = new RelayCommand(_ => Load());
         RegisterMovementCommand = new RelayCommand(_ => RegisterMovement());
-        ConfirmReviewCommand = new AsyncRelayCommand(ConfirmReviewAsync, () => NeedsReview);
+        DismissSuspiciousCommand = new RelayCommand(_ => DismissSuspicious());
         DiscardOpeningCommand = new AsyncRelayCommand(DiscardOpeningAsync);
     }
 
@@ -58,9 +57,6 @@ public class CashRegisterViewModel : ViewModelBase
     /// <summary>Cuánto hay por cada medio: el efectivo es lo único que está en el cajón.</summary>
     public ObservableCollection<CashMethodTotal> MethodTotals { get; }
 
-    /// <summary>De dónde sale el saldo, mientras el taller no lo haya confirmado.</summary>
-    public ObservableCollection<CashOriginTotal> ReviewOrigins { get; }
-
     /// <summary>Aperturas viejas que podrían estar contadas dos veces.</summary>
     public ObservableCollection<SuspiciousOpening> SuspiciousOpenings { get; }
 
@@ -68,11 +64,13 @@ public class CashRegisterViewModel : ViewModelBase
     public IReadOnlyList<MethodOption> FilterMethods { get; }
 
     /// <summary>
-    /// El saldo viene de convertir las cajas viejas y todavía nadie lo confirmó.
+    /// Hay una apertura vieja que puede estar contada dos veces, y nadie dijo qué hacer.
     /// </summary>
-    public bool NeedsReview => _review is not null;
-
-    public bool HasSuspiciousOpenings => SuspiciousOpenings.Count > 0;
+    /// <remarks>
+    /// Es lo único que se avisa después de convertir la caja. De dónde sale cada peso ya
+    /// está en el historial; esto es lo que el historial no puede contestar solo.
+    /// </remarks>
+    public bool ShowSuspiciousNotice => SuspiciousOpenings.Count > 0;
 
     public string SuspiciousSummary => _review?.SuspiciousSummary ?? string.Empty;
 
@@ -162,7 +160,7 @@ public class CashRegisterViewModel : ViewModelBase
 
     public ICommand LoadCommand { get; }
     public ICommand RegisterMovementCommand { get; }
-    public ICommand ConfirmReviewCommand { get; }
+    public ICommand DismissSuspiciousCommand { get; }
     public ICommand DiscardOpeningCommand { get; }
 
     public void Load() => SafeLoad(LoadCore, "Caja");
@@ -199,55 +197,30 @@ public class CashRegisterViewModel : ViewModelBase
             ? AppHost.CashRegisterService.GetConversionReview()
             : null;
 
-        ReviewOrigins.Clear();
         SuspiciousOpenings.Clear();
-
-        foreach (var origin in _review?.Origins ?? [])
-        {
-            ReviewOrigins.Add(origin);
-        }
 
         foreach (var suspicious in _review?.Suspicious ?? [])
         {
             SuspiciousOpenings.Add(suspicious);
         }
 
-        OnPropertyChanged(nameof(NeedsReview));
-        OnPropertyChanged(nameof(HasSuspiciousOpenings));
+        OnPropertyChanged(nameof(ShowSuspiciousNotice));
         OnPropertyChanged(nameof(SuspiciousSummary));
     }
 
     /// <summary>
-    /// El taller da por bueno el saldo y el panel de revisión no vuelve a aparecer.
+    /// El taller dice que el saldo está bien y el aviso no vuelve a aparecer.
     /// </summary>
-    private async Task ConfirmReviewAsync()
+    /// <remarks>
+    /// Sin diálogo de confirmación. Es un aviso, no una decisión grave, y hacerle
+    /// confirmar dos veces para sacar un cartel es la clase de ceremonia que termina con
+    /// que nadie lea ningún cartel.
+    /// </remarks>
+    private void DismissSuspicious()
     {
-        if (_review is null)
-        {
-            return;
-        }
-
-        var warning = _review.HasSuspicious
-            ? $"\n\nOjo: {_review.SuspiciousSummary.ToLowerInvariant()}. " +
-              "Si alguna no la reconocés, descontala antes de confirmar."
-            : string.Empty;
-
-        var confirmed = await AppHost.DialogService.ConfirmAsync(
-            "Confirmar el saldo de la caja",
-            $"Vas a dar por bueno un saldo de {_review.BalanceDisplay}.\n\n" +
-            "Si no coincide con lo que tenés de verdad, cerrá esto y registrá un movimiento " +
-            "por la diferencia antes de confirmar." + warning,
-            confirmText: "Sí, es lo que tengo");
-
-        if (!confirmed)
-        {
-            return;
-        }
-
         try
         {
             AppHost.SettingsService.Update(s => s.CashSafeReviewedAtUtc = DateTime.UtcNow);
-            SetStatus("Saldo confirmado.", isError: false);
             Load();
         }
         catch (Exception ex)

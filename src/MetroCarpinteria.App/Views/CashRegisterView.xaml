@@ -18,9 +18,13 @@
                            Style="{StaticResource SubtitleStyle}"
                            Margin="0,0,0,16" />
 
-                <!-- La plata que hay. Va arriba de todo porque es lo primero que se
-                     mira al entrar, y abierta por medio para no confundir lo que está
-                     en el cajón con lo que está en el banco. -->
+                <!-- La plata del taller, en un número.
+                     Acá hubo dos intentos peores. Primero «Entró/Salió» al lado del saldo
+                     por medio: cuatro números para decir dos cosas, y dos de ellos dando
+                     igual sin que nada explicara por qué. Después el saldo partido en «en
+                     el banco» y «en el cajón», que es una división que el taller no hace:
+                     la plata es toda de uno, sin importar por dónde entró. El medio sí
+                     importa, pero en cada movimiento del historial, no partiendo el total. -->
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="Caja fuerte" Style="{StaticResource SectionTitleStyle}" />
@@ -28,114 +32,49 @@
                                    FontSize="34" FontWeight="Bold" Margin="0,8,0,0"
                                    Foreground="{DynamicResource PrimaryBrownBrush}" />
                         <TextBlock Text="Lo que hay hoy en el taller."
-                                   Style="{StaticResource SubtitleStyle}" Margin="0,2,0,16" />
-
-                        <!-- Antes acá había cuatro números: «Entró/Salió» al lado del
-                             saldo por medio. Los dos pueden dar lo mismo queriendo decir
-                             cosas distintas —uno es el total histórico, el otro el saldo—
-                             y puestos juntos confunden. Queda una sola pregunta: dónde
-                             está la plata. El histórico va abajo, en una línea. -->
-                        <TextBlock Text="Dónde está" Style="{StaticResource SubtitleStyle}"
-                                   FontWeight="SemiBold" Margin="0,0,0,6" />
-
-                        <ItemsControl ItemsSource="{Binding MethodTotals}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding MethodLabel}" FontSize="14" />
-                                                <TextBlock Text="{Binding WhereDisplay}" FontSize="12" Margin="6,0,0,0"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding NegativeNote}" FontSize="11" FontStyle="Italic"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       Visibility="{Binding IsNegative, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding BalanceDisplay}"
-                                                   FontSize="15" FontWeight="SemiBold"
-                                                   VerticalAlignment="Center" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                   Style="{StaticResource SubtitleStyle}" Margin="0,2,0,0" />
 
                         <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="12"
-                                   Margin="0,14,0,0" TextWrapping="Wrap"
+                                   Margin="0,12,0,0" TextWrapping="Wrap"
                                    Text="{Binding HistorySummary}" />
                     </StackPanel>
                 </Border>
 
-                <!-- Va DEBAJO de la tarjeta del saldo, no arriba: el número grande lo
-                     muestra «Caja fuerte» una sola vez, y acá se explica de dónde sale.
-                     Al revés, las dos tarjetas mostraban el mismo importe y competían. -->
+                <!-- Solo cuando hay una duda de verdad.
+                     Acá vivía una tarjeta de «revisá el saldo y confirmalo» que salía
+                     siempre después de migrar: pedía leer un desglose y apretar un botón
+                     para seguir usando la app. Era ceremonia. De dónde sale cada peso ya
+                     está en el historial de abajo, renglón por renglón, así que la tarjeta
+                     lo repetía. Queda solo el caso que el historial no puede contestar
+                     solo: una apertura vieja que puede estar contada dos veces. -->
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
-                        Visibility="{Binding NeedsReview, Converter={StaticResource BoolToVisibilityConverter}}">
+                        Visibility="{Binding ShowSuspiciousNotice, Converter={StaticResource BoolToVisibilityConverter}}">
                     <StackPanel>
-                        <TextBlock Text="Revisá el saldo" Style="{StaticResource SectionTitleStyle}" />
-                        <TextBlock TextWrapping="Wrap" Margin="0,4,0,12" FontSize="13"
-                                   Text="La caja ya no se abre ni se cierra: ahora es un saldo que corre. Lo que tenías en las cajas viejas se convirtió en movimientos. Fijate de dónde sale ese saldo y confirmalo." />
+                        <TextBlock Text="{Binding SuspiciousSummary}" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock TextWrapping="Wrap" Margin="0,4,0,10" FontSize="13"
+                                   Text="Las cajas viejas no arrastraban saldo: cada una se abría con un monto escrito a mano. Si ahí anotaste lo que te había quedado del día anterior, esa plata quedó sumada dos veces." />
 
-                        <TextBlock Text="De dónde sale" Style="{StaticResource SubtitleStyle}"
-                                   FontWeight="SemiBold" Margin="0,0,0,6" />
-
-                        <ItemsControl ItemsSource="{Binding ReviewOrigins}" Margin="0,0,0,12">
+                        <ItemsControl ItemsSource="{Binding SuspiciousOpenings}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="0,3">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="13" />
-                                        <TextBlock Grid.Column="1" Text="{Binding AmountDisplay}"
-                                                   FontSize="13" FontWeight="SemiBold" />
-                                    </Grid>
+                                    <StackPanel Margin="0,6">
+                                        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" FontSize="12" />
+                                        <Button Content="Descontarla"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                HorizontalAlignment="Left" Padding="10,4" FontSize="12"
+                                                Margin="0,6,0,0"
+                                                Command="{Binding DataContext.DiscardOpeningCommand,
+                                                          RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}" />
+                                    </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <!-- Lo que no se puede saber con certeza, pero sí señalar: una
-                             apertura igual al cierre anterior puede ser plata contada
-                             dos veces. La decisión es suya. -->
-                        <Border Style="{StaticResource AccentNoticeStyle}" Margin="0,0,0,12"
-                                Visibility="{Binding HasSuspiciousOpenings, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding SuspiciousSummary}" FontWeight="SemiBold" FontSize="13"
-                                           TextWrapping="Wrap" Margin="0,0,0,6" />
-                                <ItemsControl ItemsSource="{Binding SuspiciousOpenings}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="0,4">
-                                                <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" FontSize="12" />
-                                                <Button Content="Descontarla"
-                                                        Style="{StaticResource SecondaryButtonStyle}"
-                                                        HorizontalAlignment="Left" Padding="10,4" FontSize="12"
-                                                        Margin="0,6,0,0"
-                                                        Command="{Binding DataContext.DiscardOpeningCommand,
-                                                                  RelativeSource={RelativeSource AncestorType=ItemsControl,
-                                                                  AncestorLevel=2}}"
-                                                        CommandParameter="{Binding}" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,0,0,10"
-                                   Style="{StaticResource SubtitleStyle}"
-                                   Text="Si el total no coincide con lo que tenés, registrá abajo un movimiento por la diferencia antes de confirmar." />
-
-                        <Button Content="Es lo que tengo, confirmar"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                HorizontalAlignment="Left"
-                                Command="{Binding ConfirmReviewCommand}" />
+                        <Button Content="Está bien así" Style="{StaticResource GhostButtonStyle}"
+                                HorizontalAlignment="Left" Padding="10,4" FontSize="12" Margin="0,12,0,0"
+                                ToolTip="Deja el saldo como está y no vuelve a preguntar"
+                                Command="{Binding DismissSuspiciousCommand}" />
                     </StackPanel>
                 </Border>
 
