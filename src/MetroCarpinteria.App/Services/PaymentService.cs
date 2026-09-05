@@ -280,13 +280,3 @@ public sealed class PaymentService
         return movement.Id;
     }
 }
-
-/// <summary>
-/// Hace falta una caja abierta y no la hay.
-/// </summary>
-/// <remarks>
-/// Es un tipo aparte y no un <see cref="InvalidOperationException"/> más para que la
-/// pantalla lo distinga del resto: es el único error de cobro que se resuelve con un botón
-/// —«Abrir caja»— en vez de con una corrección de lo tipeado.
-/// </remarks>
-public sealed class CashRegisterClosedException(string message) : InvalidOperationException(message);

@@ -3,6 +3,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
@@ -1145,6 +1146,52 @@ internal static class UiSmokeTests
 
         ThemeTests.Run(run);
         ThemeTests.RunRepaintCheck(run);
+
+        run("UI: ninguna pantalla queda invisible por olvidar el trigger que la muestra", () =>
+        {
+            // Las pantallas arrancan con el root en Opacity 0 y una animación de entrada
+            // las hace aparecer. Si al editar una vista se pierde ese trigger, la pantalla
+            // se dibuja entera y no se ve NADA: no falla al compilar, no tira excepción, no
+            // sale en el log, y los tests que solo dibujan la vista pasan igual. Pasó al
+            // reescribir Caja, y la única forma de notarlo fue abrir la app.
+            Func<FrameworkElement>[] views =
+            [
+                () => new HomeView(),
+                () => new InventoryView(),
+                () => new CashRegisterView(),
+                () => new QuotesView(),
+                () => new ProjectsView(),
+                () => new StaffView(),
+                () => new ReportsView(),
+                () => new SettingsView(),
+                () => new AboutView(),
+                () => new ClientsView()
+            ];
+
+            foreach (var create in views)
+            {
+                var view = create();
+                var name = view.GetType().Name;
+
+                if (view.FindName("PageRoot") is not UIElement root || root.Opacity > 0d)
+                {
+                    continue;
+                }
+
+                var animatesOpacity = view.Triggers
+                    .OfType<EventTrigger>()
+                    .Where(t => t.RoutedEvent == FrameworkElement.LoadedEvent)
+                    .SelectMany(t => t.Actions.OfType<BeginStoryboard>())
+                    .Where(b => b.Storyboard is not null)
+                    .SelectMany(b => b.Storyboard.Children)
+                    .Any(a => Storyboard.GetTargetProperty(a)?.Path == "Opacity");
+
+                Assert.True(
+                    animatesOpacity,
+                    $"{name} arranca invisible y no tiene el trigger que la muestra: la pantalla " +
+                    "va a quedar en blanco.");
+            }
+        });
 
         run("UI: las 10 vistas se dibujan en los 6 combos de tema y escala", () =>
         {

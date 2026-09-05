@@ -196,10 +196,10 @@
                             ToolTip="Ir a Inventario para cargar entradas o salidas"
                             Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{x:Static models:NavigationSection.Inventory}" />
-                    <Button Content="Abrir caja"
+                    <Button Content="Ver la caja"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Margin="0,0,12,12"
-                            ToolTip="Ir a Caja para abrir o cerrar la sesión del día"
+                            ToolTip="Ir a Caja: cuánta plata hay y todo lo que entró y salió"
                             Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{x:Static models:NavigationSection.CashRegister}" />
                     <Button Content="Nuevo proyecto"
