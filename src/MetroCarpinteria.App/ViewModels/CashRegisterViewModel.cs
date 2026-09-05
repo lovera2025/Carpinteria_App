@@ -74,8 +74,6 @@ public class CashRegisterViewModel : ViewModelBase
 
     public bool HasSuspiciousOpenings => SuspiciousOpenings.Count > 0;
 
-    public string ReviewBalanceDisplay => _review?.BalanceDisplay ?? Balance.BalanceDisplay;
-
     public string SuspiciousSummary => _review?.SuspiciousSummary ?? string.Empty;
 
     public CashBalance Balance
@@ -216,7 +214,6 @@ public class CashRegisterViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(NeedsReview));
         OnPropertyChanged(nameof(HasSuspiciousOpenings));
-        OnPropertyChanged(nameof(ReviewBalanceDisplay));
         OnPropertyChanged(nameof(SuspiciousSummary));
     }
 

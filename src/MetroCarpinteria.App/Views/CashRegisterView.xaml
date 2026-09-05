@@ -1,4 +1,4 @@
-<UserControl x:Class="MetroCarpinteria.App.Views.CashRegisterView"
+﻿<UserControl x:Class="MetroCarpinteria.App.Views.CashRegisterView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -18,19 +18,71 @@
                            Style="{StaticResource SubtitleStyle}"
                            Margin="0,0,0,16" />
 
-                <!-- Revisión de la conversión. Aparece una sola vez, cuando la caja
-                     viene de las sesiones viejas: preguntarle «¿está bien este número?»
-                     sin mostrarle de dónde sale no se puede contestar. -->
+                <!-- La plata que hay. Va arriba de todo porque es lo primero que se
+                     mira al entrar, y abierta por medio para no confundir lo que está
+                     en el cajón con lo que está en el banco. -->
+                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Caja fuerte" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="{Binding Balance.BalanceDisplay}"
+                                   FontSize="34" FontWeight="Bold" Margin="0,8,0,0"
+                                   Foreground="{DynamicResource PrimaryBrownBrush}" />
+                        <TextBlock Text="Lo que hay hoy en el taller."
+                                   Style="{StaticResource SubtitleStyle}" Margin="0,2,0,16" />
+
+                        <!-- Antes acá había cuatro números: «Entró/Salió» al lado del
+                             saldo por medio. Los dos pueden dar lo mismo queriendo decir
+                             cosas distintas —uno es el total histórico, el otro el saldo—
+                             y puestos juntos confunden. Queda una sola pregunta: dónde
+                             está la plata. El histórico va abajo, en una línea. -->
+                        <TextBlock Text="Dónde está" Style="{StaticResource SubtitleStyle}"
+                                   FontWeight="SemiBold" Margin="0,0,0,6" />
+
+                        <ItemsControl ItemsSource="{Binding MethodTotals}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding MethodLabel}" FontSize="14" />
+                                                <TextBlock Text="{Binding WhereDisplay}" FontSize="12" Margin="6,0,0,0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding NegativeNote}" FontSize="11" FontStyle="Italic"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       Visibility="{Binding IsNegative, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding BalanceDisplay}"
+                                                   FontSize="15" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="12"
+                                   Margin="0,14,0,0" TextWrapping="Wrap"
+                                   Text="{Binding HistorySummary}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Va DEBAJO de la tarjeta del saldo, no arriba: el número grande lo
+                     muestra «Caja fuerte» una sola vez, y acá se explica de dónde sale.
+                     Al revés, las dos tarjetas mostraban el mismo importe y competían. -->
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
                         Visibility="{Binding NeedsReview, Converter={StaticResource BoolToVisibilityConverter}}">
                     <StackPanel>
-                        <TextBlock Text="Revisá el saldo de tu caja" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="Revisá el saldo" Style="{StaticResource SectionTitleStyle}" />
                         <TextBlock TextWrapping="Wrap" Margin="0,4,0,12" FontSize="13"
-                                   Text="La caja ya no se abre ni se cierra: ahora es un saldo que corre. Lo que tenías en las cajas viejas se convirtió en movimientos. Mirá de dónde sale el número y confirmá que es el que tenés." />
+                                   Text="La caja ya no se abre ni se cierra: ahora es un saldo que corre. Lo que tenías en las cajas viejas se convirtió en movimientos. Fijate de dónde sale ese saldo y confirmalo." />
 
-                        <TextBlock Text="{Binding ReviewBalanceDisplay}"
-                                   FontSize="30" FontWeight="Bold" Margin="0,0,0,10"
-                                   Foreground="{DynamicResource PrimaryBrownBrush}" />
+                        <TextBlock Text="De dónde sale" Style="{StaticResource SubtitleStyle}"
+                                   FontWeight="SemiBold" Margin="0,0,0,6" />
 
                         <ItemsControl ItemsSource="{Binding ReviewOrigins}" Margin="0,0,0,12">
                             <ItemsControl.ItemTemplate>
@@ -84,59 +136,6 @@
                                 Style="{StaticResource PrimaryButtonStyle}"
                                 HorizontalAlignment="Left"
                                 Command="{Binding ConfirmReviewCommand}" />
-                    </StackPanel>
-                </Border>
-
-                <!-- La plata que hay. Va arriba de todo porque es lo primero que se
-                     mira al entrar, y abierta por medio para no confundir lo que está
-                     en el cajón con lo que está en el banco. -->
-                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
-                    <StackPanel>
-                        <TextBlock Text="Caja fuerte" Style="{StaticResource SectionTitleStyle}" />
-                        <TextBlock Text="{Binding Balance.BalanceDisplay}"
-                                   FontSize="34" FontWeight="Bold" Margin="0,8,0,0"
-                                   Foreground="{DynamicResource PrimaryBrownBrush}" />
-                        <TextBlock Text="Lo que hay hoy en el taller."
-                                   Style="{StaticResource SubtitleStyle}" Margin="0,2,0,16" />
-
-                        <!-- Antes acá había cuatro números: «Entró/Salió» al lado del
-                             saldo por medio. Los dos pueden dar lo mismo queriendo decir
-                             cosas distintas —uno es el total histórico, el otro el saldo—
-                             y puestos juntos confunden. Queda una sola pregunta: dónde
-                             está la plata. El histórico va abajo, en una línea. -->
-                        <TextBlock Text="Dónde está" Style="{StaticResource SubtitleStyle}"
-                                   FontWeight="SemiBold" Margin="0,0,0,6" />
-
-                        <ItemsControl ItemsSource="{Binding MethodTotals}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding MethodLabel}" FontSize="14" />
-                                                <TextBlock Text="{Binding WhereDisplay}" FontSize="12" Margin="6,0,0,0"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding NegativeNote}" FontSize="11" FontStyle="Italic"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       Visibility="{Binding IsNegative, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding BalanceDisplay}"
-                                                   FontSize="15" FontWeight="SemiBold"
-                                                   VerticalAlignment="Center" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="12"
-                                   Margin="0,14,0,0" TextWrapping="Wrap"
-                                   Text="{Binding HistorySummary}" />
                     </StackPanel>
                 </Border>
 
