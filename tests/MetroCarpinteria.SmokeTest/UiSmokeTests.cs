@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -1193,6 +1194,59 @@ internal static class UiSmokeTests
             }
         });
 
+        run("UI: ninguna pantalla tiene bindings rotos", () =>
+        {
+            // La otra forma en que WPF falla en silencio, y la más peligrosa: un binding a
+            // una propiedad que no existe no rompe nada. La propiedad se queda en su valor
+            // por omisión, la pantalla se dibuja igual, y el número o el texto simplemente
+            // no aparecen. Al renombrar o borrar una propiedad del ViewModel, el compilador
+            // no ayuda: el XAML la nombra por texto.
+            //
+            // WPF sí lo reporta, pero por un canal de trazas que nadie mira. Esto lo
+            // escucha y lo convierte en una prueba que falla.
+            var errors = new List<string>();
+            var listener = new BindingErrorListener(errors);
+            var previousLevel = PresentationTraceSources.DataBindingSource.Switch.Level;
+
+            PresentationTraceSources.Refresh();
+            PresentationTraceSources.DataBindingSource.Listeners.Add(listener);
+            PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
+
+            try
+            {
+                // Cada vista con SU ViewModel: emparejarlas mal generaría errores de
+                // binding legítimos y la prueba no distinguiría los de verdad.
+                (Func<FrameworkElement> View, Func<object> Model)[] pairs =
+                [
+                    (() => new HomeView(), () => new HomeViewModel()),
+                    (() => new InventoryView(), () => new InventoryViewModel(() => { })),
+                    (() => new CashRegisterView(), () => new CashRegisterViewModel(() => { })),
+                    (() => new QuotesView(), () => new QuotesViewModel(() => { })),
+                    (() => new ProjectsView(), () => new ProjectsViewModel(() => { })),
+                    (() => new ClientsView(), () => new ClientsViewModel(() => { })),
+                    (() => new StaffView(), () => new StaffViewModel(() => { })),
+                    (() => new ReportsView(), () => new ReportsViewModel()),
+                    (() => new SettingsView(), () => new SettingsViewModel()),
+                    (() => new AboutView(), () => new AboutViewModel())
+                ];
+
+                foreach (var (createView, createModel) in pairs)
+                {
+                    LoadView(createView, createModel());
+                }
+            }
+            finally
+            {
+                PresentationTraceSources.DataBindingSource.Listeners.Remove(listener);
+                PresentationTraceSources.DataBindingSource.Switch.Level = previousLevel;
+            }
+
+            Assert.True(
+                errors.Count == 0,
+                $"Hay {errors.Count} binding(s) rotos; la pantalla los muestra vacíos sin avisar:\n  " +
+                string.Join("\n  ", errors.Distinct().Take(10)));
+        });
+
         run("UI: las 10 vistas se dibujan en los 6 combos de tema y escala", () =>
         {
             // Es la red que protege el sistema de temas. Un color declarado en claro y
@@ -2100,6 +2154,51 @@ internal static class UiSmokeTests
 
     private static string ToText(FlowDocument document) =>
         new TextRange(document.ContentStart, document.ContentEnd).Text;
+
+    /// <summary>
+    /// Junta los errores de binding que WPF escribe en sus trazas.
+    /// </summary>
+    /// <remarks>
+    /// WPF arma el mensaje en varias llamadas y recién lo cierra con <c>WriteLine</c>, así
+    /// que hay que acumular los <c>Write</c> sueltos hasta que llegue el final.
+    /// </remarks>
+    private sealed class BindingErrorListener : TraceListener
+    {
+        private readonly List<string> _errors;
+        private readonly StringBuilder _pending = new();
+
+        public BindingErrorListener(List<string> errors) => _errors = errors;
+
+        public override void Write(string? message) => _pending.Append(message);
+
+        public override void WriteLine(string? message)
+        {
+            _pending.Append(message);
+            var line = _pending.ToString().Trim();
+            _pending.Clear();
+
+            if (line.Length > 0 && !IsKnownNoise(line))
+            {
+                _errors.Add(line);
+            }
+        }
+
+        /// <summary>
+        /// El único ruido que se ignora, y por un motivo concreto.
+        /// </summary>
+        /// <remarks>
+        /// <c>(Validation.Errors)[0].ErrorContent</c> es el modismo estándar de WPF para
+        /// mostrar el error de un campo: cuando el campo está bien, la colección está
+        /// vacía, el índice 0 no existe y WPF lo anota como error de binding. Pasa en todas
+        /// las plantillas de validación de la app y no significa nada.
+        /// <para>
+        /// Se filtra por este patrón exacto a propósito. Ignorar de a categorías enteras
+        /// convertiría esta prueba en un cartel decorativo.
+        /// </para>
+        /// </remarks>
+        private static bool IsKnownNoise(string line) =>
+            line.Contains("(Validation.Errors)", StringComparison.Ordinal);
+    }
 
     private static void LoadView(Func<FrameworkElement> createView, object dataContext)
     {

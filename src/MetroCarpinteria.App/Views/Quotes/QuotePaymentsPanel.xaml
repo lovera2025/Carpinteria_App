@@ -83,15 +83,6 @@
                     <TextBox Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
                              Padding="10,8" Margin="0,0,0,12" />
 
-                    <!-- Se avisa antes de intentar, no después de tipear todo. -->
-                    <Border Background="{DynamicResource StateWarningSurfaceBrush}" CornerRadius="8"
-                            Padding="12,10" Margin="0,0,0,12"
-                            Visibility="{Binding NeedsOpenRegister, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock TextWrapping="Wrap" FontSize="12"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   Text="No hay una caja abierta. Un cobro en efectivo se asienta en el arqueo del día: al confirmar te vamos a ofrecer abrirla." />
-                    </Border>
-
                     <WrapPanel>
                         <Button Content="Registrar cobro" Style="{StaticResource PrimaryButtonStyle}"
                                 Command="{Binding ConfirmCommand}" Margin="0,0,10,0" />
