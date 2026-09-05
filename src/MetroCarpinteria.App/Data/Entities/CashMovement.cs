@@ -30,6 +30,12 @@ public class CashMovement
     public decimal Amount { get; set; }
 
     /// <summary>
+    /// De dónde salió. Es lo que permite explicar el saldo por origen sin depender del
+    /// texto del motivo, que se puede editar.
+    /// </summary>
+    public CashMovementOrigin Origin { get; set; }
+
+    /// <summary>
     /// Por dónde entró o salió la plata. Es lo que permite decir cuánto hay en efectivo
     /// —lo que está en el cajón— y cuánto en el banco, sin mezclarlos en un solo total.
     /// </summary>

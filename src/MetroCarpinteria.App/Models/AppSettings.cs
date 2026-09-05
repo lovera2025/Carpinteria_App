@@ -42,6 +42,18 @@ public class AppSettings
     /// </remarks>
     public int OnboardingCompletedVersion { get; set; }
 
+    /// <summary>
+    /// Cuándo el taller confirmó el saldo de la caja fuerte. Null es «todavía no».
+    /// </summary>
+    /// <remarks>
+    /// La conversión de las cajas viejas a un saldo único suma aperturas y diferencias de
+    /// arqueo que antes no tenían renglón. El número resultante tiene que cuadrar con lo
+    /// que hay de verdad, y eso solo lo sabe él: hasta que lo confirme, la pantalla le
+    /// muestra el saldo abierto en de dónde sale. Va en la configuración y no en la base
+    /// porque no es un dato del taller sino una decisión sobre qué mostrar.
+    /// </remarks>
+    public DateTime? CashSafeReviewedAtUtc { get; set; }
+
     // --- Apariencia ---------------------------------------------------------
 
     /// <summary>

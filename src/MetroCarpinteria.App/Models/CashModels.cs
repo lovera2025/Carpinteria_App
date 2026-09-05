@@ -118,6 +118,66 @@ public sealed class CashBalance
     public static CashBalance Empty { get; } = new();
 }
 
+/// <summary>Una fila del desglose de dónde sale el saldo de la caja.</summary>
+public sealed class CashOriginTotal
+{
+    public required string Label { get; init; }
+    public decimal Amount { get; init; }
+    public int Count { get; init; }
+
+    public string AmountDisplay => AppCulture.Money(Amount);
+}
+
+/// <summary>
+/// Una apertura de caja vieja que puede estar contada dos veces.
+/// </summary>
+/// <remarks>
+/// Las cajas de antes no encadenaban saldo: cada apertura se tipeaba de cero. Si alguna
+/// vez se tipeó ahí <b>lo que había quedado del día anterior</b>, esa plata ya está
+/// representada por los movimientos de la caja anterior, y convertir la apertura en
+/// ingreso la suma de nuevo. No se puede saber con certeza, pero sí se puede señalar:
+/// coincide con lo que se contó al cerrar la caja previa.
+/// </remarks>
+public sealed class SuspiciousOpening
+{
+    public required int MovementId { get; init; }
+    public decimal Amount { get; init; }
+    public DateTime OpenedAtLocal { get; init; }
+    public decimal PreviousCounted { get; init; }
+    public DateTime PreviousClosedAtLocal { get; init; }
+
+    public string AmountDisplay => AppCulture.Money(Amount);
+
+    public string Explanation =>
+        $"Apertura del {AppCulture.ShortDate(OpenedAtLocal)} por {AmountDisplay}: es lo mismo que " +
+        $"se contó al cerrar la caja del {AppCulture.ShortDate(PreviousClosedAtLocal)}. " +
+        "Si era la plata que venía del día anterior, está sumada dos veces.";
+}
+
+/// <summary>
+/// El saldo de la caja abierto en de dónde sale, para que el taller pueda confirmarlo.
+/// </summary>
+/// <remarks>
+/// Preguntar «¿está bien $48.300?» no se puede contestar. Con el número abierto por
+/// origen sí: se reconoce lo propio, y lo que no se reconoce se puede señalar.
+/// </remarks>
+public sealed class CashConversionReview
+{
+    public decimal Balance { get; init; }
+    public IReadOnlyList<CashOriginTotal> Origins { get; init; } = [];
+    public IReadOnlyList<SuspiciousOpening> Suspicious { get; init; } = [];
+
+    public string BalanceDisplay => AppCulture.Money(Balance);
+    public bool HasSuspicious => Suspicious.Count > 0;
+
+    public string SuspiciousSummary => Suspicious.Count switch
+    {
+        0 => string.Empty,
+        1 => "1 apertura podría estar contada dos veces",
+        _ => $"{Suspicious.Count} aperturas podrían estar contadas dos veces"
+    };
+}
+
 /// <summary>Qué mostrar del historial de la caja.</summary>
 public sealed class CashMovementFilter
 {

@@ -762,6 +762,130 @@ internal static class MigrationTests
             legacy.AssertIntegrity();
         });
 
+        run("Migración v14: una apertura igual al cierre anterior queda señalada, no borrada", () =>
+        {
+            // Las cajas viejas no encadenaban saldo: cada apertura se tipeaba de cero. Si
+            // alguna vez se tipeó ahí lo que había quedado del día anterior, esa plata
+            // queda contada dos veces. No se puede saber con certeza —por eso la migración
+            // convierte todas— pero sí señalarla para que el taller decida.
+            using var legacy = LegacyDatabase.Create();
+
+            // Fechas viejas a propósito: la base de prueba trae una caja fechada «ahora», y
+            // si se colara entre estas dos, la anterior a la 61 no sería la 60 y la prueba
+            // estaría midiendo otra cosa.
+            legacy.Execute("""
+                INSERT INTO CashSessions
+                    (Id, OpeningAmount, ClosingExpectedAmount, ClosingCountedAmount, Difference,
+                     OpenedAtUtc, ClosedAtUtc)
+                VALUES (60, 0, 16000, 16000, 0, '2020-01-01T09:00:00Z', '2020-01-01T18:00:00Z'),
+                       (61, 16000, NULL, NULL, NULL, '2020-01-02T09:00:00Z', NULL);
+                """);
+
+            legacy.Execute("""
+                INSERT INTO CashMovements (CashSessionId, Type, Amount, Reason, CreatedAtUtc)
+                VALUES (60, 1, 16000, 'Cobros del día', '2020-01-01T12:00:00Z');
+                """);
+
+            var paths = new AppPaths(legacy.Root);
+            var database = new DatabaseService(paths);
+            database.Initialize();
+
+            var cash = new CashRegisterService(database);
+
+            // Antes de mirar la sospecha: las aperturas tienen que haberse convertido y
+            // haber quedado marcadas como tales. Sin esto, un cero acá abajo no diría si
+            // el problema es la detección o la conversión.
+            Assert.Equal(
+                legacy.CountWhere("CashMovements", "Origin = 3 AND CashSessionId = 61"),
+                1,
+                "la apertura de la caja 61 tenía que convertirse y quedar marcada");
+            Assert.Equal(
+                legacy.ReadDecimal("SELECT CAST(OpeningAmount AS REAL) FROM CashSessions WHERE Id = 61;"),
+                16000m,
+                "apertura de la caja 61");
+            Assert.Equal(
+                legacy.ReadDecimal("SELECT CAST(ClosingCountedAmount AS REAL) FROM CashSessions WHERE Id = 60;"),
+                16000m,
+                "contado al cerrar la caja 60");
+            Assert.Equal(
+                legacy.ReadInt("""
+                    SELECT COUNT(*) FROM CashSessions
+                     WHERE OpenedAtUtc < (SELECT OpenedAtUtc FROM CashSessions WHERE Id = 61);
+                    """),
+                1,
+                "la caja 60 tiene que ser la única anterior a la 61");
+
+            var review = cash.GetConversionReview();
+
+            Assert.Equal(review.Suspicious.Count, 1, "aperturas señaladas");
+
+            var suspicious = review.Suspicious.Single();
+            Assert.Equal(suspicious.Amount, 16000m, "importe de la apertura sospechosa");
+            Assert.True(
+                suspicious.Explanation.Contains("dos veces", StringComparison.Ordinal),
+                "la explicación tiene que decir por qué se sospecha.");
+
+            // La migración NO decide por él: la apertura está convertida y sumando, solo
+            // señalada. Esconderla sería inventar un saldo distinto sin avisar.
+            var before = cash.GetBalance().Balance;
+            Assert.True(
+                review.Origins.Any(o => o.Label == "Aperturas de cajas viejas"),
+                "las aperturas convertidas tienen que figurar en el desglose.");
+
+            // Y al descontarla se compensa, no se borra: los dos renglones quedan.
+            var movementsBefore = cash.GetBalance().MovementCount;
+            cash.DiscardDuplicatedOpening(suspicious.MovementId);
+
+            Assert.Equal(cash.GetBalance().Balance, before - 16000m, "saldo tras descontar la apertura");
+            Assert.Equal(
+                cash.GetBalance().MovementCount,
+                movementsBefore + 1,
+                "descontar tiene que agregar un renglón, no sacar el viejo");
+        });
+
+        run("Migración v14: una apertura que no coincide con nada no se señala", () =>
+        {
+            // El falso positivo tiene su costo: señalar plata legítima haría que el taller
+            // descuente algo que sí tenía, y ahí el saldo pasaría a estar mal de verdad.
+            using var legacy = LegacyDatabase.Create();
+
+            legacy.Execute("""
+                INSERT INTO CashSessions
+                    (Id, OpeningAmount, ClosingExpectedAmount, ClosingCountedAmount, Difference,
+                     OpenedAtUtc, ClosedAtUtc)
+                VALUES (62, 0, 5000, 5000, 0, '2020-01-01T09:00:00Z', '2020-01-01T18:00:00Z'),
+                       (63, 2000, NULL, NULL, NULL, '2020-01-02T09:00:00Z', NULL);
+                """);
+
+            var paths = new AppPaths(legacy.Root);
+            var database = new DatabaseService(paths);
+            database.Initialize();
+
+            var review = new CashRegisterService(database).GetConversionReview();
+            Assert.Equal(review.Suspicious.Count, 0, "no tendría que señalar una apertura distinta");
+        });
+
+        run("Migración v14: el desglose de la revisión suma el saldo", () =>
+        {
+            // Si las categorías no cerraran contra el total, el panel estaría explicando
+            // un número distinto del que muestra: peor que no explicar nada.
+            using var legacy = LegacyDatabase.Create();
+
+            var paths = new AppPaths(legacy.Root);
+            var database = new DatabaseService(paths);
+            database.Initialize();
+
+            var cash = new CashRegisterService(database);
+            cash.RegisterMovement(MetroCarpinteria.App.Data.Entities.CashMovementType.Expense, 750.25m, "Gasto suelto");
+
+            var review = cash.GetConversionReview();
+            Assert.Equal(
+                review.Origins.Sum(o => o.Amount),
+                review.Balance,
+                "el desglose por origen tiene que sumar el saldo");
+            Assert.Equal(review.Balance, cash.GetBalance().Balance, "y coincidir con el saldo de la caja");
+        });
+
         run("Migración v14: CashSessionId deja de ser obligatorio y los índices sobreviven", () =>
         {
             using var legacy = LegacyDatabase.Create();

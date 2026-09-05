@@ -209,6 +209,7 @@ public sealed class DatabaseService
                 Type INTEGER NOT NULL,
                 Amount TEXT NOT NULL,
                 Method INTEGER NOT NULL DEFAULT 0,
+                Origin INTEGER NOT NULL DEFAULT 0,
                 ProjectId INTEGER NULL,
                 ProjectPaymentId INTEGER NULL,
                 EmployeeId INTEGER NULL,

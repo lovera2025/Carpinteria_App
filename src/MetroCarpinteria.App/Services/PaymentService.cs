@@ -155,6 +155,7 @@ public sealed class PaymentService
                 Type = CashMovementType.Expense,
                 Amount = payment.Amount,
                 Method = payment.Method,
+                Origin = CashMovementOrigin.PaymentCancellation,
                 ProjectId = payment.ProjectId,
                 ProjectPaymentId = payment.Id,
                 Reason = $"Anulación de {PaymentRules.GetKindLabel(payment.Kind).ToLowerInvariant()}: " +
@@ -262,6 +263,7 @@ public sealed class PaymentService
             Type = CashMovementType.Income,
             Amount = amount,
             Method = method,
+            Origin = CashMovementOrigin.Payment,
             ProjectId = project.Id,
 
             // El cliente va en el texto además de la relación: el taller mira el renglón,

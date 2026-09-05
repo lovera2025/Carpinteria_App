@@ -472,6 +472,7 @@ public sealed class SchemaMigrator
     private static void ApplyCashSafe(SqliteConnection connection, SqliteTransaction transaction)
     {
         AddColumnIfMissing(connection, transaction, "CashMovements", "Method", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(connection, transaction, "CashMovements", "Origin", "INTEGER NOT NULL DEFAULT 0");
         AddColumnIfMissing(connection, transaction, "CashMovements", "ProjectId", "INTEGER NULL");
         AddColumnIfMissing(connection, transaction, "CashMovements", "ProjectPaymentId", "INTEGER NULL");
         AddColumnIfMissing(connection, transaction, "CashMovements", "EmployeeId", "INTEGER NULL");
@@ -518,6 +519,7 @@ public sealed class SchemaMigrator
                 "Type" INTEGER NOT NULL,
                 "Amount" TEXT NOT NULL,
                 "Method" INTEGER NOT NULL DEFAULT 0,
+                "Origin" INTEGER NOT NULL DEFAULT 0,
                 "ProjectId" INTEGER NULL,
                 "ProjectPaymentId" INTEGER NULL,
                 "EmployeeId" INTEGER NULL,
@@ -533,9 +535,9 @@ public sealed class SchemaMigrator
 
         Execute(connection, transaction, """
             INSERT INTO "CashMovements__caja"
-                (Id, CashSessionId, Type, Amount, Method, ProjectId, ProjectPaymentId,
+                (Id, CashSessionId, Type, Amount, Method, Origin, ProjectId, ProjectPaymentId,
                  EmployeeId, ProjectLaborLineId, Reason, CreatedAtUtc)
-            SELECT Id, CashSessionId, Type, Amount, Method, ProjectId, ProjectPaymentId,
+            SELECT Id, CashSessionId, Type, Amount, Method, Origin, ProjectId, ProjectPaymentId,
                    EmployeeId, ProjectLaborLineId, Reason, CreatedAtUtc
               FROM "CashMovements";
             """);
@@ -565,7 +567,8 @@ public sealed class SchemaMigrator
                         WHERE p.CashMovementId = CashMovements.Id),
                    Method = COALESCE((
                        SELECT p.Method FROM ProjectPayments p
-                        WHERE p.CashMovementId = CashMovements.Id), Method)
+                        WHERE p.CashMovementId = CashMovements.Id), Method),
+                   Origin = 1
              WHERE EXISTS (
                        SELECT 1 FROM ProjectPayments p
                         WHERE p.CashMovementId = CashMovements.Id);
@@ -591,8 +594,8 @@ public sealed class SchemaMigrator
     {
         // Apertura: plata que ya estaba en la caja cuando se abrió.
         Execute(connection, transaction, """
-            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Reason, CreatedAtUtc)
-            SELECT s.Id, 1, s.OpeningAmount, 0,
+            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Origin, Reason, CreatedAtUtc)
+            SELECT s.Id, 1, s.OpeningAmount, 0, 3,
                    'Apertura de caja — ' || STRFTIME('%d/%m/%Y', s.OpenedAtUtc),
                    s.OpenedAtUtc
               FROM CashSessions s
@@ -601,8 +604,8 @@ public sealed class SchemaMigrator
 
         // Arqueo con sobrante: había más plata de la que la cuenta esperaba.
         Execute(connection, transaction, """
-            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Reason, CreatedAtUtc)
-            SELECT s.Id, 1, s.Difference, 0,
+            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Origin, Reason, CreatedAtUtc)
+            SELECT s.Id, 1, s.Difference, 0, 4,
                    'Ajuste de arqueo — ' || STRFTIME('%d/%m/%Y', s.ClosedAtUtc),
                    s.ClosedAtUtc
               FROM CashSessions s
@@ -613,8 +616,8 @@ public sealed class SchemaMigrator
 
         // Arqueo con faltante: el signo va en el tipo, no en el importe.
         Execute(connection, transaction, """
-            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Reason, CreatedAtUtc)
-            SELECT s.Id, 2, LTRIM(s.Difference, '-'), 0,
+            INSERT INTO CashMovements (CashSessionId, Type, Amount, Method, Origin, Reason, CreatedAtUtc)
+            SELECT s.Id, 2, LTRIM(s.Difference, '-'), 0, 4,
                    'Ajuste de arqueo — ' || STRFTIME('%d/%m/%Y', s.ClosedAtUtc),
                    s.ClosedAtUtc
               FROM CashSessions s
@@ -640,8 +643,8 @@ public sealed class SchemaMigrator
     {
         Execute(connection, transaction, """
             INSERT INTO CashMovements
-                (CashSessionId, Type, Amount, Method, ProjectId, ProjectPaymentId, Reason, CreatedAtUtc)
-            SELECT NULL, 1, p.Amount, p.Method, p.ProjectId, p.Id,
+                (CashSessionId, Type, Amount, Method, Origin, ProjectId, ProjectPaymentId, Reason, CreatedAtUtc)
+            SELECT NULL, 1, p.Amount, p.Method, 1, p.ProjectId, p.Id,
                    CASE p.Kind
                        WHEN 0 THEN 'Seña: '
                        WHEN 1 THEN 'Pago a cuenta: '

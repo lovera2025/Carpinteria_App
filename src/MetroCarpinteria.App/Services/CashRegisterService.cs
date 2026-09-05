@@ -82,6 +82,22 @@ public sealed class CashRegisterService
     }
 
     /// <summary>
+    /// Lo que un movimiento le suma o le resta a la caja.
+    /// </summary>
+    /// <remarks>
+    /// Un tipo que no sea ingreso ni egreso no mueve nada. Suena imposible, pero hubo
+    /// instalaciones con movimientos guardados con un tipo fuera de rango, y tratarlos
+    /// como egreso «porque no son ingreso» daba un saldo distinto según qué pantalla lo
+    /// calculara. Todo el que necesite el signo de un movimiento pasa por acá.
+    /// </remarks>
+    private static decimal Signed(CashMovementType type, decimal amount) => type switch
+    {
+        CashMovementType.Income => amount,
+        CashMovementType.Expense => -amount,
+        _ => 0m
+    };
+
+    /// <summary>
     /// El historial de la caja, con el saldo que quedaba después de cada movimiento.
     /// </summary>
     /// <remarks>
@@ -122,7 +138,7 @@ public sealed class CashRegisterService
         foreach (var row in rows)
         {
             var isIncome = row.Type == CashMovementType.Income;
-            running += isIncome ? row.Amount : -row.Amount;
+            running += Signed(row.Type, row.Amount);
 
             items.Add(new CashMovementListItem
             {
@@ -181,7 +197,8 @@ public sealed class CashRegisterService
         PaymentMethod method = PaymentMethod.Cash,
         int? projectId = null,
         int? employeeId = null,
-        int? projectLaborLineId = null)
+        int? projectLaborLineId = null,
+        CashMovementOrigin origin = CashMovementOrigin.Manual)
     {
         if (amount <= 0)
         {
@@ -200,6 +217,7 @@ public sealed class CashRegisterService
             Type = type,
             Amount = amount,
             Method = method,
+            Origin = origin,
             Reason = reason.Trim(),
             ProjectId = projectId,
             EmployeeId = employeeId,
@@ -255,6 +273,7 @@ public sealed class CashRegisterService
             Type = isIncome ? CashMovementType.Income : CashMovementType.Expense,
             Amount = Math.Abs(difference),
             Method = original.Method,
+            Origin = CashMovementOrigin.Correction,
             ProjectId = original.ProjectId,
             EmployeeId = original.EmployeeId,
             ProjectLaborLineId = original.ProjectLaborLineId,
@@ -305,6 +324,158 @@ public sealed class CashRegisterService
             .AsEnumerable()
             .GroupBy(m => m.LineId)
             .ToDictionary(group => group.Key, group => group.Sum(m => m.Amount));
+    }
+
+    /// <summary>
+    /// El saldo abierto en de dónde sale, para que el taller lo pueda confirmar.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Se arma después de convertir la caja vieja. Preguntarle «¿está bien este número?»
+    /// sin mostrarle de dónde sale no se puede contestar: lo que se muestra es el saldo
+    /// desarmado por origen, con las aperturas dudosas señaladas para que él decida.
+    /// </para>
+    /// <para>
+    /// El agrupado usa <see cref="CashMovement.Origin"/> y no el texto del motivo, que se
+    /// puede editar.
+    /// </para>
+    /// </remarks>
+    public CashConversionReview GetConversionReview()
+    {
+        using var context = _databaseService.CreateContext();
+
+        var rows = context.CashMovements
+            .AsNoTracking()
+            .Select(m => new { m.Id, m.Type, m.Amount, m.Method, m.Origin, m.CashSessionId })
+            .AsEnumerable()
+            .ToList();
+
+        if (rows.Count == 0)
+        {
+            return new CashConversionReview();
+        }
+
+        var origins = rows
+            .GroupBy(m => m.Origin switch
+            {
+                // Los cobros se abren por medio: es la distinción que más le importa,
+                // porque el efectivo está en el cajón y la transferencia en el banco.
+                CashMovementOrigin.Payment => $"Cobros por {PaymentRules.GetMethodLabel(m.Method).ToLowerInvariant()}",
+                CashMovementOrigin.PaymentCancellation => "Cobros anulados",
+                CashMovementOrigin.SessionOpening => "Aperturas de cajas viejas",
+                CashMovementOrigin.SessionAdjustment => "Ajustes de arqueo",
+                CashMovementOrigin.Correction => "Correcciones",
+                CashMovementOrigin.WorkerPayment => "Pagos a operarios",
+                _ => "Movimientos cargados a mano"
+            })
+            .Select(group => new CashOriginTotal
+            {
+                Label = group.Key,
+                Amount = group.Sum(m => Signed(m.Type, m.Amount)),
+                Count = group.Count()
+            })
+            .OrderByDescending(o => Math.Abs(o.Amount))
+            .ToList();
+
+        return new CashConversionReview
+        {
+            Balance = rows.Sum(m => Signed(m.Type, m.Amount)),
+            Origins = origins,
+            Suspicious = FindSuspiciousOpenings(context)
+        };
+    }
+
+    /// <summary>
+    /// Aperturas que coinciden con lo contado al cerrar la caja anterior.
+    /// </summary>
+    /// <remarks>
+    /// Se compara con un peso de tolerancia: la coincidencia exacta es lo que delata que
+    /// se retipeó el saldo del día anterior, pero un redondeo de centavos no tendría que
+    /// hacer que se pase por alto.
+    /// </remarks>
+    private static List<SuspiciousOpening> FindSuspiciousOpenings(AppDbContext context)
+    {
+        var openings = context.CashMovements
+            .AsNoTracking()
+            .Where(m => m.Origin == CashMovementOrigin.SessionOpening && m.CashSessionId != null)
+            .Select(m => new { m.Id, m.Amount, SessionId = m.CashSessionId!.Value })
+            .AsEnumerable()
+            .ToList();
+
+        if (openings.Count == 0)
+        {
+            return [];
+        }
+
+        var sessions = context.CashSessions
+            .AsNoTracking()
+            .OrderBy(s => s.OpenedAtUtc)
+            .Select(s => new { s.Id, s.OpenedAtUtc, s.ClosedAtUtc, s.ClosingCountedAmount })
+            .AsEnumerable()
+            .ToList();
+
+        var found = new List<SuspiciousOpening>();
+
+        foreach (var opening in openings)
+        {
+            var index = sessions.FindIndex(s => s.Id == opening.SessionId);
+
+            if (index <= 0)
+            {
+                continue;
+            }
+
+            var previous = sessions[index - 1];
+
+            if (previous.ClosingCountedAmount is not { } counted
+                || counted <= 0m
+                || previous.ClosedAtUtc is not { } closedAt
+                || Math.Abs(counted - opening.Amount) > 1m)
+            {
+                continue;
+            }
+
+            found.Add(new SuspiciousOpening
+            {
+                MovementId = opening.Id,
+                Amount = opening.Amount,
+                OpenedAtLocal = sessions[index].OpenedAtUtc.ToLocalTime(),
+                PreviousCounted = counted,
+                PreviousClosedAtLocal = closedAt.ToLocalTime()
+            });
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Descuenta una apertura que estaba contada dos veces, sin borrarla.
+    /// </summary>
+    /// <remarks>
+    /// Se asienta el movimiento que la compensa y los dos quedan a la vista. Borrar el
+    /// renglón dejaría el saldo bien y la historia muda, que es exactamente cómo aparecen
+    /// los números que después nadie puede explicar.
+    /// </remarks>
+    public void DiscardDuplicatedOpening(int movementId)
+    {
+        using var context = _databaseService.CreateContext();
+
+        var opening = context.CashMovements
+            .FirstOrDefault(m => m.Id == movementId && m.Origin == CashMovementOrigin.SessionOpening)
+            ?? throw new InvalidOperationException("Esa apertura no está en la caja.");
+
+        context.CashMovements.Add(new CashMovement
+        {
+            Type = CashMovementType.Expense,
+            Amount = opening.Amount,
+            Method = opening.Method,
+            Origin = CashMovementOrigin.Correction,
+            CashSessionId = opening.CashSessionId,
+            Reason = $"Corrección: «{opening.Reason}» ya estaba contada en la caja anterior",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        context.SaveChanges();
     }
 
     /// <summary>

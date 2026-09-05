@@ -86,6 +86,8 @@ public static class AppHost
         DialogService = new DialogService();
         ClockService = new ClockService();
 
+        MarkCashSafeReviewedIfNothingToReview();
+
         // Deja aplicado el tema y el tamaño de letra guardados antes de abrir la ventana,
         // para que no se vea un destello con el tema anterior.
         ThemeService.ApplySaved();
@@ -94,6 +96,30 @@ public static class AppHost
         // queda marcada como no lista en vez de aparentar estar entera con servicios en null.
         _initialized = true;
         IsReady = true;
+    }
+
+    /// <summary>
+    /// Da por revisado el saldo de la caja cuando no hay nada que revisar.
+    /// </summary>
+    /// <remarks>
+    /// La revisión existe para las instalaciones que venían con cajas viejas: la
+    /// conversión suma aperturas y ajustes de arqueo que antes no tenían renglón, y el
+    /// total resultante lo tiene que confirmar el taller. Una instalación nueva no tiene
+    /// nada de eso, así que no corresponde pedirle que confirme un cero.
+    /// </remarks>
+    private static void MarkCashSafeReviewedIfNothingToReview()
+    {
+        if (Settings.CashSafeReviewedAtUtc is not null)
+        {
+            return;
+        }
+
+        if (CashRegisterService.GetBalance().MovementCount > 0)
+        {
+            return;
+        }
+
+        SettingsService.Update(settings => settings.CashSafeReviewedAtUtc = DateTime.UtcNow);
     }
 
     /// <summary>
