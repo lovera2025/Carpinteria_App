@@ -415,9 +415,20 @@ internal static class CommercialTests
             // El cobro sigue en la ficha del trabajo, marcado. Antes se borraba la fila y
             // del proyecto no quedaba rastro de que ese cobro hubiera existido.
             Assert.Equal(detail.Payments.Count, 1, "el cobro anulado sigue en la ficha");
-            Assert.True(detail.Payments.Single().IsCancelled, "tendría que figurar como anulado.");
+
+            var cancelled = detail.Payments.Single();
+            Assert.True(cancelled.IsCancelled, "tendría que figurar como anulado.");
             Assert.Equal(detail.PaidTotal, 0m, "un cobro anulado no cuenta para el saldo");
             Assert.False(detail.HasPayments, "sin cobros vigentes");
+
+            // Lo que se lee en pantalla: si un cobro anulado se ve igual que uno vigente,
+            // el renglón está mintiendo aunque el saldo esté bien.
+            Assert.True(
+                cancelled.Summary.Contains("ANULADO", StringComparison.Ordinal),
+                "el renglón tiene que decir que está anulado.");
+            Assert.True(
+                cancelled.CancelNote.Contains("se arrepintió", StringComparison.Ordinal),
+                "el motivo de la anulación tiene que quedar a la vista.");
 
             // Y en Caja el ingreso original queda, con una salida que lo compensa.
             var after = cash.GetBalance();

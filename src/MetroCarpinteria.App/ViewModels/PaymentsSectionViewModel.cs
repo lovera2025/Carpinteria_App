@@ -250,6 +250,15 @@ public sealed class PaymentsSectionViewModel : ObservableObject
             return;
         }
 
+        // Anular dos veces asentaría dos salidas compensatorias por una sola entrada, y la
+        // caja quedaría en menos. El servicio también lo corta; acá se evita además hacerle
+        // confirmar un diálogo para después rebotarlo.
+        if (payment.IsCancelled)
+        {
+            AppHost.NotificationService.Warning("Este cobro ya estaba anulado.");
+            return;
+        }
+
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             $"Anular {PaymentRules.GetKindLabel(payment.Kind).ToLowerInvariant()}",
             $"Se anula el cobro de {payment.AmountDisplay} del {payment.DateDisplay}.\n\n" +
@@ -280,6 +289,16 @@ public sealed class PaymentsSectionViewModel : ObservableObject
     {
         if (parameter is not ProjectPaymentItem payment)
         {
+            return;
+        }
+
+        // La vista ya esconde el botón en un cobro anulado, pero esconder no es impedir:
+        // un recibo es un papel que el cliente se lleva, y el de una plata que se le
+        // devolvió no puede salir por ningún camino.
+        if (payment.IsCancelled)
+        {
+            AppHost.NotificationService.Warning(
+                "Este cobro está anulado: no se puede emitir un recibo de una plata que se devolvió.");
             return;
         }
 
