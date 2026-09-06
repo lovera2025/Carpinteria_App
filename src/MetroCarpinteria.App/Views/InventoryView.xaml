@@ -279,6 +279,11 @@
                             <TextBlock Text="{Binding MovementsScope}"
                                        Style="{StaticResource SubtitleStyle}"
                                        Margin="0,0,0,12" />
+                            <!-- Un producto con mucho movimiento parecía tener solo estos. -->
+                            <TextBlock Text="{Binding MovementsTrimmedNote}"
+                                       Style="{StaticResource SubtitleStyle}" FontSize="11"
+                                       Margin="0,-8,0,12"
+                                       Visibility="{Binding MovementsAreTrimmed, Converter={StaticResource BoolToVisibilityConverter}}" />
                             <ListView ItemsSource="{Binding RecentMovements}"
                                       BorderThickness="0"
                                       Background="Transparent"

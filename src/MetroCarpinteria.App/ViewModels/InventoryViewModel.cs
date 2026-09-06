@@ -378,10 +378,21 @@ public class InventoryViewModel : ViewModelBase
         ? "De todos los productos"
         : $"De {SelectedProduct.Name}";
 
+    /// <summary>Cuántos movimientos se traen. Más que esto ya no entra en la tarjeta.</summary>
+    private const int MovementLimit = 30;
+
+    /// <summary>
+    /// La lista está cortada en el tope y hay más atrás. Sin decirlo, un producto con
+    /// mucho movimiento parecía tener solo estos treinta.
+    /// </summary>
+    public bool MovementsAreTrimmed => RecentMovements.Count >= MovementLimit;
+
+    public string MovementsTrimmedNote => $"Se muestran los últimos {MovementLimit}.";
+
     private void LoadMovementsForSelection()
     {
         RecentMovements.Clear();
-        var movements = AppHost.InventoryService.GetRecentMovements(SelectedProduct?.Id, 30);
+        var movements = AppHost.InventoryService.GetRecentMovements(SelectedProduct?.Id, MovementLimit);
         foreach (var movement in movements)
         {
             RecentMovements.Add(movement);
@@ -391,6 +402,7 @@ public class InventoryViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanRestoreSelected));
         OnPropertyChanged(nameof(SelectedProductStockDisplay));
         OnPropertyChanged(nameof(MovementsScope));
+        OnPropertyChanged(nameof(MovementsAreTrimmed));
     }
 
     private void StartNewProduct()

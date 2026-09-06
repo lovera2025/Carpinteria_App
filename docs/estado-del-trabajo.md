@@ -2,12 +2,12 @@
 
 Última actualización: **2026-09-06**.
 
-**Las cuatro tandas están hechas y mergeadas en `master`** —A2, A, B y C—, con la suite en
-verde. **Nada está publicado**: `master` está adelante del remoto y no se empujó ningún tag.
+**Las cinco tandas están hechas** —A2, A, B, C y la revisión de Inventario—, con la suite en
+verde. **Nada está publicado**: no se empujó ningún tag, y `master` está adelante del remoto.
 
-**La publicación está en pausa a propósito.** Antes de sacar la versión falta **revisar
-Inventario entero** (ver «Lo que falta»). La idea es no ir tirando actualizaciones cada rato:
-se junta todo lo que haya que cambiar y sale **una sola versión** con todo adentro.
+Las cuatro primeras están en `master`; la revisión de Inventario está en
+`inventario-revision`, lista para mergear. La idea sigue siendo la misma: **una sola versión
+con todo adentro**, en vez de ir tirando actualizaciones cada rato.
 
 Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v14**, así que
 una rama que maneje hasta v13 no la abre. No es una falla —el guardián avisa y no toca los
@@ -54,8 +54,8 @@ Reglas de trabajo que puso él:
 
 ## Lo que está hecho
 
-Todo commiteado y mergeado en `master`, **300/300 tests en verde**, y probado abriendo la app
-contra la base local real. Las cuatro tandas van en orden: A2, B, A y C.
+Todo commiteado, **307/307 tests en verde**, y probado abriendo la app contra la base local
+real. Las tandas van en orden: A2, B, A, C y la revisión de Inventario.
 
 ### Tanda A2 — el precio pactado (rama `precio-pactado-no-se-pisa`)
 
@@ -132,6 +132,53 @@ Alejandro le pongo Pagar."*
 
 `c504399` · **El historial de Inventario dejaba de mostrarse entero** — ver la baranda 3.
 
+### Tanda D — la revisión de Inventario (rama `inventario-revision`)
+
+Se hizo porque el bug del historial apareció **de costado**, mirando la pantalla mientras se
+revisaba otra cosa. Si uno así sobrevivió sin que nadie lo notara, la sección merecía una
+pasada entera antes de publicar.
+
+`cc370d2` · **Migración v15** — dos datos que se leían del producto vivo quedan congelados
+
+- La **unidad de cada movimiento**. Antes salía de `Products.Unit`, así que corregir la unidad
+  de un producto —lo que uno hace al notar que la cargó mal— reescribía todo el pasado: un
+  movimiento de 1500 u. pasaba a leerse como 1500 m².
+- El **costo de cada material asignado** a un trabajo. Salía de `Products.CostPrice`, así que
+  lo gastado en un mueble de agosto cambiaba solo en octubre al subir la melamina.
+- El relleno usa lo que el producto dice hoy: es la mejor verdad disponible, y lo que ya se
+  haya cambiado alguna vez no se puede recuperar ni se inventa.
+
+`af11ef2` · **El material cargado después de aprobar lo decide él**
+
+Aprobar sin materiales (tanda A) volvió normal un camino que antes casi no pasaba: cargar la
+madera después, desde Proyectos. Ese camino descontaba stock, pero la plata la resolvía la app
+sola y siempre para el mismo lado —salía del bolsillo del taller, sin preguntar—.
+
+- Al asignar material a un trabajo con precio acordado, **pregunta**. Si lo pone él, el precio
+  no se mueve. Si se lo suma al cliente, la app propone material + desperdicio + desgaste con
+  los porcentajes de ese trabajo, y él puede cambiar el número.
+- Cobrarlo marca el precio como **pactado a mano**: lo decidió él y ningún recálculo lo pisa.
+- Quitar el material devuelve las dos cosas, stock y recargo. Cancelar el trabajo también.
+- En Terminados, cuando gastó más de lo cotizado, una línea lo explica: cuánto cotizó, cuánto
+  gastó, y si esa diferencia se la sumó al cliente o sale de su ganancia.
+
+`49a1367` · **Lo que salió de la recorrida, pantalla por pantalla**
+
+- Con «Solo alertas» puesto y nada bajo el mínimo, Inventario decía «Todavía no hay productos.
+  Cargá el primero»: le avisaba que se le borró el inventario. **Él trabaja con los filtros
+  puestos**, así que ahora el vacío nombra el filtro y dice cuál destildar.
+- Cambiar la unidad de un producto con stock avisa: el historial está a salvo, pero el número
+  del stock no se convierte.
+- Archivar un producto con stock dice cuánto se va a dejar de contar.
+- El historial sin producto elegido trae los de todos, y ahora lo dice.
+- Se avisa cuando la lista está cortada en los últimos 30.
+
+**Lo que la recorrida NO encontró**, y conviene que quede escrito: ninguna cantidad se compara
+del lado de SQL —todas pasan por `AsEnumerable`, que es la trampa de las columnas `TEXT`—, las
+validaciones de stock insuficiente y producto archivado se respetan y se explican bien en
+pantalla, el botón gris de Eliminar dice por qué está gris, y `ApplyPendingStock` **sí** tenía
+test, al revés de lo que suponía el plan.
+
 ---
 
 ## Barandas nuevas (por qué ya no falla en silencio)
@@ -148,32 +195,17 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 
 ## Lo que falta
 
-### Revisar Inventario, sección por sección (lo próximo)
-
-Lo pidió Maximiliano y **es lo que bloquea la publicación**. El plan concreto se arma con él
-antes de tocar nada; esto es lo que se sabe hasta acá:
-
-- **El historial ya se arregló** (`c504399`), pero ese arreglo salió de mirar la pantalla de
-  costado mientras se revisaba otra cosa. La sección nunca se revisó entera.
-- Falta pasar por todo: stock y mínimos, alta y edición de productos, entradas y salidas a
-  mano, archivar y restaurar, y el cruce con Presupuestos y Proyectos —que es donde el stock
-  se mueve solo al aprobar y al cancelar un trabajo.
-- El criterio de siempre: **primero los números**. Un stock que miente vale más que un
-  cartel mal escrito.
-
 ### Pendientes de publicación
 
-**El código está listo; la publicación espera a la revisión de Inventario.** La decisión es
-juntar todo lo que haya que cambiar y sacar **una sola versión** —A2, A, B, C y lo que salga
-de Inventario— en vez de ir tirando actualizaciones cada rato.
-
-- Falta acordar el número (el último tag es `v1.9.1`; se propuso `v1.10.0`) y empujarlo.
+**El código está listo.** Falta mergear `inventario-revision` a `master`, acordar el número
+(el último tag es `v1.9.1`; se propuso `v1.10.0`) y empujarlo. Sale **una sola versión** con
+las cinco tandas adentro.
 - **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
-- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, y otra vuelta
-  con lo nuevo. Salieron dos problemas: el saldo por medio (`1c1c7a5`) y el historial de
-  Inventario (`c504399`), los dos arreglados. Lo demás cierra: los cobros de Clientes suman
-  exacto contra lo que Caja dice que entró, el precio pactado aguanta que le toquen la
-  calculadora, y pagarle a un operario baja el saldo de la caja por el importe justo.
+- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, más la
+  recorrida completa de Inventario. Lo que cierra: los cobros de Clientes suman exacto contra
+  lo que Caja dice que entró, el precio pactado aguanta que le toquen la calculadora, pagarle
+  a un operario baja el saldo de la caja por el importe justo, y cargar material después de
+  aprobar mueve el stock y el precio como corresponde según lo que él elija.
 - **El susto de la base «más nueva que el código» es solo de escritorio.** Pasa al pararse en
   una rama vieja teniendo la base local ya migrada. Al carpintero no le puede pasar por una
   actualización: su base va de v12 para arriba, y el guardián solo salta al revés.
