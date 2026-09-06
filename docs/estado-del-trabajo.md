@@ -1,6 +1,12 @@
 # Estado del trabajo — la caja del taller
 
-Última actualización: **2026-09-05**. Rama: `caja-fuerte` (sale de `precio-pactado-no-se-pisa`, que sale de `master`).
+Última actualización: **2026-09-06**. Dos ramas en juego:
+
+- **`master`** — tiene A2 y A mergeadas y **sin publicar**. Es lo que sale en la próxima versión.
+- **`caja-fuerte`** — la tanda B, todavía sin mergear. Sale de `precio-pactado-no-se-pisa`, que salía de `master`.
+
+Ojo al cambiar de rama: la base local de prueba ya está en **esquema v14**, así que estando en
+`master` (v13) la app no abre. No es una falla: el guardián avisa y no toca los datos.
 
 Este documento existe para poder retomar desde cero. Si arrancás una conversación nueva, leé esto primero.
 
@@ -74,6 +80,25 @@ Todo commiteado, **291/291 tests en verde**, y probado abriendo la app contra la
 `a0c7ec3` · un cobro anulado se lee como anulado y no puede emitir recibo
 `ba0631c`, `f09e61e`, `e4fd3b7` · la tarjeta de la caja, simplificada en tres pasadas
 
+`1c1c7a5` · **el saldo deja de partirse por medio, esta vez en serio**
+
+Se había sacado de la tarjeta de Caja, pero sobrevivía en las dos pantallas que se
+reescribieron para quitarles las sesiones. Inicio decía «En efectivo: …» y Reportes mostraba
+«En efectivo — lo que tendría que haber en billetes». Con la base de prueba daba **−$ 3.500**:
+un imposible en billetes, porque los gastos quedan en efectivo y los cobros entran con su
+medio real. `CashOnHand` sigue existiendo porque dos tests la usan para verificar que una seña
+por transferencia no suma al efectivo.
+
+### Tanda A — aprobar sin materiales (en `master`)
+
+`47b815b` · Se fue la validación. Sin precio se sigue bloqueando; sin materiales ya no.
+
+- Los tres textos que prometían descontar dejaron de prometerlo cuando no hay nada que
+  descontar: el diálogo, el botón (vuelve a ser «Aprobar» a secas) y el aviso posterior.
+- Probado en la app: presupuesto de $ 45.000 con cero materiales, aprobado, y después
+  devuelto a presupuesto con «Cancelar trabajo» — que es la prueba de que aprobar **no** es
+  irreversible, el argumento con el que se justificaba la validación.
+
 ---
 
 ## Barandas nuevas (por qué ya no falla en silencio)
@@ -106,21 +131,31 @@ Diseño acordado:
 - **Avisos de a quién le debe**, reusando el patrón de la banda de atrasados. Diálogo real solo al archivar un trabajo con pagos pendientes.
 - Lo suyo (*"esto lo puedo sacar yo: mi ganancia"*) no pasa por acá: el jefe no es línea de mano de obra, es un egreso normal con el proyecto anotado.
 
-### Parte A — aprobar sin materiales (no empezada)
+### Inventario: el historial de movimientos sale vacío (al final de todo)
 
-La más chica de todas y la última en la lista porque **no toca un solo número**.
+Lo dejó pedido Maximiliano para el final: primero ver si tiene más fallas, y recién ahí
+mejorarlo entero de una vez.
 
-- Borrar la validación de `QuoteService.cs:1106`. Mantener la de precio.
-- El comentario que la justifica dice que aprobar es irreversible, y `CancelApproval` existe.
-- Con cero líneas el resumen diría *"Se descontaron todos los materiales"*, que es falso.
-- El diálogo promete descontar stock y el botón dice «Aprobar y descontar».
-- El test `CorrectnessTests.cs:72` fija hoy lo contrario: hay que invertirlo.
+- La tarjeta «Historial de movimientos» dibuja los renglones y **ninguno tiene texto**.
+- Causa: el estilo global de `ListViewItem` ([`Lists.xaml:65`](../src/MetroCarpinteria.App/Resources/Controls/Lists.xaml)) reemplaza la
+  plantilla por un `GridViewRowPresenter`, que solo sabe dibujar columnas de un `GridView` e
+  **ignora el `ItemTemplate`**.
+- Es la única lista de la app en esa situación: Caja y Configuración usan `GridView` y andan.
+- **Viene de `ce9b5c9` y ya está en producción**, no es de estas tandas.
+- Ninguna de las dos barandas lo caza: no hay binding que falle, el contenido sencillamente
+  nunca se presenta. Si se arregla, conviene sumar la tercera baranda.
 
 ### Pendientes de publicación
 
-- **Mergear a `master` y publicar.** Nada se mergeó todavía. Orden acordado: **A2 sola primero** (no le pide aprender nada), después B, después C.
+- **`master` tiene A2 y A, sin empujar.** Se decidió publicar **las dos juntas** en una sola
+  versión, en vez de A2 sola. Falta acordar el número (el último tag es `v1.9.1`, se propuso
+  `v1.10.0`) y empujar. Después va B, y después C.
 - **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
-- **Recorrer las pantallas que se tocaron.** Solo se abrió Caja y Proyectos. Presupuestos, Clientes, Personal y Reportes se vieron afectados y nunca se miraron. Ahí aparecieron dos errores que ningún test veía.
+- A2 y A se verificaron **juntas y en aislamiento**: build limpio y 283/283 sobre `master`.
+- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete. Salieron los
+  dos problemas de arriba: el saldo por medio (arreglado, `1c1c7a5`) y el historial de
+  Inventario (pendiente, y es viejo). Lo demás cierra: los cobros de Clientes suman exacto
+  contra lo que Caja dice que entró, y el precio pactado aguanta que le toquen la calculadora.
 - **Opcional: ensayar la migración con la base del carpintero.** La app ya hace respaldo al cerrar (hasta 30 copias). Cierra la app antes de copiar (la base corre en modo WAL). Guardarla en `.local/` — **agregar `.local/` al `.gitignore` antes**, tiene nombres y teléfonos de sus clientes.
 
 ---
@@ -129,7 +164,7 @@ La más chica de todas y la última en la lista porque **no toca un solo número
 
 Para no volver a proponerlo:
 
-- **Partir el saldo en «en el banco» / «en el cajón».** Se implementó y se sacó: el taller no hace esa división, la plata es toda de uno.
+- **Partir el saldo en «en el banco» / «en el cajón».** Se implementó y se sacó: el taller no hace esa división, la plata es toda de uno. **Volvió dos veces** — quedó vivo en Inicio y en Reportes hasta `1c1c7a5`. Si aparece de nuevo, mirar el comentario de `CashOnHand`, que es de donde rebrotaba.
 - **Una tarjeta de «revisá el saldo y confirmalo»** después de migrar. Se implementó y se sacó: era ceremonia, y repetía lo que el historial ya dice renglón por renglón.
 - **Mostrar «Entró / Salió» al lado del saldo por medio.** Cuatro números para decir dos cosas, y dos de ellos dando igual sin explicación.
 - **Registrar retroactivamente en Caja los pagos a operarios que él ya marcó.** Serían movimientos con fecha de hoy por plata que salió hace semanas.
@@ -142,6 +177,10 @@ Para no volver a proponerlo:
 - **Base de pruebas local**: `Documentos\MetroCarpinteria\data\carpinteria.db`. Tiene datos de tecleo (`Casdasdasdasdasdasd`, `blabla`, `wwwwwmax`) — **no sirve para validar la migración de la caja**, no tiene historia real que contrastar.
 - Respaldo previo a la v14: `Documentos\MetroCarpinteria\PRE_v14_*.db`.
 - La base quedó con datos de prueba metidos el 2026-09-05: un egreso de $3.500 y una seña de $100.000.
+- El 2026-09-06, probando la Parte A, el presupuesto `wwwww` (de `max`) quedó con precio
+  **$ 45.000** donde antes decía «—». Se le borró el jornal para dejarlo como estaba, pero el
+  total guardado no se limpia solo: el paso 2 avisa «falta el valor del jornal» y la barra de
+  abajo sigue mostrando el importe. Es un rincón chico y viejo, nadie lo pidió.
 - **Correr todo**: `dotnet build -warnaserror` y después `dotnet run --no-build` en `tests\MetroCarpinteria.SmokeTest`.
 - **Abrir la app**: `src\MetroCarpinteria.App\bin\Debug\net8.0-windows\MetroCarpinteria.exe`. Cerrarla antes de recompilar o el build falla por archivo bloqueado.
 - El plan completo original está en `~/.claude/plans/fijate-esto-me-dijo-jaunty-penguin.md`.
