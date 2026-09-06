@@ -64,4 +64,23 @@ public class AppSettings
 
     /// <summary>Tamaño de letra. Chica, normal o grande.</summary>
     public FontScale FontScale { get; set; } = FontScale.Normal;
+
+    /// <summary>
+    /// Tapar los importes de la pantalla. Se prende con el botón de la barra de arriba o
+    /// con Ctrl+H.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Se guarda a propósito. Lo que se quiere tapar es que alguien vea la plata del
+    /// taller, y el momento más descuidado es justo el de abrir la app con el cliente ya
+    /// parado al lado: si el modo se apagara solo al cerrar, ese momento quedaría
+    /// destapado, que es el único que importa.
+    /// </para>
+    /// <para>
+    /// Se puede guardar sin riesgo porque lo tapado <b>se lee como tapado</b>: es
+    /// difuminado, no un número cambiado. Encontrarse la caja borrosa al día siguiente se
+    /// entiende; encontrársela en cero, no.
+    /// </para>
+    /// </remarks>
+    public bool HideSensitiveNumbers { get; set; }
 }

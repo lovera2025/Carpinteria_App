@@ -115,3 +115,61 @@ public class StringToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
     }
 }
+
+/// <summary>
+/// Cambia un importe por puntos cuando el modo privado está puesto.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Tapa solo lo que es plata.</b> Si el texto no tiene un importe adentro, lo deja
+/// pasar tal cual. Eso es lo que permite ponerlo en cualquier binding de la pantalla sin
+/// llevarse puesto lo que él sí quiere seguir viendo: cuáles trabajos terminó, de quién es
+/// cada uno, si un jornal está saldado. Un modo que tapa todo no se usa.
+/// </para>
+/// <para>
+/// Devuelve puntos y no vacío a propósito: una celda en blanco se lee como un dato que
+/// falta, y en una pantalla de plata eso es justo lo que no queremos que piense.
+/// </para>
+/// <para>
+/// Un converter no se vuelve a evaluar solo cuando cambia el modo, así que al prenderlo o
+/// apagarlo se recarga la sección que está a la vista. Es lo que ya hace F5.
+/// </para>
+/// </remarks>
+public class PrivacyMaskConverter : IValueConverter
+{
+    /// <summary>Lo que se ve en lugar del importe. Con espacios, para que no se lea como una palabra.</summary>
+    public const string Mask = "● ● ●";
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        Controls.Ui.IsPrivacyOn && HasMoney(value as string) ? Mask : value;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+
+    /// <summary>
+    /// Si el texto tiene un importe adentro: un signo de peso con cifras detrás.
+    /// </summary>
+    /// <remarks>
+    /// Es la misma regla con la que <see cref="AppCulture.Money"/> los escribe. Un texto
+    /// sin plata —«Todo pagado», «Sin operarios»— pasa entero.
+    /// </remarks>
+    public static bool HasMoney(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        for (var i = text.IndexOf('$'); i >= 0; i = text.IndexOf('$', i + 1))
+        {
+            var rest = text.AsSpan(i + 1).TrimStart();
+
+            if (rest.Length > 0 && char.IsDigit(rest[0]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

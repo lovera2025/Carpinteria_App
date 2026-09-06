@@ -29,7 +29,7 @@
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="Caja fuerte" Style="{StaticResource SectionTitleStyle}" />
-                        <TextBlock Text="{Binding Balance.BalanceDisplay}"
+                        <TextBlock Text="{Binding Balance.BalanceDisplay, Converter={StaticResource PrivacyMaskConverter}}"
                                    FontSize="34" FontWeight="Bold" Margin="0,8,0,0"
                                    Foreground="{DynamicResource PrimaryBrownBrush}" />
                         <TextBlock Text="Lo que hay hoy en el taller."
@@ -37,7 +37,7 @@
 
                         <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="12"
                                    Margin="0,12,0,0" TextWrapping="Wrap"
-                                   Text="{Binding HistorySummary}" />
+                                   Text="{Binding HistorySummary, Converter={StaticResource PrivacyMaskConverter}}" />
                     </StackPanel>
                 </Border>
 
@@ -47,7 +47,7 @@
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="Trabajos terminados" Style="{StaticResource SectionTitleStyle}" />
-                        <TextBlock Text="{Binding PendingLaborDetail}"
+                        <TextBlock Text="{Binding PendingLaborDetail, Converter={StaticResource PrivacyMaskConverter}}"
                                    FontSize="15" FontWeight="SemiBold" Margin="0,6,0,0"
                                    TextWrapping="Wrap"
                                    Foreground="{DynamicResource PrimaryBrownBrush}" />
@@ -71,7 +71,7 @@
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16"
                         Visibility="{Binding ShowSuspiciousNotice, Converter={StaticResource BoolToVisibilityConverter}}">
                     <StackPanel>
-                        <TextBlock Text="{Binding SuspiciousSummary}" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="{Binding SuspiciousSummary, Converter={StaticResource PrivacyMaskConverter}}" Style="{StaticResource SectionTitleStyle}" />
                         <TextBlock TextWrapping="Wrap" Margin="0,4,0,10" FontSize="13"
                                    Text="Las cajas viejas no arrastraban saldo: cada una se abría con un monto escrito a mano. Si ahí anotaste lo que te había quedado del día anterior, esa plata quedó sumada dos veces." />
 
@@ -79,7 +79,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Margin="0,6">
-                                        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" FontSize="12" />
+                                        <TextBlock Text="{Binding Explanation, Converter={StaticResource PrivacyMaskConverter}}" TextWrapping="Wrap" FontSize="12" />
                                         <Button Content="Descontarla"
                                                 Style="{StaticResource SecondaryButtonStyle}"
                                                 HorizontalAlignment="Left" Padding="10,4" FontSize="12"
@@ -185,9 +185,9 @@
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
                                     <GridViewColumn Header="Importe" Width="115"
-                                                    DisplayMemberBinding="{Binding AmountDisplay}" />
+                                                    DisplayMemberBinding="{Binding AmountDisplay, Converter={StaticResource PrivacyMaskConverter}}" />
                                     <GridViewColumn Header="Quedaba" Width="115"
-                                                    DisplayMemberBinding="{Binding RunningBalanceDisplay}" />
+                                                    DisplayMemberBinding="{Binding RunningBalanceDisplay, Converter={StaticResource PrivacyMaskConverter}}" />
                                 </GridView>
                             </ListView.View>
                         </ListView>

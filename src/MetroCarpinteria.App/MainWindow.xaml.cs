@@ -46,6 +46,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Ctrl+H tapa los importes. Va acá y no en InputBindings por lo mismo que Esc, y
+        // además porque el momento en que se usa es el peor posible para depender del
+        // foco: se aprieta cuando alguien acaba de entrar, y el foco puede estar en
+        // cualquier lado —o en ninguno, si el último botón que tocó ya no está en pantalla,
+        // que es lo que pasa al abrir los trabajos terminados—. Probado: por InputBindings
+        // el atajo no hacía nada ahí adentro.
+        if (e.Key == Key.H && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            main.TogglePrivacyCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
         // Esc cierra lo que haya abierto: la ayuda de atajos, y si no está, el formulario
         // de la sección. Va en PreviewKeyDown porque un TextBox con el foco se queda con la
         // tecla antes de que llegue a la ventana — que es justamente el caso de un

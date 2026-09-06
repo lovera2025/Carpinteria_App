@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.Windows.Input;
+using MetroCarpinteria.App.Controls;
 using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
 using MetroCarpinteria.App.Services;
@@ -74,8 +75,44 @@ public class MainViewModel : ObservableObject
         NewInSectionCommand = new RelayCommand(_ => StartNewInSection());
         ToggleShortcutsCommand = new RelayCommand(_ => AreShortcutsVisible = !AreShortcutsVisible);
         CloseOverlaysCommand = new RelayCommand(_ => CloseOverlays());
+        TogglePrivacyCommand = new RelayCommand(_ => TogglePrivacy());
+
+        // Lo que quedó puesto la última vez. El momento más descuidado es el de abrir la
+        // app con alguien al lado, así que el modo tiene que estar puesto antes de que se
+        // dibuje el primer importe.
+        Ui.SetPrivacy(AppHost.Settings.HideSensitiveNumbers);
 
         AppHost.ClockService.DayChanged += OnDayChanged;
+    }
+
+    /// <summary>Si los importes están tapados ahora mismo.</summary>
+    public bool IsPrivacyOn => Ui.IsPrivacyOn;
+
+    /// <summary>
+    /// El botón dice qué va a pasar si lo apretás, no en qué estado está. «Ocultar» y
+    /// «Mostrar» se leen de una; un ojo tachado hay que interpretarlo.
+    /// </summary>
+    public string PrivacyLabel => Ui.IsPrivacyOn ? "👁 Mostrar importes" : "🙈 Ocultar importes";
+
+    public string PrivacyHint => Ui.IsPrivacyOn
+        ? "Los importes están tapados. Ctrl+H para volver a verlos."
+        : "Tapa los importes de todas las pantallas, por si hay alguien mirando. Ctrl+H.";
+
+    private void TogglePrivacy()
+    {
+        Ui.SetPrivacy(!Ui.IsPrivacyOn);
+
+        var settings = AppHost.Settings;
+        settings.HideSensitiveNumbers = Ui.IsPrivacyOn;
+        AppHost.SettingsService.Save(settings);
+
+        // Los importes de las grillas se tapan con un converter, y un converter no se
+        // vuelve a evaluar porque sí: hay que recargar para que las celdas se rearmen.
+        RefreshSection(SelectedSection);
+
+        OnPropertyChanged(nameof(IsPrivacyOn));
+        OnPropertyChanged(nameof(PrivacyLabel));
+        OnPropertyChanged(nameof(PrivacyHint));
     }
 
     /// <summary>
@@ -176,6 +213,7 @@ public class MainViewModel : ObservableObject
     public ICommand NewInSectionCommand { get; }
     public ICommand ToggleShortcutsCommand { get; }
     public ICommand CloseOverlaysCommand { get; }
+    public ICommand TogglePrivacyCommand { get; }
 
     /// <summary>
     /// La chuleta de atajos que abre Ctrl+/.

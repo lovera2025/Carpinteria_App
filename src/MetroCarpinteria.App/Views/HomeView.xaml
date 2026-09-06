@@ -162,7 +162,10 @@
                                                    FontSize="14"
                                                    Foreground="{DynamicResource TextSecondaryBrush}" />
                                     </StackPanel>
-                                    <TextBlock Text="{Binding Value}"
+                                    <!-- El converter tapa solo lo que tiene un importe
+                                         adentro, así que la tarjeta de Caja se va y los
+                                         conteos —presupuestos, stock bajo— quedan. -->
+                                    <TextBlock Text="{Binding Value, Converter={StaticResource PrivacyMaskConverter}}"
                                                FontSize="32"
                                                FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextPrimaryBrush}"

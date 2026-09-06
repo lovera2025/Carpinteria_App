@@ -53,6 +53,7 @@
             <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
             <helpers:InverseBoolConverter x:Key="InverseBoolConverter" />
             <helpers:SelectedOptionConverter x:Key="SelectedOptionConverter" />
+            <helpers:PrivacyMaskConverter x:Key="PrivacyMaskConverter" />
 
             <DataTemplate DataType="{x:Type vm:HomeViewModel}">
                 <views:HomeView />

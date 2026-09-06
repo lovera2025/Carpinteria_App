@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 
 namespace MetroCarpinteria.App.Controls;
@@ -158,5 +158,47 @@ public static class Ui
         }
 
         return null;
+    }
+
+    // --- Tapar la plata cuando hay alguien mirando ---------------------------
+
+    /// <summary>
+    /// Si los importes están tapados ahora mismo.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// El estado vive acá, en un solo lugar, y no en un ViewModel: lo consulta el converter
+    /// que arma cada celda, y así una vista lo respeta sola, sin depender de que alguien le
+    /// pase el dato desde arriba.
+    /// </para>
+    /// <para>
+    /// El primer intento fue difuminar zonas enteras y no servía por dos motivos. Un
+    /// importe borroso todavía deja ver de cuántas cifras es, y sobre todo: tapando zonas
+    /// se iba también lo que él quiere seguir mirando —cuáles trabajos terminó, de quién es
+    /// cada uno—. Ahora se cambia el importe por puntos y el resto de la pantalla queda.
+    /// </para>
+    /// </remarks>
+    public static bool IsPrivacyOn { get; private set; }
+
+    /// <summary>Avisa que el modo cambió, para el botón que lo prende y lo apaga.</summary>
+    public static event EventHandler? PrivacyChanged;
+
+    /// <summary>
+    /// Prende o apaga el modo privado.
+    /// </summary>
+    /// <remarks>
+    /// No toca la pantalla por su cuenta: los importes los arma un converter, así que
+    /// después de esto hay que recargar la sección para que las celdas se rearmen. Lo hace
+    /// <c>MainViewModel.TogglePrivacy</c>.
+    /// </remarks>
+    public static void SetPrivacy(bool on)
+    {
+        if (IsPrivacyOn == on)
+        {
+            return;
+        }
+
+        IsPrivacyOn = on;
+        PrivacyChanged?.Invoke(null, EventArgs.Empty);
     }
 }

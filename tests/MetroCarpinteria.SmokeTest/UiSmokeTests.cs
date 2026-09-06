@@ -1148,6 +1148,107 @@ internal static class UiSmokeTests
         ThemeTests.Run(run);
         ThemeTests.RunRepaintCheck(run);
 
+        run("UI: con el modo privado puesto, Caja no deja ningún importe a la vista", () =>
+        {
+            // El modo cambia cada importe por puntos con un converter, así que la forma de
+            // que falle es olvidarse de ponerlo en un binding: ese importe queda a la
+            // vista, la app no se rompe, y nadie se entera hasta que hay alguien mirando
+            // por encima del hombro. Este test dibuja las dos pantallas de Caja con el
+            // modo puesto y busca plata sin tapar.
+            var wasOn = MetroCarpinteria.App.Controls.Ui.IsPrivacyOn;
+
+            try
+            {
+                MetroCarpinteria.App.Controls.Ui.SetPrivacy(true);
+
+                // Inicio entra porque su tarjeta de Caja es el mismo saldo: taparlo en
+                // Caja y dejarlo en la pantalla que se abre primero no taparía nada.
+                (Func<FrameworkElement> View, Func<object> Model)[] pairs =
+                [
+                    (() => new CashRegisterView(), () => new CashRegisterViewModel(() => { })),
+                    (() => new SettlementsView(), () => new SettlementsViewModel(() => { })),
+                    (() => new HomeView(), () => new HomeViewModel())
+                ];
+
+                var expuestos = new List<string>();
+
+                foreach (var (createView, createModel) in pairs)
+                {
+                    var view = BuildView(createView, createModel());
+                    var name = view.GetType().Name;
+
+                    foreach (var text in FindAllVisual<System.Windows.Controls.TextBlock>(view))
+                    {
+                        if (!PrivacyMaskConverter.HasMoney(text.Text) || !IsOnScreen(text))
+                        {
+                            continue;
+                        }
+
+                        expuestos.Add($"{name}: «{text.Text.Trim()}»");
+                    }
+                }
+
+                Assert.True(
+                    expuestos.Count == 0,
+                    "Con el modo privado puesto quedaron importes a la vista; al binding le " +
+                    "falta el PrivacyMaskConverter:\n  " +
+                    string.Join("\n  ", expuestos.Distinct().Take(10)));
+            }
+            finally
+            {
+                MetroCarpinteria.App.Controls.Ui.SetPrivacy(wasOn);
+            }
+        });
+
+        run("UI: el modo privado tapa la plata y deja el resto de la pantalla", () =>
+        {
+            // Un modo que tapa todo no se usa: él abre Terminados justamente para mirar
+            // qué trabajos cerró y de quién es cada uno. Lo que se va es la plata.
+            var wasOn = MetroCarpinteria.App.Controls.Ui.IsPrivacyOn;
+
+            try
+            {
+                MetroCarpinteria.App.Controls.Ui.SetPrivacy(true);
+
+                var view = BuildView(() => new SettlementsView(), new SettlementsViewModel(() => { }));
+
+                var textos = FindAllVisual<System.Windows.Controls.TextBlock>(view)
+                    .Where(t => IsOnScreen(t) && !string.IsNullOrWhiteSpace(t.Text))
+                    .Select(t => t.Text)
+                    .ToList();
+
+                Assert.True(
+                    textos.Any(t => t.Contains("Trabajos terminados", StringComparison.Ordinal)),
+                    "el título tiene que seguir estando: se tapa la plata, no la pantalla.");
+                Assert.True(
+                    textos.Any(t => t.Contains("A QUIÉN LE TOCA", StringComparison.Ordinal)
+                        || t.Contains("Elegí a alguien", StringComparison.Ordinal)
+                        || t.Contains("Todavía no hay trabajos", StringComparison.Ordinal)),
+                    "y el resto de la pantalla también, para poder seguir mirando los trabajos.");
+            }
+            finally
+            {
+                MetroCarpinteria.App.Controls.Ui.SetPrivacy(wasOn);
+            }
+        });
+
+        run("UI: el enmascarado no se lleva puesto un texto sin plata", () =>
+        {
+            // Es la regla que hace que el modo sirva: «Todo pagado» y «Sin operarios» no
+            // son importes y tienen que pasar enteros. Si el converter tapara por las
+            // dudas, la pantalla quedaría llena de puntos y él la apagaría.
+            Assert.True(PrivacyMaskConverter.HasMoney("$ 25.000,00"), "un importe pelado es plata");
+            Assert.True(PrivacyMaskConverter.HasMoney("Falta pagar $ 25.000,00 de mano de obra"), "adentro de una frase también");
+            Assert.True(PrivacyMaskConverter.HasMoney("Cobró $ 5.000 de $ 20.000"), "con dos importes también");
+
+            Assert.False(PrivacyMaskConverter.HasMoney("Todo pagado"), "no hay plata acá");
+            Assert.False(PrivacyMaskConverter.HasMoney("Sin operarios"), "ni acá");
+            Assert.False(PrivacyMaskConverter.HasMoney("Cobró una parte"), "ni acá");
+            Assert.False(PrivacyMaskConverter.HasMoney("Le debés plata a 2 personas por 2 trabajos"), "hablar de plata no es mostrarla");
+            Assert.False(PrivacyMaskConverter.HasMoney(""), "vacío no es plata");
+            Assert.False(PrivacyMaskConverter.HasMoney(null), "null tampoco");
+        });
+
         run("UI: ninguna pantalla queda invisible por olvidar el trigger que la muestra", () =>
         {
             // Las pantallas arrancan con el root en Opacity 0 y una animación de entrada
@@ -2293,6 +2394,62 @@ internal static class UiSmokeTests
         view.Arrange(new Rect(0, 0, 900, 600));
         view.UpdateLayout();
         return view;
+    }
+
+    /// <summary>Todos los descendientes de ese tipo, incluida la raíz si corresponde.</summary>
+    private static IEnumerable<T> FindAllVisual<T>(DependencyObject root) where T : DependencyObject
+    {
+        if (root is T self)
+        {
+            yield return self;
+        }
+
+        var count = VisualTreeHelper.GetChildrenCount(root);
+
+        for (var i = 0; i < count; i++)
+        {
+            foreach (var found in FindAllVisual<T>(VisualTreeHelper.GetChild(root, i)))
+            {
+                yield return found;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Si el texto es un importe. Alcanza con el signo seguido de un dígito: es como los
+    /// escribe <c>AppCulture.Money</c>, y lo que buscamos es plata a la vista.
+    /// </summary>
+    private static bool LooksLikeMoney(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var peso = text.IndexOf('$');
+
+        return peso >= 0
+            && text.Skip(peso + 1).SkipWhile(char.IsWhiteSpace).FirstOrDefault() is var next
+            && char.IsDigit(next);
+    }
+
+    /// <summary>
+    /// Si el elemento se ve. Se mira hacia arriba porque lo que se marca son zonas: el
+    /// importe cuelga de adentro y desaparece con el contenedor, sin cambiar él mismo.
+    /// </summary>
+    private static bool IsOnScreen(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is UIElement el && el.Visibility != Visibility.Visible)
+            {
+                return false;
+            }
+
+            element = VisualTreeHelper.GetParent(element);
+        }
+
+        return true;
     }
 
     /// <summary>El primer descendiente de ese tipo en el árbol visual, o null.</summary>

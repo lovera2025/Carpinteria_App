@@ -223,6 +223,16 @@ public sealed class SettlementDebtItem
 
     public string PendingDisplay => AppCulture.Money(Pending);
 
+    /// <summary>Quién, y en cuántos trabajos. Sin el importe.</summary>
+    /// <remarks>
+    /// Va aparte del importe para que el modo privado pueda tapar uno y dejar el otro.
+    /// Con todo en una sola frase, taparla se llevaba puesto el nombre, y una lista de
+    /// «a quién le debo» sin los nombres no dice nada.
+    /// </remarks>
+    public string Who => ProjectCount == 1
+        ? $"{Description}:"
+        : $"{Description} · {ProjectCount} trabajos:";
+
     public string Summary => ProjectCount == 1
         ? $"{Description}: {PendingDisplay}"
         : $"{Description}: {PendingDisplay} en {ProjectCount} trabajos";

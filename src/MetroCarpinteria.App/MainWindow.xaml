@@ -240,6 +240,16 @@
                     <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center">
+                        <!-- Vive en la barra de arriba y no en Configuración: se aprieta
+                             cuando alguien acaba de entrar al taller, y para eso tiene que
+                             estar a la vista en cualquier pantalla. -->
+                        <Button Command="{Binding TogglePrivacyCommand}"
+                                Content="{Binding PrivacyLabel}"
+                                ToolTip="{Binding PrivacyHint}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,6"
+                                FontSize="12"
+                                Margin="0,0,12,0" />
                         <Border Background="{DynamicResource StateWarningSurfaceBrush}"
                                 CornerRadius="8"
                                 Padding="12,6"
