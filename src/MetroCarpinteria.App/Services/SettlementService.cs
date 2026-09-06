@@ -213,8 +213,21 @@ public sealed class SettlementService
     /// Cuánto se le debe a cada persona, sumando todos los trabajos terminados.
     /// </summary>
     /// <remarks>
-    /// Alimenta el aviso de a quién le debe. Junta por ficha de Personal cuando la hay, y
-    /// por nombre cuando el operario se cargó suelto.
+    /// <para>
+    /// Alimenta el aviso de a quién le debe, acá y en Personal. Junta por ficha de Personal
+    /// cuando la hay, y por nombre cuando el operario se cargó suelto.
+    /// </para>
+    /// <para>
+    /// <b>Y junta las dos formas cuando son la misma persona.</b> En un trabajo la eligió
+    /// de la lista y en otro tecleó el mismo nombre —que es como carga él—, así que
+    /// agrupando por legajo a secas salía dos veces, con el mismo nombre en las dos filas y
+    /// ninguna diciendo lo que realmente le debe. Un nombre suelto que coincide con el de
+    /// alguien elegido de la lista se cuenta como esa persona.
+    /// </para>
+    /// <para>
+    /// Dos fichas distintas que se llamen igual <b>no</b> se juntan: son dos personas
+    /// dadas de alta, y el legajo es el dato que lo dice.
+    /// </para>
     /// </remarks>
     public IReadOnlyList<SettlementDebtItem> GetPendingByWorker()
     {
@@ -223,13 +236,22 @@ public sealed class SettlementService
             .Where(w => w.Pending > 0m)
             .ToList();
 
+        // El nombre de cada uno de los que sí salieron de la lista, para poder reconocerlo
+        // cuando aparece tecleado en otro trabajo.
+        var legajoPorNombre = pending
+            .Where(w => w.EmployeeId.HasValue)
+            .GroupBy(NameKey)
+            .ToDictionary(g => g.Key, g => g.First().EmployeeId!.Value);
+
         return pending
             .GroupBy(w => w.EmployeeId.HasValue
                 ? $"#{w.EmployeeId.Value}"
-                : $"@{w.Description.Trim().ToLowerInvariant()}")
+                : legajoPorNombre.TryGetValue(NameKey(w), out var legajo)
+                    ? $"#{legajo}"
+                    : $"@{NameKey(w)}")
             .Select(g => new SettlementDebtItem
             {
-                EmployeeId = g.First().EmployeeId,
+                EmployeeId = g.Select(w => w.EmployeeId).FirstOrDefault(id => id.HasValue),
                 Description = g.First().Description,
                 Pending = g.Sum(w => w.Pending),
                 ProjectCount = g.Select(w => w.ProjectId).Distinct().Count()
@@ -237,6 +259,10 @@ public sealed class SettlementService
             .OrderByDescending(d => d.Pending)
             .ToList();
     }
+
+    /// <summary>El nombre como se lo compara: sin espacios de más y sin distinguir mayúsculas.</summary>
+    private static string NameKey(SettlementWorkerItem worker) =>
+        worker.Description.Trim().ToLowerInvariant();
 
     /// <summary>
     /// Paga —entera o en parte— la mano de obra de una línea, asentando el egreso en Caja.

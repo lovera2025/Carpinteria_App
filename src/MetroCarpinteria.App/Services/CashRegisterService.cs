@@ -311,19 +311,29 @@ public sealed class CashRegisterService
     /// la asignación: los movimientos <b>son</b> el registro, así que pagar en varias
     /// veces sale solo y no hay dos números que puedan discrepar.
     /// </remarks>
+    /// <returns>
+    /// Lo que <b>netamente</b> salió por cada línea. Se cuentan los ingresos con signo
+    /// contrario porque una corrección se asienta al revés y lleva la misma línea anotada:
+    /// mirando solo los egresos, corregir para abajo un pago dejaba a la liquidación
+    /// diciendo que el operario cobró más de lo que la caja dice que salió, y por ese lado
+    /// se le termina pagando de menos. El signo lo decide <see cref="Signed"/>, que es el
+    /// único lugar donde se decide.
+    /// </returns>
     public IReadOnlyDictionary<int, decimal> GetPaidByLaborLine(int projectId)
     {
         using var context = _databaseService.CreateContext();
 
+        // AsEnumerable antes de sumar: Amount es TEXT y sumarlo del lado de SQL lo pasaría
+        // por punto flotante.
         return context.CashMovements
             .AsNoTracking()
-            .Where(m => m.ProjectId == projectId
-                && m.ProjectLaborLineId != null
-                && m.Type == CashMovementType.Expense)
-            .Select(m => new { LineId = m.ProjectLaborLineId!.Value, m.Amount })
+            .Where(m => m.ProjectId == projectId && m.ProjectLaborLineId != null)
+            .Select(m => new { LineId = m.ProjectLaborLineId!.Value, m.Amount, m.Type })
             .AsEnumerable()
             .GroupBy(m => m.LineId)
-            .ToDictionary(group => group.Key, group => group.Sum(m => m.Amount));
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(m => -Signed(m.Type, m.Amount)));
     }
 
     /// <summary>

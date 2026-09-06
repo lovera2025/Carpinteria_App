@@ -683,6 +683,53 @@ internal static class CommercialTests
             Assert.True(alejandro.Pending > 0m, "si figura en la lista, algo se le debe.");
         });
 
+        run("Liquidación: la deuda de una persona no se parte en dos filas", () =>
+        {
+            // En un trabajo lo eligió de la lista y en otro tecleó el mismo nombre, que es
+            // como carga él. Si la deuda se agrupa por legajo a secas, la misma persona
+            // sale dos veces con el mismo nombre y ninguna de las dos filas dice lo que
+            // realmente le debe.
+            var persona = employees.Create("Rubén el repetido", null, "Oficial", 20000m);
+
+            var conFicha = quotes.CreateQuote("Mesada de Rubén", "Cliente uno", null).Id;
+            quotes.AddLaborLine(conFicha, persona.Id, "Rubén el repetido", 1m, 20000m);
+            quotes.SaveCalculation(conFicha, 0m, 1m, 10000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(conFicha);
+            projects.ChangeStatus(conFicha, ProjectStatus.Completed);
+
+            var tecleado = quotes.CreateQuote("Placard de Rubén", "Cliente dos", null).Id;
+            quotes.AddLaborLine(tecleado, null, "Rubén el repetido", 1m, 15000m);
+            quotes.SaveCalculation(tecleado, 0m, 1m, 10000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(tecleado);
+            projects.ChangeStatus(tecleado, ProjectStatus.Completed);
+
+            var suyas = settlements.GetPendingByWorker()
+                .Where(d => d.Description == "Rubén el repetido")
+                .ToList();
+
+            Assert.Equal(suyas.Count, 1, "la misma persona no puede figurar dos veces");
+            Assert.Equal(suyas[0].Pending, 35000m, "y su fila tiene que decir todo lo que se le debe");
+            Assert.Equal(suyas[0].ProjectCount, 2, "por los dos trabajos");
+        });
+
+        run("Liquidación: corregir un pago de mano de obra descuenta de lo pagado", () =>
+        {
+            // Corregir no borra: asienta la diferencia. Si lo pagado solo mirara los
+            // egresos, la corrección de un pago de más quedaría afuera y la liquidación
+            // diría que cobró más de lo que la caja dice que salió.
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Cómoda corregida", "Cliente prolijo");
+            var line = settlements.GetWorkers(id).Single(w => w.Description == "Alejandro");
+
+            var movimiento = settlements.Pay(line.LaborLineId, 60000m);
+            cash.CorrectAmount(movimiento.Id, 45000m, "Le había puesto un cero de más");
+
+            var after = settlements.GetWorkers(id).Single(w => w.Description == "Alejandro");
+
+            Assert.Equal(after.Paid, 45000m, "lo pagado tiene que seguir a la caja");
+            Assert.Equal(after.Pending, 15000m, "y lo que falta salir de esa misma cuenta");
+            Assert.False(after.IsSettled, "corregido para abajo, vuelve a deberle.");
+        });
+
         run("Liquidación: un trabajo sin operarios no pide pagarle a nadie", () =>
         {
             // Lo hizo el jefe solo. Su parte es un egreso normal de la caja, no una línea
