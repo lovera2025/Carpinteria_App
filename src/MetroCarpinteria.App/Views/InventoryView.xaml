@@ -106,8 +106,8 @@
                           BorderThickness="0"
                           Background="Transparent"
                           ctl:Ui.EmptyIcon="📦"
-                          ctl:Ui.EmptyTitle="Todavía no hay productos"
-                          ctl:Ui.EmptyMessage="Cargá el primero con «+ Nuevo producto». Con el stock cargado, los presupuestos toman los precios solos.">
+                          ctl:Ui.EmptyTitle="{Binding EmptyTitle}"
+                          ctl:Ui.EmptyMessage="{Binding EmptyMessage}">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Producto" Binding="{Binding Name}" Width="*" MinWidth="140" />
                         <DataGridTextColumn Header="Stock" Binding="{Binding StockDisplay}" Width="100" />
@@ -273,6 +273,11 @@
                                        FontSize="16"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                       Margin="0,0,0,2" />
+                            <!-- Sin producto elegido la lista trae los de todos. Sin decirlo,
+                                 quedaban movimientos debajo de un «Producto: —». -->
+                            <TextBlock Text="{Binding MovementsScope}"
+                                       Style="{StaticResource SubtitleStyle}"
                                        Margin="0,0,0,12" />
                             <ListView ItemsSource="{Binding RecentMovements}"
                                       BorderThickness="0"

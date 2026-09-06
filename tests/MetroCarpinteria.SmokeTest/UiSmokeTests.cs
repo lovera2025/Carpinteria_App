@@ -1195,6 +1195,36 @@ internal static class UiSmokeTests
             }
         });
 
+        run("UI: una lista vacía por el filtro no dice que no hay nada cargado", () =>
+        {
+            // El taller trabaja con los filtros puestos, y quedan puestos de un día para el
+            // otro. Con «Solo alertas» tildado y nada bajo el mínimo, Inventario decía
+            // «Todavía no hay productos. Cargá el primero»: o sea, le avisaba que se le
+            // borró el inventario. Una lista vacía por un filtro no es una lista vacía.
+            var inventory = new InventoryViewModel(() => { });
+
+            Assert.True(
+                inventory.EmptyTitle.Contains("Todavía no hay", StringComparison.Ordinal),
+                $"sin filtros tendría que hablar de cargar el primero, y dice «{inventory.EmptyTitle}».");
+
+            inventory.LowStockOnly = true;
+
+            Assert.True(inventory.IsFiltered, "«Solo alertas» recorta la lista.");
+            Assert.True(
+                inventory.EmptyTitle.Contains("filtro", StringComparison.Ordinal),
+                $"con el filtro puesto tendría que nombrarlo, y dice «{inventory.EmptyTitle}».");
+            Assert.True(
+                inventory.EmptyMessage.Contains("Solo alertas", StringComparison.Ordinal),
+                $"y decir cuál destildar, pero dice «{inventory.EmptyMessage}».");
+
+            inventory.LowStockOnly = false;
+            inventory.SearchText = "melamina que no existe";
+
+            Assert.True(
+                inventory.EmptyMessage.Contains("buscador", StringComparison.Ordinal),
+                $"buscando tendría que mandar a limpiar el buscador, y dice «{inventory.EmptyMessage}».");
+        });
+
         run("UI: una lista con ItemTemplate dibuja su contenido, no un renglón vacío", () =>
         {
             // La tercera forma en que esto falla en silencio, y la que ninguna de las otras
