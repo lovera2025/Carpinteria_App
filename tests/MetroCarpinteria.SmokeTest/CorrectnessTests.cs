@@ -69,12 +69,33 @@ internal static class CorrectnessTests
             Assert.Equal(SingleProduct(inventory, "Fenólico sin precio").CurrentStock, 20m, "stock tras el rechazo");
         });
 
-        run("Correctitud: no se aprueba un presupuesto sin materiales", () =>
+        run("Correctitud: un presupuesto sin materiales sí se aprueba", () =>
         {
+            // Esto se bloqueaba con el argumento de que aprobar era irreversible, y no lo
+            // es: CancelApproval existe. Y el taller tiene trabajos que son solo mano de
+            // obra, o donde la madera la pone el cliente. El carpintero lo reportó porque
+            // no podía aprobar uno de esos.
             var id = quotes.CreateQuote("Trabajo vacío", "Cliente sin lista", null).Id;
             quotes.SaveCalculation(id, 0m, 2m, 30000m, BudgetRates.Defaults());
 
-            Assert.Throws(() => quotes.ApproveQuote(id), "materiales");
+            var result = quotes.ApproveQuote(id);
+
+            Assert.Equal(RequireQuote(quotes, id).Status, ProjectStatus.Approved, "estado tras aprobar");
+            Assert.Equal(result.DiscountedLines, 0, "líneas descontadas");
+            Assert.False(result.HasShortfalls, "quedaron faltantes");
+
+            // Y el aviso no dice que descontó todo, que sería mentir sobre el inventario.
+            Assert.True(
+                result.Summary.Contains("No había materiales", StringComparison.Ordinal),
+                $"el resumen tendría que decir que no había nada que descontar, y dice «{result.Summary}»");
+        });
+
+        run("Correctitud: sin precio no se aprueba, aunque no tenga materiales", () =>
+        {
+            // La otra mitad de la regla sigue en pie: sin precio no hay nada que cobrar.
+            var id = quotes.CreateQuote("Trabajo sin precio ni materiales", "Cliente apurado", null).Id;
+
+            Assert.Throws(() => quotes.ApproveQuote(id), "precio");
         });
     }
 

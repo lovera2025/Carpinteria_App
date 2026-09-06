@@ -1166,19 +1166,17 @@ public sealed class QuoteService
                 throw new InvalidOperationException("Este presupuesto ya fue aprobado o rechazado.");
             }
 
-            // Aprobar es irreversible: descuenta inventario y arranca el trabajo. Un
-            // presupuesto sin precio o sin materiales quedó a medio cargar, no es una
-            // decisión del taller, y una vez aprobado ya no se puede volver a editar.
+            // Un presupuesto sin precio quedó a medio cargar: no hay nada que cobrarle al
+            // cliente, así que eso sigue bloqueando.
+            //
+            // Sin materiales, en cambio, no está a medio cargar: hay trabajos que son solo
+            // mano de obra, o donde la madera la pone el cliente. Antes esto se bloqueaba
+            // con el argumento de que aprobar era irreversible, y no lo es: CancelApproval
+            // devuelve el stock y lo vuelve a presupuesto.
             if (project.Budget is null or <= 0)
             {
                 throw new InvalidOperationException(
                     "Falta calcular el precio final: un presupuesto sin precio no se puede aprobar.");
-            }
-
-            if (!context.ProjectBudgetLines.Any(l => l.ProjectId == project.Id))
-            {
-                throw new InvalidOperationException(
-                    "El presupuesto no tiene materiales cargados. Agregá al menos uno antes de aprobar.");
             }
 
             var result = ApplyLinesToStock(context, project);
