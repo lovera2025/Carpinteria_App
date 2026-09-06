@@ -193,6 +193,29 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 
 ## Lo que falta
 
+### El tilde viejo de «pagado» y el riesgo de pagar dos veces (sin resolver)
+
+**Es lo único de plata que queda abierto, y conviene cerrarlo antes de publicar.**
+
+Antes de la tanda C, marcar un jornal como pagado prendía un booleano
+(`ProjectAssignment.IsPaid`) sin mover un peso. Ese dato **no se borró** —es su registro— pero
+la liquidación **no lo mira**: para ella lo único que cuenta son los movimientos de caja.
+
+Entonces, si él ya marcó a mano el jornal de alguien en un trabajo que además tiene operarios
+cotizados, Terminados se lo va a mostrar como pendiente. Si lo paga desde ahí, **lo paga dos
+veces**.
+
+No es teórico: en la base de prueba pasa. La asignación de Javier en `asdasdasd` figuraba como
+«Pagado», y Terminados lo mostró debiéndole $ 20.000. La ventana es chica —las líneas de mano
+de obra son recientes y los trabajos viejos no tienen— pero es plata, y el riesgo aparece la
+primera vez que él abre Terminados.
+
+Tres salidas posibles, y la decisión es de él:
+
+- Que la liquidación tome el tilde viejo como saldado.
+- Que lo muestre como aviso en la fila, sin tocar los números.
+- Dejarlo así, si él sabe cuáles ya pagó.
+
 ### Pendientes de publicación
 
 **El código está listo.** Falta mergear `inventario-revision` a `master`, acordar el número
@@ -235,6 +258,11 @@ Para no volver a proponerlo:
 - También del 2026-09-06, probando la liquidación: se le pagaron **$ 5.000 a Javier** por el
   trabajo `asdasdasd`. Es un egreso de caja de verdad, así que no se borra —se corrige, no se
   borra—; queda como el primer pago de mano de obra registrado.
+- Y probando el material extra en ese mismo trabajo quedaron dos movimientos de stock del
+  Tornillo, una salida de 2 u. y su devolución: se asignaron cobrándoselos al cliente y después
+  se quitaron, para ver que el precio subía y volvía. El stock y el precio quedaron como
+  estaban; los dos renglones del historial no, porque no se borran.
+- El plan de esta ronda está en `~/.claude/plans/eventual-baking-parrot.md`.
 - **Correr todo**: `dotnet build -warnaserror` y después `dotnet run --no-build` en `tests\MetroCarpinteria.SmokeTest`.
 - **Abrir la app**: `src\MetroCarpinteria.App\bin\Debug\net8.0-windows\MetroCarpinteria.exe`. Cerrarla antes de recompilar o el build falla por archivo bloqueado.
 - El plan completo original está en `~/.claude/plans/fijate-esto-me-dijo-jaunty-penguin.md`.
