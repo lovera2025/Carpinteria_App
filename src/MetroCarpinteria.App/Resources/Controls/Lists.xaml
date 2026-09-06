@@ -62,10 +62,30 @@
                             BorderBrush="{DynamicResource BorderBrushToken}"
                             BorderThickness="0,0,0,1"
                             Padding="{TemplateBinding Padding}">
-                        <GridViewRowPresenter Content="{TemplateBinding Content}"
-                                              Columns="{TemplateBinding GridView.ColumnCollection}" />
+                        <!-- Dos presentadores, y uno solo a la vez. El de columnas es el
+                             que sirve cuando la lista tiene un GridView; una lista con
+                             ItemTemplate no tiene columnas, y ese presentador la dibujaba
+                             VACÍA: el renglón con su línea divisoria y ni una letra
+                             adentro. No falla al compilar ni deja rastro en el log. Le
+                             pasaba al historial de Inventario. -->
+                        <Grid>
+                            <GridViewRowPresenter x:Name="columnas"
+                                                  Content="{TemplateBinding Content}"
+                                                  Columns="{TemplateBinding GridView.ColumnCollection}" />
+                            <ContentPresenter x:Name="plantilla"
+                                              Visibility="Collapsed"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="GridView.ColumnCollection" Value="{x:Null}">
+                            <Setter TargetName="columnas" Property="Visibility" Value="Collapsed" />
+                            <Setter TargetName="plantilla" Property="Visibility" Value="Visible" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="border" Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
                         </Trigger>

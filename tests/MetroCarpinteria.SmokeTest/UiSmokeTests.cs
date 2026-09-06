@@ -1195,6 +1195,41 @@ internal static class UiSmokeTests
             }
         });
 
+        run("UI: una lista con ItemTemplate dibuja su contenido, no un renglón vacío", () =>
+        {
+            // La tercera forma en que esto falla en silencio, y la que ninguna de las otras
+            // dos barandas caza: el estilo de ListViewItem reemplazaba la plantilla por un
+            // GridViewRowPresenter, que solo sabe dibujar columnas de un GridView. Una
+            // lista con ItemTemplate quedaba con sus renglones y su línea divisoria, y ni
+            // una letra adentro. No hay binding roto que rastrear —el binding está bien—,
+            // la pantalla no está invisible, y el log no dice nada. Le pasó al historial de
+            // Inventario, y se descubrió abriendo la app.
+            var list = new System.Windows.Controls.ListView
+            {
+                ItemsSource = new[] { "Entrada de prueba", "Salida de prueba" },
+                Width = 300,
+                Height = 120
+            };
+
+            var template = new DataTemplate();
+            var block = new FrameworkElementFactory(typeof(System.Windows.Controls.TextBlock));
+            block.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding("."));
+            template.VisualTree = block;
+            list.ItemTemplate = template;
+
+            var host = new System.Windows.Controls.Border { Child = list, Width = 300, Height = 120 };
+            host.Measure(new Size(300, 120));
+            host.Arrange(new Rect(0, 0, 300, 120));
+            host.UpdateLayout();
+
+            var shown = FindTexts(list).ToList();
+
+            Assert.True(
+                shown.Any(t => t == "Entrada de prueba"),
+                "una lista con ItemTemplate tendría que mostrar su contenido; se dibujó: " +
+                $"{(shown.Count == 0 ? "NADA" : string.Join(" | ", shown))}");
+        });
+
         run("UI: ninguna pantalla tiene bindings rotos", () =>
         {
             // La otra forma en que WPF falla en silencio, y la más peligrosa: un binding a
