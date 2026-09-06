@@ -1,7 +1,13 @@
 # Estado del trabajo — la caja del taller
 
-Última actualización: **2026-09-06**. **El trabajo está terminado**: las cuatro tandas —A2, A,
-B y C— están en `caja-fuerte`, que se merge a `master` y sale en **una sola versión**.
+Última actualización: **2026-09-06**.
+
+**Las cuatro tandas están hechas y mergeadas en `master`** —A2, A, B y C—, con la suite en
+verde. **Nada está publicado**: `master` está adelante del remoto y no se empujó ningún tag.
+
+**La publicación está en pausa a propósito.** Antes de sacar la versión falta **revisar
+Inventario entero** (ver «Lo que falta»). La idea es no ir tirando actualizaciones cada rato:
+se junta todo lo que haya que cambiar y sale **una sola versión** con todo adentro.
 
 Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v14**, así que
 una rama que maneje hasta v13 no la abre. No es una falla —el guardián avisa y no toca los
@@ -48,7 +54,8 @@ Reglas de trabajo que puso él:
 
 ## Lo que está hecho
 
-Todo commiteado, **291/291 tests en verde**, y probado abriendo la app contra la base local real.
+Todo commiteado y mergeado en `master`, **300/300 tests en verde**, y probado abriendo la app
+contra la base local real. Las cuatro tandas van en orden: A2, B, A y C.
 
 ### Tanda A2 — el precio pactado (rama `precio-pactado-no-se-pisa`)
 
@@ -141,10 +148,24 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 
 ## Lo que falta
 
+### Revisar Inventario, sección por sección (lo próximo)
+
+Lo pidió Maximiliano y **es lo que bloquea la publicación**. El plan concreto se arma con él
+antes de tocar nada; esto es lo que se sabe hasta acá:
+
+- **El historial ya se arregló** (`c504399`), pero ese arreglo salió de mirar la pantalla de
+  costado mientras se revisaba otra cosa. La sección nunca se revisó entera.
+- Falta pasar por todo: stock y mínimos, alta y edición de productos, entradas y salidas a
+  mano, archivar y restaurar, y el cruce con Presupuestos y Proyectos —que es donde el stock
+  se mueve solo al aprobar y al cancelar un trabajo.
+- El criterio de siempre: **primero los números**. Un stock que miente vale más que un
+  cartel mal escrito.
+
 ### Pendientes de publicación
 
-**Está todo hecho: falta publicar, y nada más.** Se decidió que salga **una sola versión con
-todo adentro** —A2, A, B y C— en vez de tres. Le llega un cambio, no tres.
+**El código está listo; la publicación espera a la revisión de Inventario.** La decisión es
+juntar todo lo que haya que cambiar y sacar **una sola versión** —A2, A, B, C y lo que salga
+de Inventario— en vez de ir tirando actualizaciones cada rato.
 
 - Falta acordar el número (el último tag es `v1.9.1`; se propuso `v1.10.0`) y empujarlo.
 - **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
