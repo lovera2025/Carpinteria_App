@@ -1,3 +1,4 @@
+using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Models;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,12 @@ namespace MetroCarpinteria.App.Services;
 /// para saber quién cobró qué, permite pagar en varias veces, y no hay dos números que
 /// puedan discrepar. Por eso <c>ProjectAssignment.IsPaid</c> no se toca desde acá: lo que
 /// él ya marcó a mano queda como está, sin registro retroactivo.
+/// </para>
+/// <para>
+/// <b>Pero el tilde viejo se lee para avisar.</b> Un jornal que él marcó a mano antes de
+/// que existiera la liquidación no dejó movimiento, así que acá figura pendiente y podría
+/// pagarse dos veces. La cuenta no lo mira —un booleano que nunca movió plata no puede
+/// decidir cuánto se debe—, pero la fila lo dice.
 /// </para>
 /// </remarks>
 public sealed class SettlementService
@@ -61,6 +68,9 @@ public sealed class SettlementService
 
         foreach (var project in projects)
         {
+            var breakdown = _quoteService.GetDetail(project.Id)?.Breakdown;
+            var materials = GetMaterialSpend(project.Id);
+
             items.Add(new SettlementProjectItem
             {
                 Id = project.Id,
@@ -68,12 +78,42 @@ public sealed class SettlementService
                 ClientName = project.ClientName,
                 Budget = project.Budget,
                 UpdatedAtLocal = project.UpdatedAtUtc.ToLocalTime(),
-                Breakdown = _quoteService.GetDetail(project.Id)?.Breakdown,
+                Breakdown = breakdown,
+                QuotedMaterials = breakdown?.MaterialsCost ?? 0m,
+                SpentMaterials = materials.Spent,
+                BilledExtras = materials.Billed,
                 Workers = GetWorkers(project.Id)
             });
         }
 
         return items;
+    }
+
+    /// <summary>
+    /// Lo que salió del inventario para un trabajo, y cuánto de eso se le cobró al cliente.
+    /// </summary>
+    /// <remarks>
+    /// Se valúa con el costo congelado de cada material, no con el precio de hoy: lo que
+    /// costó un mueble de agosto no puede cambiar en octubre porque subió la melamina. Los
+    /// materiales sin costo cargado no suman nada — es «no sé cuánto costaba», no cero, y
+    /// hacerlos valer cero mentiría hacia abajo.
+    /// </remarks>
+    private (decimal Spent, decimal Billed) GetMaterialSpend(int projectId)
+    {
+        using var context = _databaseService.CreateContext();
+
+        // AsEnumerable antes de multiplicar: las cantidades y los costos son TEXT, y
+        // cualquier cuenta que quede del lado de SQL se resuelve como texto.
+        var rows = context.ProjectMaterials
+            .AsNoTracking()
+            .Where(m => m.ProjectId == projectId)
+            .Select(m => new { m.Quantity, m.UnitCost, m.BilledAmount })
+            .AsEnumerable()
+            .ToList();
+
+        return (
+            rows.Sum(m => m.UnitCost is null ? 0m : m.Quantity * m.UnitCost.Value),
+            rows.Sum(m => m.BilledAmount ?? 0m));
     }
 
     /// <summary>Lo que le toca a cada operario de un trabajo, con lo que ya cobró.</summary>
@@ -101,6 +141,7 @@ public sealed class SettlementService
         }
 
         var paid = _cashRegisterService.GetPaidByLaborLine(projectId);
+        var (markedIds, markedNames) = GetAssignmentsMarkedPaid(context, projectId);
 
         return lines
             .Select(l => new SettlementWorkerItem
@@ -112,6 +153,14 @@ public sealed class SettlementService
                 Days = l.Days,
                 DailyRate = l.DailyRate,
 
+                // Con ficha se cruza por legajo. Sin ficha se cruza por nombre, que es como
+                // está el caso real: él asignó a la persona desde Proyectos y por otro lado
+                // tecleó el operario en el presupuesto, sin elegirlo de la lista.
+                WasMarkedPaidByHand = l.EmployeeId.HasValue
+                    ? markedIds.Contains(l.EmployeeId.Value)
+                    : !string.IsNullOrWhiteSpace(l.Description)
+                      && markedNames.Contains(l.Description.Trim()),
+
                 // Días × jornal se calcula en memoria y con los valores congelados de la
                 // línea: son columnas TEXT, y multiplicarlas en SQL las pasaría por punto
                 // flotante.
@@ -119,6 +168,45 @@ public sealed class SettlementService
                 Paid = paid.TryGetValue(l.Id, out var amount) ? amount : 0m
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Quiénes tienen el jornal de este trabajo marcado a mano con el tilde viejo, el que
+    /// no movía plata: por legajo y también por nombre.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// El dato no se borró: es su registro de lo que pagó antes de que la liquidación
+    /// existiera. Se lee para avisar, nunca para cambiar un número.
+    /// </para>
+    /// <para>
+    /// <b>Hace falta cruzar por nombre</b> porque así está el caso real: la asignación
+    /// apunta a la ficha, pero el operario del presupuesto se tecleó suelto, sin elegirlo
+    /// de la lista, y quedó sin legajo. Cruzando solo por legajo el aviso no aparecería
+    /// justo donde hace falta.
+    /// </para>
+    /// <para>
+    /// El nombre puede errarle —dos personas que se llaman igual, o el mismo escrito de
+    /// dos formas—, y por eso no decide plata: lo peor que hace un falso positivo es
+    /// pedirle que mire; lo que evita un falso negativo es pagar dos veces.
+    /// </para>
+    /// </remarks>
+    private static (HashSet<int> Ids, HashSet<string> Names) GetAssignmentsMarkedPaid(
+        AppDbContext context,
+        int projectId)
+    {
+        var marked = context.ProjectAssignments
+            .AsNoTracking()
+            .Where(a => a.ProjectId == projectId && a.IsPaid)
+            .Select(a => new { a.EmployeeId, a.Employee.FullName })
+            .ToList();
+
+        return (
+            [.. marked.Select(m => m.EmployeeId)],
+            marked
+                .Select(m => m.FullName.Trim())
+                .Where(n => n.Length > 0)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>

@@ -63,7 +63,7 @@ public class InventoryViewModel : ViewModelBase
         LoadCommand = new RelayCommand(_ => LoadProducts());
         NewProductCommand = new RelayCommand(_ => StartNewProduct());
         EditProductCommand = new RelayCommand(_ => StartEditProduct(), _ => SelectedProduct is not null);
-        SaveProductCommand = new RelayCommand(_ => SaveProduct(), _ => CanSaveProduct);
+        SaveProductCommand = new AsyncRelayCommand(SaveProductAsync, () => CanSaveProduct);
         CancelFormCommand = new RelayCommand(_ => CloseForm());
         ArchiveProductCommand = new AsyncRelayCommand(ArchiveSelectedAsync, () => CanArchiveSelected);
         RestoreProductCommand = new RelayCommand(_ => RestoreSelected(), _ => CanRestoreSelected);
@@ -112,6 +112,7 @@ public class InventoryViewModel : ViewModelBase
         {
             if (SetProperty(ref _searchText, value))
             {
+                RefreshEmptyState();
                 _searchDebouncer.Run(LoadProducts);
             }
         }
@@ -136,10 +137,42 @@ public class InventoryViewModel : ViewModelBase
         {
             if (SetProperty(ref _lowStockOnly, value))
             {
+                RefreshEmptyState();
                 LoadProducts();
             }
         }
     }
+
+    private void RefreshEmptyState()
+    {
+        OnPropertyChanged(nameof(IsFiltered));
+        OnPropertyChanged(nameof(EmptyTitle));
+        OnPropertyChanged(nameof(EmptyMessage));
+    }
+
+    /// <summary>Hay algo puesto que recorta la lista.</summary>
+    public bool IsFiltered => LowStockOnly || !string.IsNullOrWhiteSpace(SearchText);
+
+    /// <summary>
+    /// Qué decir cuando la lista sale vacía.
+    /// </summary>
+    /// <remarks>
+    /// El taller trabaja con los filtros puestos, y quedan puestos de un día para el otro.
+    /// Con «Solo alertas» tildado y nada bajo el mínimo, la pantalla decía «Todavía no hay
+    /// productos. Cargá el primero» — o sea, le avisaba que se le borró el inventario. Una
+    /// lista vacía por un filtro y una lista vacía de verdad no son la misma cosa.
+    /// </remarks>
+    public string EmptyTitle => IsFiltered
+        ? "Ningún producto coincide con el filtro"
+        : "Todavía no hay productos";
+
+    // «Ver archivados» no recorta nada: suma los archivados a los activos. Si con eso puesto
+    // la lista sigue vacía, es que no hay ningún producto, y ahí el mensaje de siempre sirve.
+    public string EmptyMessage => IsFiltered
+        ? LowStockOnly
+            ? "Tenés «Solo alertas» puesto: la lista muestra únicamente lo que está por debajo del mínimo. Destildalo para ver todo."
+            : "Probá con otro nombre, o limpiá el buscador para ver todo."
+        : "Cargá el primero con «+ Nuevo producto». Con el stock cargado, los presupuestos toman los precios solos.";
 
     public bool IsFormOpen
     {
@@ -337,10 +370,29 @@ public class InventoryViewModel : ViewModelBase
         SelectedProduct = Products.FirstOrDefault(p => p.Id == productId);
     }
 
+    /// <summary>
+    /// De qué producto es el historial. Sin ninguno elegido trae los de todos, y sin esta
+    /// línea la tarjeta quedaba con movimientos abajo de un «Producto: —».
+    /// </summary>
+    public string MovementsScope => SelectedProduct is null
+        ? "De todos los productos"
+        : $"De {SelectedProduct.Name}";
+
+    /// <summary>Cuántos movimientos se traen. Más que esto ya no entra en la tarjeta.</summary>
+    private const int MovementLimit = 30;
+
+    /// <summary>
+    /// La lista está cortada en el tope y hay más atrás. Sin decirlo, un producto con
+    /// mucho movimiento parecía tener solo estos treinta.
+    /// </summary>
+    public bool MovementsAreTrimmed => RecentMovements.Count >= MovementLimit;
+
+    public string MovementsTrimmedNote => $"Se muestran los últimos {MovementLimit}.";
+
     private void LoadMovementsForSelection()
     {
         RecentMovements.Clear();
-        var movements = AppHost.InventoryService.GetRecentMovements(SelectedProduct?.Id, 30);
+        var movements = AppHost.InventoryService.GetRecentMovements(SelectedProduct?.Id, MovementLimit);
         foreach (var movement in movements)
         {
             RecentMovements.Add(movement);
@@ -349,6 +401,8 @@ public class InventoryViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanArchiveSelected));
         OnPropertyChanged(nameof(CanRestoreSelected));
         OnPropertyChanged(nameof(SelectedProductStockDisplay));
+        OnPropertyChanged(nameof(MovementsScope));
+        OnPropertyChanged(nameof(MovementsAreTrimmed));
     }
 
     private void StartNewProduct()
@@ -388,8 +442,32 @@ public class InventoryViewModel : ViewModelBase
         ClearStatus();
     }
 
-    private void SaveProduct()
+    private async Task SaveProductAsync()
     {
+        // Cambiar la unidad no convierte el stock: el número queda igual y pasa a
+        // significar otra cosa. El historial viejo sí está a salvo —cada movimiento
+        // guarda la unidad que tenía—, pero lo que hay hoy en el depósito no.
+        if (!IsCreating
+            && SelectedProduct is { CurrentStock: > 0m } current
+            && !string.Equals(
+                ProductUnits.Normalize(FormUnit),
+                current.Unit,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var confirmed = await AppHost.DialogService.ConfirmAsync(
+                "Cambiar la unidad",
+                $"«{current.Name}» pasa de {current.Unit} a {ProductUnits.Normalize(FormUnit)}.\n\n" +
+                $"El stock no se convierte: van a seguir figurando {AppCulture.Quantity(current.CurrentStock)}, " +
+                "ahora en la unidad nueva. Los movimientos ya hechos conservan la suya.",
+                confirmText: "Cambiar igual");
+
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
+
         try
         {
             if (!NumberInput.TryParseQuantity(FormMinimumStock, out var minimumStock))
@@ -457,10 +535,20 @@ public class InventoryViewModel : ViewModelBase
 
         var name = SelectedProduct.Name;
 
+        // Archivar con stock encima lo saca de la lista y del contador de stock bajo sin
+        // decir nada: esa madera sigue estando en el taller, pero la app deja de contarla.
+        var stockNote = SelectedProduct.CurrentStock > 0m
+            // StockDisplay ya trae su punto («1500 u.»), así que la frase sigue sin agregar
+            // otro: quedaba «1500 u..».
+            ? $"\n\nOjo: todavía figuran {SelectedProduct.StockDisplay} en stock. Archivado, " +
+              "deja de aparecer en la lista y de contar para los avisos."
+            : string.Empty;
+
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             "Archivar producto",
             $"«{name}» va a dejar de aparecer en la lista.\n\n" +
-            "Sus movimientos quedan guardados y lo podés volver a activar cuando quieras.",
+            "Sus movimientos quedan guardados y lo podés volver a activar cuando quieras." +
+            stockNote,
             confirmText: "Archivar");
 
         if (!confirmed)

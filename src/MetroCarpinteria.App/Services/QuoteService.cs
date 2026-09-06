@@ -1,4 +1,4 @@
-using MetroCarpinteria.App.Data;
+﻿using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Models;
 using Microsoft.EntityFrameworkCore;
@@ -1381,6 +1381,14 @@ public sealed class QuoteService
                 .Where(m => m.ProjectId == projectId)
                 .ToList();
 
+            // Lo que se le había sumado al precio por material cargado después vuelve atrás
+            // con el trabajo: el presupuesto tiene que quedar como estaba antes de aprobar.
+            var billedExtras = materials.Sum(m => m.BilledAmount ?? 0m);
+            if (billedExtras > 0m && project.Budget is not null)
+            {
+                project.Budget = Math.Max(0m, project.Budget.Value - billedExtras);
+            }
+
             foreach (var material in materials)
             {
                 material.Product.CurrentStock += material.Quantity;
@@ -1391,6 +1399,7 @@ public sealed class QuoteService
                     ProductId = material.ProductId,
                     Type = StockMovementType.In,
                     Quantity = material.Quantity,
+                    Unit = material.Product.Unit,
                     Reason = $"Trabajo cancelado: {project.Title}",
                     CreatedAtUtc = now
                 });
@@ -1603,6 +1612,7 @@ public sealed class QuoteService
                     ProductId = product.Id,
                     Type = StockMovementType.Out,
                     Quantity = toDiscount,
+                    Unit = product.Unit,
                     Reason = $"Presupuesto aprobado: {project.Title}",
                     CreatedAtUtc = now
                 });
@@ -1612,6 +1622,10 @@ public sealed class QuoteService
                     ProjectId = project.Id,
                     ProductId = product.Id,
                     Quantity = toDiscount,
+
+                    // El costo que se congeló al cotizar, no el de hoy: es a ese precio que
+                    // se calculó lo que se le cobra al cliente.
+                    UnitCost = line.UnitCost,
                     AssignedAtUtc = now
                 });
 

@@ -1,4 +1,4 @@
-using MetroCarpinteria.App.Data.Entities;
+﻿using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Models;
 using MetroCarpinteria.App.Services;
 
@@ -264,9 +264,11 @@ internal static class CommercialTests
         CashRegisterService cash,
         InventoryService inventory,
         ProjectService projects,
+        EmployeeService employees,
         SettlementService settlements)
     {
-        RunSettlementTests(run, quotes, cash, inventory, projects, settlements);
+        RunSettlementTests(run, quotes, cash, inventory, projects, employees, settlements);
+        RunExtraMaterialTests(run, quotes, inventory, projects, settlements);
 
         run("Comercial: guardar IVA y descuento actualiza el total del presupuesto", () =>
         {
@@ -585,6 +587,7 @@ internal static class CommercialTests
         CashRegisterService cash,
         InventoryService inventory,
         ProjectService projects,
+        EmployeeService employees,
         SettlementService settlements)
     {
         run("Liquidación: un trabajo terminado trae lo que le toca a cada operario", () =>
@@ -713,6 +716,248 @@ internal static class CommercialTests
             Assert.True(
                 movement.Reason.Contains("Pago de mano de obra", StringComparison.Ordinal),
                 $"el movimiento tendría que leerse como un pago de mano de obra, dice «{movement.Reason}».");
+        });
+
+        run("Liquidación: el jornal marcado a mano se avisa, sin tocar un número", () =>
+        {
+            // El caso que puede costarle plata de verdad: antes de que esto existiera, él
+            // marcaba «pagado» con un tilde que no movía nada. Ese jornal no dejó egreso,
+            // así que acá figura pendiente y lo podría pagar dos veces.
+            var id = JobWithHandMarkedWorker(
+                quotes, inventory, projects, employees,
+                "Placard del tilde viejo", "Alejandro de la lista", "Javier tecleado");
+
+            var workers = settlements.GetWorkers(id);
+            var deLista = workers.Single(w => w.Description == "Alejandro de la lista");
+            var tecleado = workers.Single(w => w.Description == "Javier tecleado");
+            var suelto = workers.Single(w => w.Description == "Changarín suelto");
+
+            // Los números no se mueven: un booleano que nunca movió plata no puede decidir
+            // cuánto se debe, y si lo decidiera, la caja y la liquidación dirían distinto.
+            Assert.Equal(deLista.Due, 50000m, "le toca al que salió de la lista");
+            Assert.Equal(deLista.Paid, 0m, "el tilde viejo no es un pago: no hay egreso en la caja");
+            Assert.Equal(deLista.Pending, 50000m, "lo que falta lo dice la caja, no el tilde");
+            Assert.False(deLista.IsSettled, "el tilde viejo no puede saldar un jornal por sí solo.");
+
+            // Pero se lee y se avisa, que es lo que evita el doble pago.
+            Assert.True(deLista.WasMarkedPaidByHand, "con legajo, el cruce es directo.");
+            Assert.True(deLista.ShowHandPaidWarning, "con el jornal pendiente, la fila tiene que avisar.");
+            Assert.True(deLista.HandPaidWarning.Length > 0, "el aviso no puede salir vacío");
+
+            // Y el caso que de verdad existe en la base del taller: la asignación tiene
+            // ficha, el operario cotizado no. Sin cruzar por nombre, esto queda mudo.
+            Assert.True(tecleado.WasMarkedPaidByHand,
+                "el operario tecleado tiene que cruzarse por nombre con la ficha asignada.");
+            Assert.True(tecleado.ShowHandPaidWarning, "es el caso real: es el que más tiene que avisar.");
+            Assert.Equal(tecleado.Pending, 30000m, "y su número sigue siendo el de la caja");
+
+            // El changarín no está en Personal: no hay tilde que cruzar.
+            Assert.False(suelto.WasMarkedPaidByHand, "sin ficha con ese nombre no hay nada que cruzar.");
+            Assert.False(suelto.ShowHandPaidWarning, "no se le puede avisar de algo que no pasó.");
+
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+            Assert.True(job.HasHandPaidWarning, "desde la lista tiene que poder ver cuáles revisar.");
+            Assert.Equal(job.TotalPending, 90000m, "el total sigue saliendo de la caja");
+        });
+
+        run("Liquidación: pagado el jornal, el aviso del tilde viejo se calla", () =>
+        {
+            // Un cartel que no se va deja de leerse. Si ya lo pagó desde acá, el tilde
+            // viejo no agrega nada, pero el dato sigue guardado: no se borra.
+            var id = JobWithHandMarkedWorker(
+                quotes, inventory, projects, employees,
+                "Vestidor del tilde viejo", "Alejandro que cobró", "Javier que cobró");
+
+            var pendientes = settlements.GetWorkers(id).Where(w => w.ShowHandPaidWarning).ToList();
+            Assert.Equal(pendientes.Count, 2, "antes de pagar, los dos marcados tienen que avisar");
+
+            foreach (var line in pendientes)
+            {
+                settlements.Pay(line.LaborLineId, line.Pending);
+            }
+
+            var after = settlements.GetWorkers(id).Where(w => w.WasMarkedPaidByHand).ToList();
+            Assert.Equal(after.Count, 2, "el dato viejo no se borra: es su registro");
+            Assert.True(after.All(w => w.IsSettled), "pagados desde acá, tienen que quedar saldados.");
+            Assert.False(after.Any(w => w.ShowHandPaidWarning), "ya saldados, el aviso sería ruido.");
+            Assert.True(after.All(w => w.HandPaidRowNote.Length == 0), "y la fila no tiene nada que decir");
+
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+            Assert.False(job.HasHandPaidWarning, "el trabajo tampoco tiene ya nada que avisar.");
+        });
+    }
+
+    /// <summary>
+    /// Un trabajo terminado con dos operarios —uno con ficha y otro suelto— donde el de la
+    /// ficha ya figuraba pagado con el tilde viejo, el que no movía plata.
+    /// </summary>
+    /// <summary>
+    /// Un trabajo terminado con las tres formas que puede tener un operario, y el tilde
+    /// viejo puesto en las dos primeras.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// La tercera es la que importa y es la que hay en la base del taller: la asignación
+    /// apunta a la ficha, pero el operario del presupuesto se tecleó suelto. Cruzando solo
+    /// por legajo, el aviso no aparecería justo en el caso que existe de verdad.
+    /// </para>
+    /// </remarks>
+    private static int JobWithHandMarkedWorker(
+        QuoteService quotes,
+        InventoryService inventory,
+        ProjectService projects,
+        EmployeeService employees,
+        string title,
+        string conFicha,
+        string tecleado)
+    {
+        var deLista = employees.Create(conFicha, null, "Oficial", 25000m);
+        var aMano = employees.Create(tecleado, null, "Oficial", 30000m);
+        var productId = inventory.CreateProduct($"Material {title}", 100m, 0m, "Metro", 500m).Id;
+
+        var id = quotes.CreateQuote(title, "Cliente de antes", null).Id;
+        quotes.AddInventoryLine(id, productId, 3m);
+
+        // Elegido de la lista: queda con legajo.
+        quotes.AddLaborLine(id, deLista.Id, conFicha, 2m, 25000m);
+
+        // Tecleado, aunque exista la ficha con ese nombre: queda sin legajo. Es el camino
+        // del taller.
+        quotes.AddLaborLine(id, null, tecleado, 1m, 30000m);
+
+        // Y alguien que no está en Personal: no hay tilde que cruzar.
+        quotes.AddLaborLine(id, null, "Changarín suelto", 1m, 10000m);
+
+        quotes.SaveCalculation(id, 1500m, 2m, 30000m, BudgetRates.Defaults());
+        quotes.ApproveQuote(id);
+        projects.ChangeStatus(id, ProjectStatus.Completed);
+
+        // Aprobar ya asigna solo al que tiene legajo. Al tecleado lo asigna él a mano desde
+        // Proyectos, que es como quedó en la base del taller.
+        projects.AssignEmployee(id, aMano.Id, null);
+
+        foreach (var assignment in projects.GetProjectAssignments(id))
+        {
+            projects.SetAssignmentPaid(assignment.Id, true);
+        }
+
+        return id;
+    }
+
+    /// <summary>
+    /// Material cargado después de aprobar: el caso que aparece porque ahora se puede
+    /// aprobar sin materiales, y que antes la app resolvía sola y siempre para el mismo lado.
+    /// </summary>
+    private static void RunExtraMaterialTests(
+        Action<string, Action> run,
+        QuoteService quotes,
+        InventoryService inventory,
+        ProjectService projects,
+        SettlementService settlements)
+    {
+        run("Material extra: cargarlo después descuenta stock y no mueve el precio si lo pone él", () =>
+        {
+            // Es el caso del carpintero: aprueba un trabajo que es solo mano de obra y
+            // después le carga la madera. Calculó de menos, así que lo absorbe.
+            var productId = inventory.CreateProduct("Melamina absorbida", 50m, 0m, "Metro cuadrado", 9000m).Id;
+            var id = quotes.CreateQuote("Mueble sin materiales", "Cliente que agregó", null).Id;
+            quotes.SaveCalculation(id, 0m, 2m, 30000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(id);
+
+            var priceBefore = RequireQuote(quotes, id).Budget ?? 0m;
+
+            projects.AssignMaterial(id, productId, 4m);
+
+            Assert.Equal(
+                inventory.GetProducts(false, false, "Melamina absorbida").Single().CurrentStock,
+                46m,
+                "el stock baja igual, lo ponga quien lo ponga");
+            Assert.Equal(
+                RequireQuote(quotes, id).Budget ?? 0m,
+                priceBefore,
+                "si lo pone él, al cliente se le cobra lo mismo");
+
+            projects.ChangeStatus(id, ProjectStatus.Completed);
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            // 4 × $ 9.000 congelados al asignar.
+            Assert.Equal(job.SpentMaterials, 36000m, "lo que salió del inventario");
+            Assert.Equal(job.QuotedMaterials, 0m, "no se había cotizado material");
+            Assert.Equal(job.AbsorbedMaterials, 36000m, "lo puso él entero");
+            Assert.True(job.HasMaterialsNote, "gastar más de lo cotizado tiene que avisarse.");
+            Assert.True(
+                job.MaterialsNote.Contains("salen de tu ganancia", StringComparison.Ordinal),
+                $"la nota tendría que decir de dónde sale esa plata, y dice «{job.MaterialsNote}».");
+        });
+
+        run("Material extra: si se lo suma al cliente, el precio sube por ese importe", () =>
+        {
+            var productId = inventory.CreateProduct("Melamina cobrada", 50m, 0m, "Metro cuadrado", 10000m).Id;
+            var id = quotes.CreateQuote("Mueble con agregado", "Cliente que pidió más", null).Id;
+            quotes.SaveCalculation(id, 0m, 2m, 30000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(id);
+
+            var priceBefore = RequireQuote(quotes, id).Budget ?? 0m;
+
+            // La app propone material + desperdicio + desgaste con los porcentajes del
+            // trabajo: 2 × 10.000 = 20.000, +16% = 3.200, +9% = 1.800 → 25.000.
+            var proposed = projects.ProposeExtraCharge(id, productId, 2m);
+            Assert.Equal(proposed, 25000m, "lo que la app propone cobrar");
+
+            projects.AssignMaterial(id, productId, 2m, proposed);
+
+            Assert.Equal(
+                RequireQuote(quotes, id).Budget ?? 0m,
+                priceBefore + 25000m,
+                "el precio sube por lo que él decidió sumarle");
+
+            projects.ChangeStatus(id, ProjectStatus.Completed);
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            Assert.Equal(job.SpentMaterials, 20000m, "lo que costó el material");
+            Assert.Equal(job.BilledExtras, 25000m, "lo que se le sumó al trabajo");
+            Assert.Equal(job.AbsorbedMaterials, 0m, "no puso nada de su bolsillo");
+            Assert.True(
+                job.MaterialsNote.Contains("se la sumaste al trabajo", StringComparison.Ordinal),
+                $"la nota tendría que decir que se lo cobró, y dice «{job.MaterialsNote}».");
+        });
+
+        run("Material extra: quitarlo devuelve el stock y también el recargo", () =>
+        {
+            // Devolver la madera y seguir cobrándola sería quedarse con plata por algo que
+            // no se entregó.
+            var productId = inventory.CreateProduct("Melamina devuelta", 20m, 0m, "Metro cuadrado", 5000m).Id;
+            var id = quotes.CreateQuote("Mueble que se achicó", "Cliente que cambió de idea", null).Id;
+            quotes.SaveCalculation(id, 0m, 1m, 20000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(id);
+
+            var priceBefore = RequireQuote(quotes, id).Budget ?? 0m;
+
+            projects.AssignMaterial(id, productId, 3m, 20000m);
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, priceBefore + 20000m, "precio con el agregado");
+
+            var material = projects.GetProjectMaterials(id).Single();
+            projects.RemoveMaterial(material.Id);
+
+            Assert.Equal(
+                inventory.GetProducts(false, false, "Melamina devuelta").Single().CurrentStock,
+                20m,
+                "el stock vuelve entero");
+            Assert.Equal(
+                RequireQuote(quotes, id).Budget ?? 0m,
+                priceBefore,
+                "el precio vuelve a lo pactado");
+        });
+
+        run("Material extra: sin gastar de más, no hay nada que avisar", () =>
+        {
+            // El aviso solo aparece cuando hay algo real que decir. Un trabajo que gastó lo
+            // que cotizó no tiene por qué mostrar un cartel.
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Trabajo prolijo", "Cliente tranquilo");
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            Assert.False(job.SpentMoreThanQuoted, "gastó lo que había cotizado.");
+            Assert.False(job.HasMaterialsNote, "sin diferencia no se muestra ninguna nota.");
         });
     }
 

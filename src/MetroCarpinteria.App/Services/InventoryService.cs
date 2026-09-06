@@ -1,4 +1,4 @@
-using MetroCarpinteria.App.Data;
+﻿using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
@@ -91,7 +91,11 @@ public sealed class InventoryService
                 ProductName = m.Product.Name,
                 TypeLabel = m.Type == StockMovementType.In ? "Entrada" : "Salida",
                 Quantity = m.Quantity,
-                Unit = m.Product.Unit,
+
+                // La unidad del movimiento, no la del producto: si después le corrigió la
+                // unidad al producto, el historial tiene que seguir diciendo lo que pasó.
+                // Los movimientos anteriores a la v15 la tienen rellenada por la migración.
+                Unit = string.IsNullOrWhiteSpace(m.Unit) ? m.Product.Unit : m.Unit,
                 Reason = m.Reason,
                 CreatedAtLocal = m.CreatedAtUtc.ToLocalTime()
             })
@@ -141,6 +145,7 @@ public sealed class InventoryService
                     ProductId = product.Id,
                     Type = StockMovementType.In,
                     Quantity = initialStock,
+                    Unit = product.Unit,
                     Reason = "Stock inicial",
                     CreatedAtUtc = now
                 });
@@ -274,6 +279,7 @@ public sealed class InventoryService
                 ProductId = productId,
                 Type = type,
                 Quantity = quantity,
+                Unit = product.Unit,
                 Reason = reason.Trim(),
                 CreatedAtUtc = DateTime.UtcNow
             });

@@ -2,15 +2,17 @@
 
 Última actualización: **2026-09-06**.
 
-**Las cuatro tandas están hechas y mergeadas en `master`** —A2, A, B y C—, con la suite en
-verde. **Nada está publicado**: `master` está adelante del remoto y no se empujó ningún tag.
+**Las cinco tandas están hechas** —A2, A, B, C y la revisión de Inventario—, la suite está en
+verde (309/309) y **no queda nada de plata abierto**: el riesgo de pagar dos veces un jornal
+se cerró el 2026-09-06. **Nada está publicado**: no se empujó ningún tag, y `master` está
+adelante del remoto.
 
-**La publicación está en pausa a propósito.** Antes de sacar la versión falta **revisar
-Inventario entero** (ver «Lo que falta»). La idea es no ir tirando actualizaciones cada rato:
-se junta todo lo que haya que cambiar y sale **una sola versión** con todo adentro.
+Falta **mergear `inventario-revision` a `master`, acordar el número y empujar el tag**. La
+idea sigue siendo la misma: **una sola versión con todo adentro**, en vez de ir tirando
+actualizaciones cada rato.
 
-Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v14**, así que
-una rama que maneje hasta v13 no la abre. No es una falla —el guardián avisa y no toca los
+Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v15**, así que
+una rama que maneje hasta v14 no la abre. No es una falla —el guardián avisa y no toca los
 datos— y al carpintero no le puede pasar actualizando: su base va siempre hacia adelante.
 
 Este documento existe para poder retomar desde cero. Si arrancás una conversación nueva, leé esto primero.
@@ -54,8 +56,8 @@ Reglas de trabajo que puso él:
 
 ## Lo que está hecho
 
-Todo commiteado y mergeado en `master`, **300/300 tests en verde**, y probado abriendo la app
-contra la base local real. Las cuatro tandas van en orden: A2, B, A y C.
+Todo commiteado, **307/307 tests en verde**, y probado abriendo la app contra la base local
+real. Las tandas van en orden: A2, B, A, C y la revisión de Inventario.
 
 ### Tanda A2 — el precio pactado (rama `precio-pactado-no-se-pisa`)
 
@@ -105,8 +107,6 @@ por transferencia no suma al efectivo.
   devuelto a presupuesto con «Cancelar trabajo» — que es la prueba de que aprobar **no** es
   irreversible, el argumento con el que se justificaba la validación.
 
----
-
 ### Tanda C — la liquidación de los terminados
 
 `bf72917` · Lo último que pidió en la grabación: *"una vez terminado tendría que ir a
@@ -132,6 +132,73 @@ Alejandro le pongo Pagar."*
 
 `c504399` · **El historial de Inventario dejaba de mostrarse entero** — ver la baranda 3.
 
+### Tanda D — la revisión de Inventario (rama `inventario-revision`)
+
+Se hizo porque el bug del historial apareció **de costado**, mirando la pantalla mientras se
+revisaba otra cosa. Si uno así sobrevivió sin que nadie lo notara, la sección merecía una
+pasada entera antes de publicar.
+
+`cc370d2` · **Migración v15** — dos datos que se leían del producto vivo quedan congelados
+
+- La **unidad de cada movimiento**. Antes salía de `Products.Unit`, así que corregir la unidad
+  de un producto —lo que uno hace al notar que la cargó mal— reescribía todo el pasado: un
+  movimiento de 1500 u. pasaba a leerse como 1500 m².
+- El **costo de cada material asignado** a un trabajo. Salía de `Products.CostPrice`, así que
+  lo gastado en un mueble de agosto cambiaba solo en octubre al subir la melamina.
+- El relleno usa lo que el producto dice hoy: es la mejor verdad disponible, y lo que ya se
+  haya cambiado alguna vez no se puede recuperar ni se inventa.
+
+`af11ef2` · **El material cargado después de aprobar lo decide él**
+
+Aprobar sin materiales (tanda A) volvió normal un camino que antes casi no pasaba: cargar la
+madera después, desde Proyectos. Ese camino descontaba stock, pero la plata la resolvía la app
+sola y siempre para el mismo lado —salía del bolsillo del taller, sin preguntar—.
+
+- Al asignar material a un trabajo con precio acordado, **pregunta**. Si lo pone él, el precio
+  no se mueve. Si se lo suma al cliente, la app propone material + desperdicio + desgaste con
+  los porcentajes de ese trabajo, y él puede cambiar el número.
+- Cobrarlo marca el precio como **pactado a mano**: lo decidió él y ningún recálculo lo pisa.
+- Quitar el material devuelve las dos cosas, stock y recargo. Cancelar el trabajo también.
+- En Terminados, cuando gastó más de lo cotizado, una línea lo explica: cuánto cotizó, cuánto
+  gastó, y si esa diferencia se la sumó al cliente o sale de su ganancia.
+
+`49a1367` · **Lo que salió de la recorrida, pantalla por pantalla**
+
+- Con «Solo alertas» puesto y nada bajo el mínimo, Inventario decía «Todavía no hay productos.
+  Cargá el primero»: le avisaba que se le borró el inventario. **Él trabaja con los filtros
+  puestos**, así que ahora el vacío nombra el filtro y dice cuál destildar.
+- Cambiar la unidad de un producto con stock avisa: el historial está a salvo, pero el número
+  del stock no se convierte.
+- Archivar un producto con stock dice cuánto se va a dejar de contar.
+- El historial sin producto elegido trae los de todos, y ahora lo dice.
+- Se avisa cuando la lista está cortada en los últimos 30.
+
+`3d033ff` · **El jornal marcado a mano avisa antes de pagarse dos veces**
+
+Era lo último de plata que quedaba abierto. El tilde viejo (`ProjectAssignment.IsPaid`) no
+movía un peso, así que un jornal marcado así no dejó egreso y la liquidación lo da pendiente:
+pagarlo desde Terminados sería pagarlo dos veces.
+
+- **Se avisa y no se toca un número.** De las tres salidas que estaban anotadas se tomó la
+  del medio. Que el tilde saldara el jornal dejaría a la caja y a la liquidación diciendo
+  cosas distintas sobre la misma plata —justo lo que esta pantalla existe para evitar—;
+  dejarlo así dejaba el riesgo puesto. Las otras dos siguen a un cambio de distancia.
+- **El cruce es por legajo y también por nombre**, y eso salió de mirar la base y no de
+  suponerla: la asignación marcada apunta a la ficha de Javier, pero el operario de ese
+  presupuesto está **tecleado suelto, sin legajo**. Cruzando solo por legajo el aviso quedaba
+  mudo en el único caso que existe de verdad. El nombre puede errarle y por eso no decide
+  plata: un falso positivo le pide que mire, un falso negativo le cuesta un jornal.
+- Avisa en tres lugares, y en ninguno cuando no hay nada que decir: la lista de trabajos, la
+  fila del operario y el panel de pago. Nombra **lo que falta**, no el jornal entero: es el
+  número que movería el botón que tiene abajo.
+- Verificado contra la base real: aparece en `asdasdasd` y no en `casa`.
+
+**Lo que la recorrida NO encontró**, y conviene que quede escrito: ninguna cantidad se compara
+del lado de SQL —todas pasan por `AsEnumerable`, que es la trampa de las columnas `TEXT`—, las
+validaciones de stock insuficiente y producto archivado se respetan y se explican bien en
+pantalla, el botón gris de Eliminar dice por qué está gris, y `ApplyPendingStock` **sí** tenía
+test, al revés de lo que suponía el plan.
+
 ---
 
 ## Barandas nuevas (por qué ya no falla en silencio)
@@ -148,32 +215,17 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 
 ## Lo que falta
 
-### Revisar Inventario, sección por sección (lo próximo)
-
-Lo pidió Maximiliano y **es lo que bloquea la publicación**. El plan concreto se arma con él
-antes de tocar nada; esto es lo que se sabe hasta acá:
-
-- **El historial ya se arregló** (`c504399`), pero ese arreglo salió de mirar la pantalla de
-  costado mientras se revisaba otra cosa. La sección nunca se revisó entera.
-- Falta pasar por todo: stock y mínimos, alta y edición de productos, entradas y salidas a
-  mano, archivar y restaurar, y el cruce con Presupuestos y Proyectos —que es donde el stock
-  se mueve solo al aprobar y al cancelar un trabajo.
-- El criterio de siempre: **primero los números**. Un stock que miente vale más que un
-  cartel mal escrito.
-
 ### Pendientes de publicación
 
-**El código está listo; la publicación espera a la revisión de Inventario.** La decisión es
-juntar todo lo que haya que cambiar y sacar **una sola versión** —A2, A, B, C y lo que salga
-de Inventario— en vez de ir tirando actualizaciones cada rato.
-
-- Falta acordar el número (el último tag es `v1.9.1`; se propuso `v1.10.0`) y empujarlo.
+**El código está listo.** Falta mergear `inventario-revision` a `master`, acordar el número
+(el último tag es `v1.9.1`; se propuso `v1.10.0`) y empujarlo. Sale **una sola versión** con
+las cinco tandas adentro.
 - **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
-- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, y otra vuelta
-  con lo nuevo. Salieron dos problemas: el saldo por medio (`1c1c7a5`) y el historial de
-  Inventario (`c504399`), los dos arreglados. Lo demás cierra: los cobros de Clientes suman
-  exacto contra lo que Caja dice que entró, el precio pactado aguanta que le toquen la
-  calculadora, y pagarle a un operario baja el saldo de la caja por el importe justo.
+- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, más la
+  recorrida completa de Inventario. Lo que cierra: los cobros de Clientes suman exacto contra
+  lo que Caja dice que entró, el precio pactado aguanta que le toquen la calculadora, pagarle
+  a un operario baja el saldo de la caja por el importe justo, y cargar material después de
+  aprobar mueve el stock y el precio como corresponde según lo que él elija.
 - **El susto de la base «más nueva que el código» es solo de escritorio.** Pasa al pararse en
   una rama vieja teniendo la base local ya migrada. Al carpintero no le puede pasar por una
   actualización: su base va de v12 para arriba, y el guardián solo salta al revés.
@@ -205,6 +257,11 @@ Para no volver a proponerlo:
 - También del 2026-09-06, probando la liquidación: se le pagaron **$ 5.000 a Javier** por el
   trabajo `asdasdasd`. Es un egreso de caja de verdad, así que no se borra —se corrige, no se
   borra—; queda como el primer pago de mano de obra registrado.
+- Y probando el material extra en ese mismo trabajo quedaron dos movimientos de stock del
+  Tornillo, una salida de 2 u. y su devolución: se asignaron cobrándoselos al cliente y después
+  se quitaron, para ver que el precio subía y volvía. El stock y el precio quedaron como
+  estaban; los dos renglones del historial no, porque no se borran.
+- El plan de esta ronda está en `~/.claude/plans/eventual-baking-parrot.md`.
 - **Correr todo**: `dotnet build -warnaserror` y después `dotnet run --no-build` en `tests\MetroCarpinteria.SmokeTest`.
 - **Abrir la app**: `src\MetroCarpinteria.App\bin\Debug\net8.0-windows\MetroCarpinteria.exe`. Cerrarla antes de recompilar o el build falla por archivo bloqueado.
 - El plan completo original está en `~/.claude/plans/fijate-esto-me-dijo-jaunty-penguin.md`.

@@ -50,6 +50,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(m => m.ProductId);
             entity.HasIndex(m => m.CreatedAtUtc);
             entity.Property(m => m.Quantity).HasPrecision(18, 3);
+            entity.Property(m => m.Unit).HasMaxLength(30).IsRequired();
             entity.Property(m => m.Reason).HasMaxLength(500).IsRequired();
             entity.HasOne(m => m.Product)
                 .WithMany()
@@ -172,6 +173,10 @@ public class AppDbContext : DbContext
             entity.HasIndex(m => m.ProjectId);
             entity.HasIndex(m => m.ProductId);
             entity.Property(m => m.Quantity).HasPrecision(18, 3);
+            entity.Property(m => m.UnitCost).HasPrecision(18, 2);
+            entity.Property(m => m.BilledAmount).HasPrecision(18, 2);
+            entity.Ignore(m => m.LineCost);
+            entity.Ignore(m => m.WasBilled);
             entity.HasOne(m => m.Project).WithMany(p => p.Materials).HasForeignKey(m => m.ProjectId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(m => m.Product).WithMany().HasForeignKey(m => m.ProductId).OnDelete(DeleteBehavior.Restrict);
         });

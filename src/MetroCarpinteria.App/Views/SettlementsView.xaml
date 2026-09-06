@@ -79,6 +79,13 @@
                                             <TextBlock Text="{Binding UpdatedDisplay}" FontSize="11"
                                                        Margin="0,2,0,0"
                                                        Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            <!-- Para poder ver de una cuáles trabajos hay que mirar con
+                                                 cuidado antes de pagar, sin entrar en cada uno. -->
+                                            <TextBlock Text="{Binding HandPaidNote}" FontSize="11"
+                                                       Margin="0,2,0,0" TextWrapping="Wrap"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource AlertBrush}"
+                                                       Visibility="{Binding HandPaidNote, Converter={StaticResource StringToVisibilityConverter}}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -99,6 +106,17 @@
                                            Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,4" />
                                 <TextBlock Text="De acá sale cada número. Es el mismo cálculo con el que se cotizó."
                                            Style="{StaticResource SubtitleStyle}" Margin="0,0,0,12" />
+
+                                <!-- Cuando gastó más material del que cotizó, el desglose solo
+                                     no alcanza: muestra lo cotizado, que es lo que armó el
+                                     precio, y no lo que realmente salió del depósito. -->
+                                <Border Background="{DynamicResource StateWarningSurfaceBrush}"
+                                        CornerRadius="6" Padding="10,8" Margin="0,0,0,12"
+                                        Visibility="{Binding SelectedProject.HasMaterialsNote, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding SelectedProject.MaterialsNote}"
+                                               FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AlertBrush}" />
+                                </Border>
                                 <ItemsControl ItemsSource="{Binding BreakdownLines}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:BudgetBreakdownLine}">
@@ -148,7 +166,20 @@
                                         <DataGridTextColumn Header="Le toca" Binding="{Binding DueDisplay}" Width="105" />
                                         <DataGridTextColumn Header="Cobró" Binding="{Binding PaidDisplay}" Width="105" />
                                         <DataGridTextColumn Header="Falta" Binding="{Binding PendingDisplay}" Width="105" />
-                                        <DataGridTextColumn Header="Estado" Binding="{Binding StatusLabel}" Width="130" />
+                                        <DataGridTemplateColumn Header="Estado" Width="150">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding StatusLabel}" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding HandPaidRowNote}" FontSize="11"
+                                                                   Margin="0,2,0,0" TextWrapping="Wrap"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource AlertBrush}"
+                                                                   Visibility="{Binding HandPaidRowNote, Converter={StaticResource StringToVisibilityConverter}}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </StackPanel>
@@ -162,6 +193,17 @@
                                 <TextBlock Text="{Binding SelectedWorker.ProgressDisplay}"
                                            Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap"
                                            Margin="0,0,0,12" />
+
+                                <!-- El jornal que él marcó a mano antes de que esto existiera no
+                                     dejó movimiento, así que la cuenta lo da pendiente. El único
+                                     que sabe si ya lo pagó es él: el aviso va donde apretaría. -->
+                                <Border Background="{DynamicResource StateWarningSurfaceBrush}"
+                                        CornerRadius="6" Padding="10,8" Margin="0,0,0,12"
+                                        Visibility="{Binding SelectedWorker.ShowHandPaidWarning, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding SelectedWorker.HandPaidWarning}"
+                                               FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AlertBrush}" />
+                                </Border>
 
                                 <TextBlock Text="Importe" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                                 <TextBox Text="{Binding PayAmount, UpdateSourceTrigger=PropertyChanged}"

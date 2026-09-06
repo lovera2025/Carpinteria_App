@@ -34,6 +34,17 @@ public sealed class SettlementWorkerItem
     /// <summary>La suma de los egresos de caja anotados contra esta línea.</summary>
     public decimal Paid { get; init; }
 
+    /// <summary>
+    /// Él ya había marcado este jornal como pagado con el tilde viejo de Personal, el que
+    /// no movía un peso.
+    /// </summary>
+    /// <remarks>
+    /// No entra en ninguna cuenta: un booleano que nunca movió plata no puede decidir
+    /// cuánto se debe, y hacerlo dejaría la caja y la liquidación diciendo cosas
+    /// distintas. Sirve para avisar, que es lo que evita pagar dos veces.
+    /// </remarks>
+    public bool WasMarkedPaidByHand { get; init; }
+
     public decimal Pending => Math.Max(0m, Due - Paid);
 
     /// <summary>
@@ -66,6 +77,31 @@ public sealed class SettlementWorkerItem
         : Paid > 0m
             ? $"Cobró {PaidDisplay} de {DueDisplay} · falta {PendingDisplay}"
             : $"Le debés {DueDisplay}";
+
+    /// <summary>
+    /// Hay algo que avisar solo si además figura pendiente. Si ya se lo pagó desde acá, el
+    /// tilde viejo no agrega nada y el cartel sería ruido.
+    /// </summary>
+    public bool ShowHandPaidWarning => WasMarkedPaidByHand && Pending > 0m;
+
+    /// <summary>La versión corta, para la columna de estado.</summary>
+    public string HandPaidRowNote => ShowHandPaidWarning ? "Lo marcaste pagado a mano" : string.Empty;
+
+    /// <summary>
+    /// El aviso entero, donde importa: arriba del botón de pagar. Dice qué pasó y qué
+    /// hacer con las dos respuestas posibles, porque el único que sabe cuál es, es él.
+    /// </summary>
+    /// <remarks>
+    /// Nombra lo que <b>falta</b> y no el jornal entero: es el número que movería el botón
+    /// que tiene abajo. Si ya le pagó una parte desde acá, decirle «no pagues los 20.000»
+    /// le nombraría plata que no está por salir.
+    /// </remarks>
+    public string HandPaidWarning => ShowHandPaidWarning
+        ? "Este jornal figuraba como pagado en Personal, de antes, cuando ese tilde no " +
+          "movía plata: por eso no hay un egreso en la caja y acá aparece pendiente. " +
+          $"Si ya se lo pagaste, no le pagues los {PendingDisplay} que faltan. Si no, " +
+          "pagalos desde acá y queda asentado."
+        : string.Empty;
 }
 
 /// <summary>Un trabajo terminado con su desglose y lo que se le debe a cada uno.</summary>
@@ -86,6 +122,63 @@ public sealed class SettlementProjectItem
     public BudgetBreakdown? Breakdown { get; init; }
 
     public IReadOnlyList<SettlementWorkerItem> Workers { get; init; } = [];
+
+    /// <summary>Lo que se cotizó de materiales, que es con lo que se armó el precio.</summary>
+    public decimal QuotedMaterials { get; init; }
+
+    /// <summary>
+    /// Lo que salió del inventario para este trabajo, valuado con los costos congelados.
+    /// </summary>
+    public decimal SpentMaterials { get; init; }
+
+    /// <summary>Cuánto de lo cargado después se le sumó al cliente.</summary>
+    public decimal BilledExtras { get; init; }
+
+    /// <summary>
+    /// Gastó más material del que cotizó. Es plata que sale de su ganancia, salvo la parte
+    /// que le haya sumado al cliente.
+    /// </summary>
+    public bool SpentMoreThanQuoted => SpentMaterials > QuotedMaterials;
+
+    /// <summary>Lo que puso él de su bolsillo: lo gastado de más que no le cobró a nadie.</summary>
+    public decimal AbsorbedMaterials =>
+        Math.Max(0m, SpentMaterials - QuotedMaterials - BilledExtras);
+
+    public string QuotedMaterialsDisplay => AppCulture.Money(QuotedMaterials);
+    public string SpentMaterialsDisplay => AppCulture.Money(SpentMaterials);
+    public string AbsorbedMaterialsDisplay => AppCulture.Money(AbsorbedMaterials);
+
+    /// <summary>
+    /// La frase que contesta «gasté más de lo que cobré». Vacía cuando no hay nada que
+    /// avisar: si gastó lo que cotizó, no hay por qué decir nada.
+    /// </summary>
+    public string MaterialsNote
+    {
+        get
+        {
+            if (!SpentMoreThanQuoted)
+            {
+                return string.Empty;
+            }
+
+            var note = $"Cotizaste {QuotedMaterialsDisplay} de materiales y gastaste {SpentMaterialsDisplay}.";
+
+            if (BilledExtras > 0m && AbsorbedMaterials > 0m)
+            {
+                return note + $" Le sumaste {AppCulture.Money(BilledExtras)} al trabajo y " +
+                       $"{AbsorbedMaterialsDisplay} los pusiste vos.";
+            }
+
+            if (BilledExtras > 0m)
+            {
+                return note + $" La diferencia se la sumaste al trabajo.";
+            }
+
+            return note + $" Los {AbsorbedMaterialsDisplay} de más salen de tu ganancia.";
+        }
+    }
+
+    public bool HasMaterialsNote => MaterialsNote.Length > 0;
 
     public decimal TotalDue => Workers.Sum(w => w.Due);
     public decimal TotalPaid => Workers.Sum(w => w.Paid);
@@ -108,6 +201,16 @@ public sealed class SettlementProjectItem
         : HasPending
             ? $"Falta pagar {TotalPendingDisplay}"
             : "Todo pagado";
+
+    /// <summary>
+    /// Alguno de los jornales pendientes ya estaba marcado a mano. Se dice en la lista y
+    /// no solo adentro del trabajo: es lo que le deja mirar de una cuáles revisar.
+    /// </summary>
+    public bool HasHandPaidWarning => Workers.Any(w => w.ShowHandPaidWarning);
+
+    public string HandPaidNote => HasHandPaidWarning
+        ? "Revisalo: hay jornales marcados a mano"
+        : string.Empty;
 }
 
 /// <summary>Cuánto se le debe a una persona sumando todos sus trabajos terminados.</summary>

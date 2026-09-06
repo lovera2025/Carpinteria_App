@@ -1,4 +1,4 @@
-using MetroCarpinteria.App.Data.Entities;
+﻿using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
 
 namespace MetroCarpinteria.App.Models;
@@ -50,7 +50,17 @@ public sealed class ProjectMaterialItem
     public string Unit { get; init; } = ProductUnits.Unit;
     public DateTime AssignedAtLocal { get; init; }
 
+    /// <summary>Cuánto se le sumó al trabajo por este material. Null es «lo puso él».</summary>
+    public decimal? BilledAmount { get; init; }
+
+    public bool WasBilled => BilledAmount is > 0m;
+
     public string QuantityDisplay => AppCulture.QuantityWithUnit(Quantity, Unit);
+
+    /// <summary>«2 u. · se lo sumaste al cliente por $ 2.500,00», o solo la cantidad.</summary>
+    public string BilledDisplay => WasBilled
+        ? $"Se lo sumaste al cliente por {AppCulture.Money(BilledAmount!.Value)}"
+        : string.Empty;
 }
 
 public sealed class ProjectAssignmentItem

@@ -1,4 +1,4 @@
-using MetroCarpinteria.App.Data;
+﻿using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
@@ -170,6 +170,7 @@ public sealed class ProjectService
                 ProductName = m.Product.Name,
                 Quantity = m.Quantity,
                 Unit = m.Product.Unit,
+                BilledAmount = m.BilledAmount,
                 AssignedAtLocal = m.AssignedAtUtc.ToLocalTime()
             })
             .ToList();
@@ -327,11 +328,56 @@ public sealed class ProjectService
         _imageService?.DeleteFilesForProject(id);
     }
 
-    public void AssignMaterial(int projectId, int productId, decimal quantity)
+    /// <summary>
+    /// Cuánto habría que cobrarle al cliente por material cargado después de aprobar.
+    /// </summary>
+    /// <remarks>
+    /// El costo del material más su desperdicio y su desgaste, con los porcentajes del
+    /// trabajo: la madera de más también tiene recorte y también gasta herramienta, así que
+    /// pasarla al costo pelado sería regalar esa parte. Gastos y ganancia no se tocan —son
+    /// un porcentaje del jornal del jefe, y por cargar madera no trabajó más días—.
+    /// <para>
+    /// Es una propuesta, no una imposición: la pantalla la deja editar antes de confirmar.
+    /// </para>
+    /// </remarks>
+    public decimal ProposeExtraCharge(int projectId, int productId, decimal quantity)
+    {
+        if (quantity <= 0)
+        {
+            return 0m;
+        }
+
+        using var context = _databaseService.CreateContext();
+
+        var project = context.Projects.AsNoTracking().FirstOrDefault(p => p.Id == projectId);
+        var product = context.Products.AsNoTracking().FirstOrDefault(p => p.Id == productId);
+
+        if (project is null || product?.CostPrice is not { } cost)
+        {
+            return 0m;
+        }
+
+        var materials = quantity * cost;
+        var waste = materials * (project.WastePercent ?? BudgetRates.DefaultWaste) / 100m;
+        var toolWear = materials * (project.ToolWearPercent ?? BudgetRates.DefaultToolWear) / 100m;
+
+        return Math.Round(materials + waste + toolWear, 2, MidpointRounding.AwayFromZero);
+    }
+
+    /// <param name="billedAmount">
+    /// Cuánto se le suma al precio del trabajo por este material. Null o cero es «lo pongo
+    /// yo»: el material sale igual del inventario, pero el cliente paga lo mismo que antes.
+    /// </param>
+    public void AssignMaterial(int projectId, int productId, decimal quantity, decimal? billedAmount = null)
     {
         if (quantity <= 0)
         {
             throw new InvalidOperationException("La cantidad debe ser mayor a cero.");
+        }
+
+        if (billedAmount is < 0m)
+        {
+            throw new InvalidOperationException("Lo que le sumás al trabajo no puede ser negativo.");
         }
 
         using var context = _databaseService.CreateContext();
@@ -371,6 +417,7 @@ public sealed class ProjectService
                 ProductId = productId,
                 Type = StockMovementType.Out,
                 Quantity = quantity,
+                Unit = product.Unit,
                 Reason = $"Asignado a proyecto: {project.Title}",
                 CreatedAtUtc = now
             });
@@ -380,8 +427,23 @@ public sealed class ProjectService
                 ProjectId = projectId,
                 ProductId = productId,
                 Quantity = quantity,
+
+                // Se congela lo que cuesta hoy: si mañana sube la melamina, lo que costó
+                // este trabajo tiene que seguir diciendo lo mismo.
+                UnitCost = product.CostPrice,
+                BilledAmount = billedAmount is > 0m ? billedAmount : null,
                 AssignedAtUtc = now
             });
+
+            if (billedAmount is > 0m)
+            {
+                // Sumárselo al cliente es cambiar el precio del trabajo, y eso lo decidió
+                // él: queda marcado como pactado a mano para que ningún recálculo lo pise.
+                // (En un trabajo aprobado la calculadora ya no corre, pero si alguna vez se
+                // reabre, el número que él puso tiene que seguir siendo el que manda.)
+                project.Budget = (project.Budget ?? 0m) + billedAmount.Value;
+                project.IsPriceManual = true;
+            }
 
             project.UpdatedAtUtc = now;
             context.SaveChanges();
@@ -477,9 +539,20 @@ public sealed class ProjectService
                 ProductId = material.ProductId,
                 Type = StockMovementType.In,
                 Quantity = material.Quantity,
+                Unit = material.Product.Unit,
                 Reason = $"Devuelto desde proyecto: {material.Project.Title}",
                 CreatedAtUtc = now
             });
+
+            // Si ese material se le había cobrado al cliente, sacarlo del trabajo también
+            // le saca el recargo: devolver la madera y seguir cobrándola sería quedarse con
+            // plata por algo que no se entregó.
+            if (material.BilledAmount is > 0m)
+            {
+                material.Project.Budget = Math.Max(
+                    0m,
+                    (material.Project.Budget ?? 0m) - material.BilledAmount.Value);
+            }
 
             material.Project.UpdatedAtUtc = now;
             context.ProjectMaterials.Remove(material);

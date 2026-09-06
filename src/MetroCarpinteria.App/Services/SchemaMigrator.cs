@@ -51,7 +51,7 @@ public sealed class SchemaTooNewException(int fileVersion, int supportedVersion)
 /// </remarks>
 public sealed class SchemaMigrator
 {
-    public const int LatestVersion = 14;
+    public const int LatestVersion = 15;
 
     /// <param name="TransformsData">
     /// El paso no solo agrega estructura: reescribe filas que ya existen.
@@ -83,7 +83,8 @@ public sealed class SchemaMigrator
         new(11, "Ajuste de desglose y jornales pagados", ApplyPriceAdjustmentAndAssignmentPaid),
         new(12, "Ciclo del taller y adjuntos en el total", ApplyWorkshopCycle, TransformsData: true),
         new(13, "Precio pactado a mano", ApplyManualPriceFlag, TransformsData: true),
-        new(14, "La caja fuerte del taller", ApplyCashSafe, TransformsData: true)
+        new(14, "La caja fuerte del taller", ApplyCashSafe, TransformsData: true),
+        new(15, "Unidad y costo congelados en el stock", ApplyFrozenStockFacts, TransformsData: true)
     ];
 
     /// <summary>
@@ -469,6 +470,51 @@ public sealed class SchemaMigrator
     /// desaparecidos.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Congela dos datos que se leían del producto vivo: la unidad de cada movimiento de
+    /// stock y el costo de cada material asignado a un trabajo.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Los dos tenían el mismo defecto. La unidad del historial salía de
+    /// <c>Products.Unit</c>, así que corregir la unidad de un producto reescribía el pasado:
+    /// un movimiento de 1500 u. pasaba a leerse como 1500 m². Y lo que costó un material
+    /// asignado salía de <c>Products.CostPrice</c>, así que lo gastado en un mueble de agosto
+    /// cambiaba solo en octubre, cuando subía la melamina.
+    /// </para>
+    /// <para>
+    /// El relleno usa lo que el producto dice hoy, que es la mejor verdad disponible: si
+    /// alguna unidad o algún costo ya se cambió alguna vez, ese dato no se puede recuperar y
+    /// no hay que inventarlo. De acá en adelante queda clavado al momento en que pasó.
+    /// </para>
+    /// </remarks>
+    private static void ApplyFrozenStockFacts(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        AddColumnIfMissing(connection, transaction, "StockMovements", "Unit", "TEXT NOT NULL DEFAULT ''");
+        AddColumnIfMissing(connection, transaction, "ProjectMaterials", "UnitCost", "TEXT NULL");
+
+        // Sin relleno a propósito: todo lo que ya está cargado lo puso el taller de su
+        // bolsillo, porque hasta ahora la app no preguntaba. Null es exactamente eso.
+        AddColumnIfMissing(connection, transaction, "ProjectMaterials", "BilledAmount", "TEXT NULL");
+
+        Execute(connection, transaction, """
+            UPDATE "StockMovements"
+               SET "Unit" = COALESCE(
+                       (SELECT p."Unit" FROM "Products" p WHERE p."Id" = "StockMovements"."ProductId"),
+                       '')
+             WHERE "Unit" IS NULL OR "Unit" = '';
+            """);
+
+        // CostPrice puede ser null —un producto que nunca tuvo precio cargado—, y ahí el
+        // costo queda en null a propósito: es «no sé cuánto costaba», no cero.
+        Execute(connection, transaction, """
+            UPDATE "ProjectMaterials"
+               SET "UnitCost" = (
+                       SELECT p."CostPrice" FROM "Products" p WHERE p."Id" = "ProjectMaterials"."ProductId")
+             WHERE "UnitCost" IS NULL;
+            """);
+    }
+
     private static void ApplyCashSafe(SqliteConnection connection, SqliteTransaction transaction)
     {
         AddColumnIfMissing(connection, transaction, "CashMovements", "Method", "INTEGER NOT NULL DEFAULT 0");
