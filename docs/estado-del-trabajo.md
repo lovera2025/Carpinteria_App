@@ -1,12 +1,11 @@
 # Estado del trabajo — la caja del taller
 
-Última actualización: **2026-09-06**. Dos ramas en juego:
+Última actualización: **2026-09-06**. **El trabajo está terminado**: las cuatro tandas —A2, A,
+B y C— están en `caja-fuerte`, que se merge a `master` y sale en **una sola versión**.
 
-- **`master`** — tiene A2 y A mergeadas y **sin publicar**. Es lo que sale en la próxima versión.
-- **`caja-fuerte`** — la tanda B, todavía sin mergear. Sale de `precio-pactado-no-se-pisa`, que salía de `master`.
-
-Ojo al cambiar de rama: la base local de prueba ya está en **esquema v14**, así que estando en
-`master` (v13) la app no abre. No es una falla: el guardián avisa y no toca los datos.
+Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v14**, así que
+una rama que maneje hasta v13 no la abre. No es una falla —el guardián avisa y no toca los
+datos— y al carpintero no le puede pasar actualizando: su base va siempre hacia adelante.
 
 Este documento existe para poder retomar desde cero. Si arrancás una conversación nueva, leé esto primero.
 
@@ -101,12 +100,40 @@ por transferencia no suma al efectivo.
 
 ---
 
+### Tanda C — la liquidación de los terminados
+
+`bf72917` · Lo último que pidió en la grabación: *"una vez terminado tendría que ir a
+Proyectos terminados… ahí tiene que estar el desglose… cuánto es del desperdicio, cuánto de
+las herramientas, cuánto es lo mío, cuánto lo de Alejandro y cuánto lo de Javi. Entonces yo a
+Alejandro le pongo Pagar."*
+
+- **Vive adentro de Caja, no en el menú.** Lo pidió Maximiliano: la barra lateral ya tenía
+  diez entradas. La tarjeta de Caja dice cuánto falta pagar y abre la liquidación; se vuelve
+  con un botón. Además es donde corresponde: pagarle a un operario es plata que sale de ahí.
+- **El pago ES el movimiento de caja**, con proyecto, empleado y línea de mano de obra
+  anotados. Nada de booleanos que puedan discrepar, y pagar en varias veces sale solo.
+- **Saldado es `pagado >= le toca`**, no `==`.
+- El importe viene precargado con lo que falta y es editable. Pagar de más no se bloquea:
+  puede ser un adelanto, y la fila lo dice.
+- **El jefe no aparece**: no es línea de mano de obra, lo suyo es un egreso normal.
+- El tilde de «pagado» se fue de Proyectos y de Personal. El dato viejo **no se borra**, pero
+  deja de mostrarse donde ahora podría contradecir a la liquidación. Personal pasa a mostrar
+  **«Le debés»** con plata, sacada de la misma cuenta que la liquidación; antes decía
+  «A cobrar: 1», un conteo de tildes en una columna que se lee como pesos.
+- Archivar un trabajo con jornales sin pagar lo avisa en el diálogo.
+- Siete tests nuevos, en `CommercialTests`, que es donde vive la plata.
+
+`c504399` · **El historial de Inventario dejaba de mostrarse entero** — ver la baranda 3.
+
+---
+
 ## Barandas nuevas (por qué ya no falla en silencio)
 
-WPF falla callado de dos formas, y las dos ahora tienen test:
+WPF falla callado de tres formas, y las tres ahora tienen test:
 
 1. **Pantalla invisible.** Cada vista arranca en `Opacity 0` y un trigger la muestra. Si se pierde, la pantalla se dibuja entera y no se ve nada — no falla al compilar, no tira excepción, no sale en el log. Un test recorre las diez pantallas y exige el trigger. *Verificado sacándolo a propósito.*
 2. **Binding roto.** Un binding a una propiedad que no existe deja el valor por omisión y sigue. Un test escucha las trazas de WPF mientras dibuja las diez pantallas, cada una con su ViewModel. **Encontró uno al primer intento.**
+3. **Lista vacía.** El estilo global de `ListViewItem` dibujaba las filas con un `GridViewRowPresenter`, que solo entiende columnas de un `GridView` e **ignora el `ItemTemplate`**: la lista quedaba con sus renglones y ni una letra. Acá no hay binding roto que rastrear —el binding está bien—, la pantalla no está invisible y el log no dice nada. Un test dibuja una lista con `ItemTemplate` y exige ver su contenido. *Verificado sacando el arreglo a propósito: dice «se dibujó: NADA».*
 
 Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`) y **se suma en memoria, nunca con `SUM()` de SQL** — `Amount` es `TEXT` y SQLite lo pasaría por punto flotante, devolviendo un número parecido y mal.
 
@@ -114,48 +141,21 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 
 ## Lo que falta
 
-### Parte C — liquidación de trabajos terminados (no empezada)
-
-Es lo que él pidió en la grabación: *"una vez terminado tendría que ir a Proyectos terminados… ahí tiene que estar el desglose… cuánto es del desperdicio, cuánto de las herramientas, cuánto es lo mío, cuánto lo de Alejandro y cuánto lo de Javi. Entonces yo a Alejandro le pongo Pagar."*
-
-**El cálculo ya existe entero.** `BudgetBreakdown` trae materiales, desperdicio, desgaste, mano de obra, gastos y ganancia; `LaborShares` ya reparte por persona, con el jefe llevándose overhead y ganancia. Falta la pantalla y la acción, no la matemática.
-
-Diseño acordado:
-
-- **Pantalla propia «Terminados»**, no un filtro: hace falta el total agregado de todos los trabajos cerrados.
-- **El registro del pago es el `CashMovement`**, no un campo en `ProjectAssignment`. Con `ProjectId` + `EmployeeId` + `ProjectLaborLineId` alcanza para todo, permite pagar en varias veces y no hay dos números que puedan discrepar. **`ProjectAssignment` no se toca.**
-- `ProjectLaborLineId` va aparte de `EmployeeId` porque **no todo operario tiene ficha** en Personal.
-- **Un solo camino para pagar**: `SetAssignmentPaid` deja de ser un tilde suelto. Hoy prende un booleano sin mover un peso, y se lee desde tres pantallas.
-- **El importe lo pone él a mano**, precargado pero editable.
-- **«Saldado» es `pagado >= le toca`**, no `==`: con pagos parciales, exigir igualdad deja a alguien pendiente por un centavo para siempre.
-- **Avisos de a quién le debe**, reusando el patrón de la banda de atrasados. Diálogo real solo al archivar un trabajo con pagos pendientes.
-- Lo suyo (*"esto lo puedo sacar yo: mi ganancia"*) no pasa por acá: el jefe no es línea de mano de obra, es un egreso normal con el proyecto anotado.
-
-### Inventario: el historial de movimientos sale vacío (al final de todo)
-
-Lo dejó pedido Maximiliano para el final: primero ver si tiene más fallas, y recién ahí
-mejorarlo entero de una vez.
-
-- La tarjeta «Historial de movimientos» dibuja los renglones y **ninguno tiene texto**.
-- Causa: el estilo global de `ListViewItem` ([`Lists.xaml:65`](../src/MetroCarpinteria.App/Resources/Controls/Lists.xaml)) reemplaza la
-  plantilla por un `GridViewRowPresenter`, que solo sabe dibujar columnas de un `GridView` e
-  **ignora el `ItemTemplate`**.
-- Es la única lista de la app en esa situación: Caja y Configuración usan `GridView` y andan.
-- **Viene de `ce9b5c9` y ya está en producción**, no es de estas tandas.
-- Ninguna de las dos barandas lo caza: no hay binding que falle, el contenido sencillamente
-  nunca se presenta. Si se arregla, conviene sumar la tercera baranda.
-
 ### Pendientes de publicación
 
-- **`master` tiene A2 y A, sin empujar.** Se decidió publicar **las dos juntas** en una sola
-  versión, en vez de A2 sola. Falta acordar el número (el último tag es `v1.9.1`, se propuso
-  `v1.10.0`) y empujar. Después va B, y después C.
+**Está todo hecho: falta publicar, y nada más.** Se decidió que salga **una sola versión con
+todo adentro** —A2, A, B y C— en vez de tres. Le llega un cambio, no tres.
+
+- Falta acordar el número (el último tag es `v1.9.1`; se propuso `v1.10.0`) y empujarlo.
 - **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
-- A2 y A se verificaron **juntas y en aislamiento**: build limpio y 283/283 sobre `master`.
-- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete. Salieron los
-  dos problemas de arriba: el saldo por medio (arreglado, `1c1c7a5`) y el historial de
-  Inventario (pendiente, y es viejo). Lo demás cierra: los cobros de Clientes suman exacto
-  contra lo que Caja dice que entró, y el precio pactado aguanta que le toquen la calculadora.
+- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, y otra vuelta
+  con lo nuevo. Salieron dos problemas: el saldo por medio (`1c1c7a5`) y el historial de
+  Inventario (`c504399`), los dos arreglados. Lo demás cierra: los cobros de Clientes suman
+  exacto contra lo que Caja dice que entró, el precio pactado aguanta que le toquen la
+  calculadora, y pagarle a un operario baja el saldo de la caja por el importe justo.
+- **El susto de la base «más nueva que el código» es solo de escritorio.** Pasa al pararse en
+  una rama vieja teniendo la base local ya migrada. Al carpintero no le puede pasar por una
+  actualización: su base va de v12 para arriba, y el guardián solo salta al revés.
 - **Opcional: ensayar la migración con la base del carpintero.** La app ya hace respaldo al cerrar (hasta 30 copias). Cierra la app antes de copiar (la base corre en modo WAL). Guardarla en `.local/` — **agregar `.local/` al `.gitignore` antes**, tiene nombres y teléfonos de sus clientes.
 
 ---
@@ -181,6 +181,9 @@ Para no volver a proponerlo:
   **$ 45.000** donde antes decía «—». Se le borró el jornal para dejarlo como estaba, pero el
   total guardado no se limpia solo: el paso 2 avisa «falta el valor del jornal» y la barra de
   abajo sigue mostrando el importe. Es un rincón chico y viejo, nadie lo pidió.
+- También del 2026-09-06, probando la liquidación: se le pagaron **$ 5.000 a Javier** por el
+  trabajo `asdasdasd`. Es un egreso de caja de verdad, así que no se borra —se corrige, no se
+  borra—; queda como el primer pago de mano de obra registrado.
 - **Correr todo**: `dotnet build -warnaserror` y después `dotnet run --no-build` en `tests\MetroCarpinteria.SmokeTest`.
 - **Abrir la app**: `src\MetroCarpinteria.App\bin\Debug\net8.0-windows\MetroCarpinteria.exe`. Cerrarla antes de recompilar o el build falla por archivo bloqueado.
 - El plan completo original está en `~/.claude/plans/fijate-esto-me-dijo-jaunty-penguin.md`.
