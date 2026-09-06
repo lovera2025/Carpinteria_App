@@ -2,15 +2,17 @@
 
 Última actualización: **2026-09-06**.
 
-**Las cinco tandas están hechas** —A2, A, B, C y la revisión de Inventario—, con la suite en
-verde. **Nada está publicado**: no se empujó ningún tag, y `master` está adelante del remoto.
+**Las cinco tandas están hechas** —A2, A, B, C y la revisión de Inventario—, la suite está en
+verde (309/309) y **no queda nada de plata abierto**: el riesgo de pagar dos veces un jornal
+se cerró el 2026-09-06. **Nada está publicado**: no se empujó ningún tag, y `master` está
+adelante del remoto.
 
-Las cuatro primeras están en `master`; la revisión de Inventario está en
-`inventario-revision`, lista para mergear. La idea sigue siendo la misma: **una sola versión
-con todo adentro**, en vez de ir tirando actualizaciones cada rato.
+Falta **mergear `inventario-revision` a `master`, acordar el número y empujar el tag**. La
+idea sigue siendo la misma: **una sola versión con todo adentro**, en vez de ir tirando
+actualizaciones cada rato.
 
-Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v14**, así que
-una rama que maneje hasta v13 no la abre. No es una falla —el guardián avisa y no toca los
+Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v15**, así que
+una rama que maneje hasta v14 no la abre. No es una falla —el guardián avisa y no toca los
 datos— y al carpintero no le puede pasar actualizando: su base va siempre hacia adelante.
 
 Este documento existe para poder retomar desde cero. Si arrancás una conversación nueva, leé esto primero.
@@ -171,6 +173,26 @@ sola y siempre para el mismo lado —salía del bolsillo del taller, sin pregunt
 - El historial sin producto elegido trae los de todos, y ahora lo dice.
 - Se avisa cuando la lista está cortada en los últimos 30.
 
+`3d033ff` · **El jornal marcado a mano avisa antes de pagarse dos veces**
+
+Era lo último de plata que quedaba abierto. El tilde viejo (`ProjectAssignment.IsPaid`) no
+movía un peso, así que un jornal marcado así no dejó egreso y la liquidación lo da pendiente:
+pagarlo desde Terminados sería pagarlo dos veces.
+
+- **Se avisa y no se toca un número.** De las tres salidas que estaban anotadas se tomó la
+  del medio. Que el tilde saldara el jornal dejaría a la caja y a la liquidación diciendo
+  cosas distintas sobre la misma plata —justo lo que esta pantalla existe para evitar—;
+  dejarlo así dejaba el riesgo puesto. Las otras dos siguen a un cambio de distancia.
+- **El cruce es por legajo y también por nombre**, y eso salió de mirar la base y no de
+  suponerla: la asignación marcada apunta a la ficha de Javier, pero el operario de ese
+  presupuesto está **tecleado suelto, sin legajo**. Cruzando solo por legajo el aviso quedaba
+  mudo en el único caso que existe de verdad. El nombre puede errarle y por eso no decide
+  plata: un falso positivo le pide que mire, un falso negativo le cuesta un jornal.
+- Avisa en tres lugares, y en ninguno cuando no hay nada que decir: la lista de trabajos, la
+  fila del operario y el panel de pago. Nombra **lo que falta**, no el jornal entero: es el
+  número que movería el botón que tiene abajo.
+- Verificado contra la base real: aparece en `asdasdasd` y no en `casa`.
+
 **Lo que la recorrida NO encontró**, y conviene que quede escrito: ninguna cantidad se compara
 del lado de SQL —todas pasan por `AsEnumerable`, que es la trampa de las columnas `TEXT`—, las
 validaciones de stock insuficiente y producto archivado se respetan y se explican bien en
@@ -192,29 +214,6 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 ---
 
 ## Lo que falta
-
-### El tilde viejo de «pagado» y el riesgo de pagar dos veces (sin resolver)
-
-**Es lo único de plata que queda abierto, y conviene cerrarlo antes de publicar.**
-
-Antes de la tanda C, marcar un jornal como pagado prendía un booleano
-(`ProjectAssignment.IsPaid`) sin mover un peso. Ese dato **no se borró** —es su registro— pero
-la liquidación **no lo mira**: para ella lo único que cuenta son los movimientos de caja.
-
-Entonces, si él ya marcó a mano el jornal de alguien en un trabajo que además tiene operarios
-cotizados, Terminados se lo va a mostrar como pendiente. Si lo paga desde ahí, **lo paga dos
-veces**.
-
-No es teórico: en la base de prueba pasa. La asignación de Javier en `asdasdasd` figuraba como
-«Pagado», y Terminados lo mostró debiéndole $ 20.000. La ventana es chica —las líneas de mano
-de obra son recientes y los trabajos viejos no tienen— pero es plata, y el riesgo aparece la
-primera vez que él abre Terminados.
-
-Tres salidas posibles, y la decisión es de él:
-
-- Que la liquidación tome el tilde viejo como saldado.
-- Que lo muestre como aviso en la fila, sin tocar los números.
-- Dejarlo así, si él sabe cuáles ya pagó.
 
 ### Pendientes de publicación
 
