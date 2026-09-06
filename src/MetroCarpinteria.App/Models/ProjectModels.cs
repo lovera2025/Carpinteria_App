@@ -61,11 +61,17 @@ public sealed class ProjectAssignmentItem
     public string ProjectTitle { get; init; } = string.Empty;
     public string? Notes { get; init; }
     public DateTime AssignedAtLocal { get; init; }
+
+    /// <summary>
+    /// El tilde viejo, de cuando marcar «pagado» no movía un peso.
+    /// </summary>
+    /// <remarks>
+    /// Ya no se muestra ni se puede cambiar: los pagos de mano de obra se registran en
+    /// Terminados y quedan asentados en Caja. La columna se conserva porque lo que él marcó
+    /// a mano es su registro y no se borra, pero mostrarlo al lado de la liquidación daría
+    /// dos números que pueden decir cosas distintas.
+    /// </remarks>
     public bool IsPaid { get; init; }
-
-    public string PaymentStatusLabel => IsPaid ? "Pagado" : "Pendiente";
-
-    public string TogglePaymentLabel => IsPaid ? "Marcar pendiente" : "Marcar pagado";
 }
 
 public sealed class EmployeeListItem
@@ -81,10 +87,18 @@ public sealed class EmployeeListItem
     public bool IsArchived { get; init; }
     public int ActiveAssignmentCount { get; init; }
 
-    /// <summary>Trabajos en los que todavía no se le pagó el jornal.</summary>
-    public int UnpaidAssignmentCount { get; init; }
+    /// <summary>
+    /// Cuánta plata se le debe por trabajos terminados.
+    /// </summary>
+    /// <remarks>
+    /// Antes acá iba la cuenta de asignaciones sin tildar, que además de ser un número y no
+    /// un importe, se leía en una columna llamada «A cobrar»: un «1» ahí parecía un peso.
+    /// Ahora sale de la liquidación, que es la misma cuenta que muestra Terminados.
+    /// </remarks>
+    public decimal PendingLabor { get; set; }
 
     public string DailyRateDisplay => AppCulture.Money(DailyRate);
+    public string PendingLaborDisplay => PendingLabor > 0m ? AppCulture.Money(PendingLabor) : "—";
 
     /// <summary>«Cristian Gómez — Oficial carpintero», para el desplegable de operarios.</summary>
     public string PickerDisplay => string.IsNullOrWhiteSpace(Role)

@@ -1,4 +1,4 @@
-namespace MetroCarpinteria.App.Models;
+﻿namespace MetroCarpinteria.App.Models;
 
 public enum NavigationSection
 {

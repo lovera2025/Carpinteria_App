@@ -81,7 +81,6 @@ public class ProjectsViewModel : ViewModelBase
         // El mismo predicado que su hermano RemoveMaterialCommand: quitar personal de un
         // proyecto archivado no tiene por qué estar permitido si quitar material no lo está.
         RemoveAssignmentCommand = new AsyncRelayCommand(RemoveAssignmentAsync, () => CanAssignToProject);
-        ToggleAssignmentPaidCommand = new RelayCommand(ToggleAssignmentPaid, _ => CanToggleAssignmentPaid);
         PrintQuoteCommand = new RelayCommand(_ => PrintQuote(), _ => CanPrintQuote);
         SaveQuotePdfCommand = new RelayCommand(_ => SaveQuotePdf(), _ => CanPrintQuote);
         CancelProjectCommand = new AsyncRelayCommand(CancelSelectedAsync, () => CanCancelSelected);
@@ -152,7 +151,6 @@ public class ProjectsViewModel : ViewModelBase
             OnPropertyChanged(nameof(CanArchiveSelected));
             OnPropertyChanged(nameof(CanRestoreSelected));
             OnPropertyChanged(nameof(CanAssignToProject));
-            OnPropertyChanged(nameof(CanToggleAssignmentPaid));
             OnPropertyChanged(nameof(CanCancelSelected));
             OnPropertyChanged(nameof(CanStartWork));
             OnPropertyChanged(nameof(CanMarkReady));
@@ -322,9 +320,6 @@ public class ProjectsViewModel : ViewModelBase
         _deleteBlockReason ?? "Borra el proyecto junto con su presupuesto.";
     public bool CanAssignToProject => SelectedProject is { IsArchived: false };
 
-    /// <summary>Se puede marcar el jornal aunque el trabajo ya esté terminado.</summary>
-    public bool CanToggleAssignmentPaid => SelectedProject is { IsArchived: false };
-
     /// <summary>
     /// Se cancela mientras el material siga en su sitio: aprobado o en taller. Listo
     /// significa que ya se usó, y devolverlo al inventario inventaría existencias.
@@ -357,7 +352,6 @@ public class ProjectsViewModel : ViewModelBase
     public ICommand AssignEmployeeCommand { get; }
     public ICommand RemoveMaterialCommand { get; }
     public ICommand RemoveAssignmentCommand { get; }
-    public ICommand ToggleAssignmentPaidCommand { get; }
     public ICommand PrintQuoteCommand { get; }
     public ICommand SaveQuotePdfCommand { get; }
     public ICommand CancelProjectCommand { get; }
@@ -626,10 +620,19 @@ public class ProjectsViewModel : ViewModelBase
 
         var title = SelectedProject.Title;
 
+        // Archivar lo saca de la lista, y con él se va de la vista la mano de obra que
+        // todavía se debe. Es el único momento en que hace falta un diálogo de verdad:
+        // esconder una deuda sin decirlo es la clase de cosa que después no se encuentra.
+        var pending = AppHost.SettlementService.GetPendingForProject(SelectedProject.Id);
+        var pendingNote = pending > 0m
+            ? $"\n\nOjo: todavía debés {AppCulture.Money(pending)} de mano de obra de este " +
+              "trabajo. Archivado no vas a poder registrar el pago desde Caja › Trabajos terminados."
+            : string.Empty;
+
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             "Archivar proyecto",
             $"«{title}» va a dejar de aparecer en la lista.\n\n" +
-            "Los materiales y el personal asignados se conservan.",
+            "Los materiales y el personal asignados se conservan." + pendingNote,
             confirmText: "Archivar");
 
         if (!confirmed)
@@ -867,30 +870,6 @@ public class ProjectsViewModel : ViewModelBase
         catch (Exception ex)
         {
             AppHost.NotificationService.Error(ex.Message, ex);
-        }
-    }
-
-    private void ToggleAssignmentPaid(object? parameter)
-    {
-        if (parameter is not ProjectAssignmentItem assignment)
-        {
-            return;
-        }
-
-        try
-        {
-            var paid = !assignment.IsPaid;
-            AppHost.ProjectService.SetAssignmentPaid(assignment.Id, paid);
-            SetStatus(
-                paid
-                    ? $"{assignment.EmployeeName}: jornal marcado como pagado."
-                    : $"{assignment.EmployeeName}: jornal vuelto a pendiente.",
-                isError: false);
-            Load();
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message, isError: true);
         }
     }
 

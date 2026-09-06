@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -1162,6 +1162,7 @@ internal static class UiSmokeTests
                 () => new CashRegisterView(),
                 () => new QuotesView(),
                 () => new ProjectsView(),
+                () => new SettlementsView(),
                 () => new StaffView(),
                 () => new ReportsView(),
                 () => new SettingsView(),
@@ -1223,6 +1224,7 @@ internal static class UiSmokeTests
                     (() => new CashRegisterView(), () => new CashRegisterViewModel(() => { })),
                     (() => new QuotesView(), () => new QuotesViewModel(() => { })),
                     (() => new ProjectsView(), () => new ProjectsViewModel(() => { })),
+                    (() => new SettlementsView(), () => new SettlementsViewModel(() => { })),
                     (() => new ClientsView(), () => new ClientsViewModel(() => { })),
                     (() => new StaffView(), () => new StaffViewModel(() => { })),
                     (() => new ReportsView(), () => new ReportsViewModel()),
@@ -1263,6 +1265,7 @@ internal static class UiSmokeTests
                 () => new CashRegisterView(),
                 () => new QuotesView(),
                 () => new ProjectsView(),
+                () => new SettlementsView(),
                 () => new StaffView(),
                 () => new ReportsView(),
                 () => new SettingsView(),

@@ -30,10 +30,20 @@ public class CashRegisterViewModel : ViewModelBase
     private MethodOption _filterMethod;
     private string _statusMessage = string.Empty;
     private bool _isStatusError;
+    private bool _isShowingSettlements;
 
     public CashRegisterViewModel(Action onDataChanged)
     {
         _onDataChanged = onDataChanged;
+
+        // La liquidación de los terminados vive acá adentro y no en el menú: pagarle a un
+        // operario es plata que sale de la caja, y el menú ya tiene diez entradas.
+        Settlements = new SettlementsViewModel(() =>
+        {
+            // Un pago mueve el saldo, así que la caja de atrás tiene que quedar al día.
+            Load();
+            onDataChanged();
+        });
         Movements = new ObservableCollection<CashMovementListItem>();
         MethodTotals = new ObservableCollection<CashMethodTotal>();
         SuspiciousOpenings = new ObservableCollection<SuspiciousOpening>();
@@ -50,7 +60,44 @@ public class CashRegisterViewModel : ViewModelBase
         RegisterMovementCommand = new RelayCommand(_ => RegisterMovement());
         DismissSuspiciousCommand = new RelayCommand(_ => DismissSuspicious());
         DiscardOpeningCommand = new AsyncRelayCommand(DiscardOpeningAsync);
+        OpenSettlementsCommand = new RelayCommand(_ => IsShowingSettlements = true);
+        CloseSettlementsCommand = new RelayCommand(_ => IsShowingSettlements = false);
     }
+
+    /// <summary>La liquidación de los trabajos terminados, como una vista de adentro de Caja.</summary>
+    public SettlementsViewModel Settlements { get; }
+
+    /// <summary>Se está mirando la liquidación en vez del movimiento de la caja.</summary>
+    public bool IsShowingSettlements
+    {
+        get => _isShowingSettlements;
+        private set
+        {
+            if (!SetProperty(ref _isShowingSettlements, value))
+            {
+                return;
+            }
+
+            if (value)
+            {
+                Settlements.Load();
+            }
+
+            OnPropertyChanged(nameof(IsShowingCash));
+        }
+    }
+
+    public bool IsShowingCash => !IsShowingSettlements;
+
+    /// <summary>Cuánta mano de obra de trabajos terminados está sin pagar.</summary>
+    public string PendingLaborDisplay => Settlements.TotalPendingDisplay;
+
+    /// <summary>Lo que dice el acceso: si no debe nada, no hace falta alarmar.</summary>
+    public string PendingLaborDetail => Settlements.TotalPending > 0m
+        ? $"Falta pagar {Settlements.TotalPendingDisplay} de mano de obra."
+        : "No le debés mano de obra a nadie.";
+
+    public bool HasPendingLabor => Settlements.TotalPending > 0m;
 
     public ObservableCollection<CashMovementListItem> Movements { get; }
 
@@ -158,6 +205,9 @@ public class CashRegisterViewModel : ViewModelBase
         private set => SetProperty(ref _isStatusError, value);
     }
 
+    public ICommand OpenSettlementsCommand { get; }
+    public ICommand CloseSettlementsCommand { get; }
+
     public ICommand LoadCommand { get; }
     public ICommand RegisterMovementCommand { get; }
     public ICommand DismissSuspiciousCommand { get; }
@@ -186,6 +236,13 @@ public class CashRegisterViewModel : ViewModelBase
         {
             Movements.Add(movement);
         }
+
+        // El acceso a los terminados muestra cuánta mano de obra falta pagar, así que hay
+        // que recalcularlo con la caja: si no, un pago se ve en el saldo y no en el acceso.
+        Settlements.Load();
+        OnPropertyChanged(nameof(PendingLaborDisplay));
+        OnPropertyChanged(nameof(PendingLaborDetail));
+        OnPropertyChanged(nameof(HasPendingLabor));
 
         _onDataChanged();
         CommandManager.InvalidateRequerySuggested();

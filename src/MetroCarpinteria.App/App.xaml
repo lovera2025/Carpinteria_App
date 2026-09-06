@@ -82,6 +82,10 @@
                 <views:ProjectsView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type vm:SettlementsViewModel}">
+                <views:SettlementsView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type vm:StaffViewModel}">
                 <views:StaffView />
             </DataTemplate>

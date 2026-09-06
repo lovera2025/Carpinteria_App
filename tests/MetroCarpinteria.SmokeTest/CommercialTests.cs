@@ -263,8 +263,11 @@ internal static class CommercialTests
         PaymentService payments,
         CashRegisterService cash,
         InventoryService inventory,
-        ProjectService projects)
+        ProjectService projects,
+        SettlementService settlements)
     {
+        RunSettlementTests(run, quotes, cash, inventory, projects, settlements);
+
         run("Comercial: guardar IVA y descuento actualiza el total del presupuesto", () =>
         {
             var id = NewCalculatedQuote(quotes, inventory, "Mesada con IVA", "Cliente con IVA");
@@ -563,6 +566,174 @@ internal static class CommercialTests
 
         quotes.AddInventoryLine(id, productId, 4m);
         quotes.SaveCalculation(id, 2000m, 2m, 25000m, BudgetRates.Defaults());
+
+        return id;
+    }
+
+    /// <summary>
+    /// La liquidación de los trabajos terminados: qué le toca a cada operario, qué cobró, y
+    /// que pagarle mueva la caja de verdad.
+    /// </summary>
+    /// <remarks>
+    /// Es lo que pidió el carpintero en la grabación: «una vez terminado… ahí tiene que
+    /// estar el desglose… cuánto lo de Alejandro y cuánto lo de Javi. Entonces yo a
+    /// Alejandro le pongo Pagar».
+    /// </remarks>
+    private static void RunSettlementTests(
+        Action<string, Action> run,
+        QuoteService quotes,
+        CashRegisterService cash,
+        InventoryService inventory,
+        ProjectService projects,
+        SettlementService settlements)
+    {
+        run("Liquidación: un trabajo terminado trae lo que le toca a cada operario", () =>
+        {
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Placard a liquidar", "Cliente que cerró");
+
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            Assert.Equal(job.Workers.Count, 2, "operarios del trabajo");
+
+            // 3 días × $ 20.000 y 2 días × $ 15.000: los valores congelados al cotizar.
+            var alejandro = job.Workers.Single(w => w.Description == "Alejandro");
+            var javi = job.Workers.Single(w => w.Description == "Javi");
+
+            Assert.Equal(alejandro.Due, 60000m, "le toca a Alejandro");
+            Assert.Equal(javi.Due, 30000m, "le toca a Javi");
+            Assert.Equal(job.TotalDue, 90000m, "mano de obra total del trabajo");
+            Assert.Equal(job.TotalPending, 90000m, "sin pagar nada, falta todo");
+            Assert.False(alejandro.IsSettled, "todavía no se le pagó nada.");
+
+            // El jefe no es una línea de mano de obra: lo suyo sale por separado.
+            Assert.False(job.Workers.Any(w => w.Description.Contains("efe", StringComparison.Ordinal)),
+                "el jefe no tendría que figurar en la lista de a quién pagarle.");
+        });
+
+        run("Liquidación: pagarle a un operario saca la plata de la caja", () =>
+        {
+            // El registro del pago ES el movimiento: no hay un booleano aparte que pueda
+            // discrepar con la caja.
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Mesada a pagar", "Cliente conforme");
+            var line = settlements.GetWorkers(id).Single(w => w.Description == "Alejandro");
+            var before = cash.GetBalance();
+
+            settlements.Pay(line.LaborLineId, 60000m);
+
+            var after = cash.GetBalance();
+            Assert.Equal(after.Balance, before.Balance - 60000m, "saldo de la caja tras pagarle");
+
+            var paid = settlements.GetWorkers(id).Single(w => w.Description == "Alejandro");
+            Assert.Equal(paid.Paid, 60000m, "cobrado por Alejandro");
+            Assert.Equal(paid.Pending, 0m, "no le queda nada pendiente");
+            Assert.True(paid.IsSettled, "con lo que le tocaba pagado, tendría que quedar saldado.");
+
+            // Y el movimiento dice de quién es y de qué trabajo, para poder cruzarlo.
+            var movement = cash.GetMovements().First(m => m.ProjectId == id);
+            Assert.True(movement.Reason.Contains("Alejandro", StringComparison.Ordinal),
+                $"el motivo tendría que nombrar al operario, dice «{movement.Reason}».");
+        });
+
+        run("Liquidación: se puede pagar en varias veces", () =>
+        {
+            // Es el caso real: le da algo a cuenta y el resto cuando cobra el trabajo.
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Vestidor en cuotas", "Cliente paciente");
+            var line = settlements.GetWorkers(id).Single(w => w.Description == "Javi");
+
+            settlements.Pay(line.LaborLineId, 10000m);
+
+            var partial = settlements.GetWorkers(id).Single(w => w.Description == "Javi");
+            Assert.Equal(partial.Paid, 10000m, "primer pago");
+            Assert.Equal(partial.Pending, 20000m, "lo que falta tras el primer pago");
+            Assert.True(partial.IsPartiallyPaid, "cobró una parte: tendría que verse así.");
+            Assert.False(partial.IsSettled, "con 10.000 de 30.000 no está saldado.");
+
+            settlements.Pay(line.LaborLineId, 20000m);
+
+            var settled = settlements.GetWorkers(id).Single(w => w.Description == "Javi");
+            Assert.Equal(settled.Paid, 30000m, "total cobrado");
+            Assert.True(settled.IsSettled, "con los dos pagos tendría que quedar saldado.");
+        });
+
+        run("Liquidación: saldado es «pagado >= le toca», no una igualdad exacta", () =>
+        {
+            // Con una igualdad, pagarle un peso de más lo dejaba pendiente para siempre.
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Biblioteca redondeada", "Cliente redondo");
+            var line = settlements.GetWorkers(id).Single(w => w.Description == "Javi");
+
+            settlements.Pay(line.LaborLineId, 30001m);
+
+            var worker = settlements.GetWorkers(id).Single(w => w.Description == "Javi");
+            Assert.True(worker.IsSettled, "pagarle de más no puede dejarlo pendiente.");
+            Assert.Equal(worker.Pending, 0m, "lo que falta nunca puede ser negativo");
+            Assert.True(worker.IsOverpaid, "cobró de más: la pantalla lo tiene que poder decir.");
+        });
+
+        run("Liquidación: la deuda se agrupa por persona sumando todos sus trabajos", () =>
+        {
+            var pending = settlements.GetPendingByWorker();
+
+            // Javi quedó saldado en los tres trabajos de arriba; Alejandro no, en dos de ellos.
+            var alejandro = pending.FirstOrDefault(d => d.Description == "Alejandro");
+            Assert.NotNull(alejandro, "Alejandro tendría que figurar entre los que esperan cobrar");
+            Assert.True(alejandro!.ProjectCount >= 2, "la deuda suma los trabajos, no muestra uno solo.");
+            Assert.True(alejandro.Pending > 0m, "si figura en la lista, algo se le debe.");
+        });
+
+        run("Liquidación: un trabajo sin operarios no pide pagarle a nadie", () =>
+        {
+            // Lo hizo el jefe solo. Su parte es un egreso normal de la caja, no una línea
+            // de mano de obra, así que la pantalla no tiene a quién pagarle.
+            var productId = inventory.CreateProduct("Tabla del jefe solo", 50m, 0m, "Metro", 400m).Id;
+            var id = quotes.CreateQuote("Repisa del jefe", "Cliente directo", null).Id;
+            quotes.AddInventoryLine(id, productId, 2m);
+            quotes.SaveCalculation(id, 1000m, 1m, 20000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(id);
+            projects.ChangeStatus(id, ProjectStatus.Completed);
+
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            Assert.True(job.IsForemanOnly, "sin operarios cotizados, el trabajo lo hizo el jefe solo.");
+            Assert.Equal(job.TotalPending, 0m, "no se le debe mano de obra a nadie");
+            Assert.NotNull(job.Breakdown, "el desglose tiene que estar: es lo que él quiere ver ahí");
+        });
+
+        run("Liquidación: un pago de mano de obra no se confunde con un cobro del cliente", () =>
+        {
+            // Los dos tocan la caja y los dos llevan el proyecto anotado. Lo que los
+            // distingue es el origen y el signo.
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Cocina rastreable", "Cliente atento");
+            var line = settlements.GetWorkers(id).Single(w => w.Description == "Javi");
+
+            settlements.Pay(line.LaborLineId, 5000m);
+
+            var movement = cash.GetMovements().First(m => m.ProjectId == id);
+
+            Assert.False(movement.IsIncome, "pagarle a un operario es plata que sale.");
+            Assert.True(
+                movement.Reason.Contains("Pago de mano de obra", StringComparison.Ordinal),
+                $"el movimiento tendría que leerse como un pago de mano de obra, dice «{movement.Reason}».");
+        });
+    }
+
+    /// <summary>Un trabajo terminado con dos operarios cotizados, para liquidarlo.</summary>
+    private static int FinishedJobWithWorkers(
+        QuoteService quotes,
+        InventoryService inventory,
+        ProjectService projects,
+        string title,
+        string client)
+    {
+        var productId = inventory.CreateProduct($"Material {title}", 100m, 0m, "Metro", 500m).Id;
+        var id = quotes.CreateQuote(title, client, null).Id;
+
+        quotes.AddInventoryLine(id, productId, 3m);
+        quotes.AddLaborLine(id, null, "Alejandro", 3m, 20000m);
+        quotes.AddLaborLine(id, null, "Javi", 2m, 15000m);
+        quotes.SaveCalculation(id, 1500m, 2m, 30000m, BudgetRates.Defaults());
+
+        quotes.ApproveQuote(id);
+        projects.ChangeStatus(id, ProjectStatus.Completed);
 
         return id;
     }

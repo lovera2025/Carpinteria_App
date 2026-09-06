@@ -20,6 +20,7 @@ public static class AppHost
     public static QuoteDocumentService QuoteDocumentService { get; private set; } = null!;
     public static PdfExportService PdfExportService { get; private set; } = null!;
     public static EmployeeService EmployeeService { get; private set; } = null!;
+    public static SettlementService SettlementService { get; private set; } = null!;
     public static ReportService ReportService { get; private set; } = null!;
     public static UpdateService UpdateService { get; private set; } = null!;
     public static ThemeService ThemeService { get; private set; } = null!;
@@ -79,6 +80,7 @@ public static class AppHost
         QuoteDocumentService = new QuoteDocumentService();
         PdfExportService = new PdfExportService();
         EmployeeService = new EmployeeService(DatabaseService);
+        SettlementService = new SettlementService(DatabaseService, QuoteService, CashRegisterService);
         ReportService = new ReportService(DatabaseService);
         UpdateService = new UpdateService(SettingsService);
         ThemeService = new ThemeService(SettingsService);

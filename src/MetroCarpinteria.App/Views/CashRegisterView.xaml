@@ -9,7 +9,8 @@
     <Grid x:Name="PageRoot"
           Background="{DynamicResource ContentBackgroundBrush}"
           Opacity="0">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20"
+                      Visibility="{Binding IsShowingCash, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel MaxWidth="1000">
                 <TextBlock Text="Caja"
                            Style="{StaticResource PageTitleStyle}"
@@ -37,6 +38,26 @@
                         <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="12"
                                    Margin="0,12,0,0" TextWrapping="Wrap"
                                    Text="{Binding HistorySummary}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- La liquidación de los terminados entra por acá y no por el menú: pagarle
+                     a un operario es plata que sale de esta misma caja, y el menú lateral ya
+                     tiene diez entradas. -->
+                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Trabajos terminados" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="{Binding PendingLaborDetail}"
+                                   FontSize="15" FontWeight="SemiBold" Margin="0,6,0,0"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource PrimaryBrownBrush}" />
+                        <TextBlock Text="El desglose de cada trabajo cerrado, y a quién le falta cobrar su jornal."
+                                   Style="{StaticResource SubtitleStyle}" TextWrapping="Wrap"
+                                   Margin="0,2,0,12" />
+                        <Button Content="Ver los trabajos terminados"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Command="{Binding OpenSettlementsCommand}"
+                                HorizontalAlignment="Left" />
                     </StackPanel>
                 </Border>
 
@@ -179,6 +200,22 @@
                 </Border>
             </StackPanel>
         </ScrollViewer>
+
+        <!-- La liquidación, adentro de Caja. Se entra desde la tarjeta de arriba y se
+             vuelve con el botón: es una vista de la misma sección, no otra sección. -->
+        <Grid Visibility="{Binding IsShowingSettlements, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Button Grid.Row="0"
+                    Content="← Volver a la caja"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Command="{Binding CloseSettlementsCommand}"
+                    HorizontalAlignment="Left"
+                    Margin="24,20,0,0" />
+            <ContentControl Grid.Row="1" Content="{Binding Settlements}" />
+        </Grid>
     </Grid>
 
     <!-- PageRoot arranca en Opacity 0 y esto lo hace aparecer. Sin este trigger la

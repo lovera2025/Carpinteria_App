@@ -429,7 +429,14 @@ internal static class Program
             RunQuoteFreshnessTests();
             RunStockCounterTests(inventory, database, reports);
             RunQuoteTests(inventory, quotes, projects);
-            CommercialTests.RunIntegration(Run, quotes, new PaymentService(database), cash, inventory, projects);
+            CommercialTests.RunIntegration(
+                Run,
+                quotes,
+                new PaymentService(database),
+                cash,
+                inventory,
+                projects,
+                new SettlementService(database, quotes, cash));
             ClientTests.Run(Run, new ClientService(database), quotes, inventory);
 
             Run("Backup: create and restore", () =>

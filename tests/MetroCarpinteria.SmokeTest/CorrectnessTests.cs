@@ -320,8 +320,13 @@ internal static class CorrectnessTests
         ProjectService projects,
         EmployeeService employees)
     {
-        run("Correctitud: el jornal arranca pendiente y se puede marcar pagado", () =>
+        run("Correctitud: marcar el jornal como pagado no mueve un peso", () =>
         {
+            // El tilde sigue existiendo en la base porque lo que él marcó a mano es su
+            // registro y no se borra. Lo que cambió es que ya no se muestra ni se ofrece:
+            // prendía un booleano sin sacar plata de la caja, y al lado de la liquidación
+            // eran dos números que podían decir cosas distintas sobre el mismo jornal.
+            // Ahora los jornales se pagan en Terminados, y ahí el pago ES el movimiento.
             var employee = employees.Create("Operario a cobrar", null, "Ayudante", 18000m);
             var project = projects.Create("Placard en curso", "Cliente del barrio", null, 80000m, ProjectStatus.InProgress);
 
@@ -329,21 +334,17 @@ internal static class CorrectnessTests
 
             var assigned = projects.GetProjectAssignments(project.Id).Single();
             Assert.False(assigned.IsPaid, "al asignar tiene que arrancar pendiente");
-            Assert.Equal(assigned.PaymentStatusLabel, "Pendiente", "etiqueta inicial");
 
             projects.SetAssignmentPaid(assigned.Id, true);
             var paid = projects.GetProjectAssignments(project.Id).Single();
-            Assert.True(paid.IsPaid, "tenía que quedar pagado");
-            Assert.Equal(paid.PaymentStatusLabel, "Pagado", "etiqueta pagado");
+            Assert.True(paid.IsPaid, "el dato viejo se sigue guardando tal cual");
 
+            // Y lo que Personal muestra ya no es este tilde: es la plata que se le debe por
+            // trabajos terminados, que sale de la liquidación. Este proyecto está en curso
+            // y no tiene operarios cotizados, así que no le debe nada por acá.
             var staff = employees.GetEmployees(false, "Operario a cobrar").Single();
-            Assert.Equal(staff.UnpaidAssignmentCount, 0, "ya no le queda nada a cobrar");
-
-            projects.SetAssignmentPaid(paid.Id, false);
-            Assert.Equal(
-                employees.GetEmployees(false, "Operario a cobrar").Single().UnpaidAssignmentCount,
-                1,
-                "volvió a pendiente");
+            Assert.Equal(staff.PendingLabor, 0m, "lo que se le debe sale de la liquidación");
+            Assert.Equal(staff.PendingLaborDisplay, "—", "sin deuda, la columna no muestra un cero");
         });
     }
 

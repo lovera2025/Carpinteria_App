@@ -202,9 +202,17 @@ public class StaffViewModel : ViewModelBase
         var items = AppHost.EmployeeService.GetEmployees(ShowArchived, SearchText);
         var selectedId = SelectedEmployee?.Id;
 
+        // Lo que se le debe sale de la liquidación, que es la misma cuenta que muestra
+        // Terminados: le toca menos lo que ya cobró. Así las dos pantallas no pueden
+        // decir cosas distintas sobre la misma plata.
+        var pending = AppHost.SettlementService.GetPendingByWorker()
+            .Where(d => d.EmployeeId.HasValue)
+            .ToDictionary(d => d.EmployeeId!.Value, d => d.Pending);
+
         Employees.Clear();
         foreach (var item in items)
         {
+            item.PendingLabor = pending.TryGetValue(item.Id, out var amount) ? amount : 0m;
             Employees.Add(item);
         }
 

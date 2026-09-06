@@ -42,9 +42,7 @@ public sealed class EmployeeService
                 Role = e.Role,
                 DailyRate = e.DailyRate,
                 IsArchived = e.IsArchived,
-                ActiveAssignmentCount = context.ProjectAssignments.Count(a => a.EmployeeId == e.Id),
-                UnpaidAssignmentCount = context.ProjectAssignments.Count(
-                    a => a.EmployeeId == e.Id && !a.IsPaid)
+                ActiveAssignmentCount = context.ProjectAssignments.Count(a => a.EmployeeId == e.Id)
             })
             .ToList();
     }
