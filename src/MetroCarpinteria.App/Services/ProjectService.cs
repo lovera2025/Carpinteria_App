@@ -1,4 +1,4 @@
-using MetroCarpinteria.App.Data;
+﻿using MetroCarpinteria.App.Data;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
 using MetroCarpinteria.App.Models;
@@ -371,6 +371,7 @@ public sealed class ProjectService
                 ProductId = productId,
                 Type = StockMovementType.Out,
                 Quantity = quantity,
+                Unit = product.Unit,
                 Reason = $"Asignado a proyecto: {project.Title}",
                 CreatedAtUtc = now
             });
@@ -380,6 +381,10 @@ public sealed class ProjectService
                 ProjectId = projectId,
                 ProductId = productId,
                 Quantity = quantity,
+
+                // Se congela lo que cuesta hoy: si mañana sube la melamina, lo que costó
+                // este trabajo tiene que seguir diciendo lo mismo.
+                UnitCost = product.CostPrice,
                 AssignedAtUtc = now
             });
 
@@ -477,6 +482,7 @@ public sealed class ProjectService
                 ProductId = material.ProductId,
                 Type = StockMovementType.In,
                 Quantity = material.Quantity,
+                Unit = material.Product.Unit,
                 Reason = $"Devuelto desde proyecto: {material.Project.Title}",
                 CreatedAtUtc = now
             });

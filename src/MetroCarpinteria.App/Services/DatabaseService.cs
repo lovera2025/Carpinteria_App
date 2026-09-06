@@ -174,6 +174,7 @@ public sealed class DatabaseService
                 ProductId INTEGER NOT NULL,
                 Type INTEGER NOT NULL,
                 Quantity TEXT NOT NULL,
+                Unit TEXT NOT NULL DEFAULT '',
                 Reason TEXT NOT NULL,
                 CreatedAtUtc TEXT NOT NULL,
                 CONSTRAINT FK_StockMovements_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE RESTRICT
@@ -264,6 +265,7 @@ public sealed class DatabaseService
                 ProjectId INTEGER NOT NULL,
                 ProductId INTEGER NOT NULL,
                 Quantity TEXT NOT NULL,
+                UnitCost TEXT NULL,
                 AssignedAtUtc TEXT NOT NULL,
                 CONSTRAINT FK_ProjectMaterials_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE,
                 CONSTRAINT FK_ProjectMaterials_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE RESTRICT

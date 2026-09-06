@@ -34,6 +34,106 @@ internal static class MigrationTests
         RunWorkshopCycleMigrationTests(run);
         RunManualPriceMigrationTests(run);
         RunCashSafeMigrationTests(run);
+        RunFrozenStockFactsMigrationTests(run);
+    }
+
+    // --- v15: unidad y costo congelados en el stock -----------------------------
+
+    private static void RunFrozenStockFactsMigrationTests(Action<string, Action> run)
+    {
+        run("Migración v15: los movimientos viejos se quedan con la unidad que tenían", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+
+            legacy.Execute("""
+                INSERT INTO Products (Id, Name, CurrentStock, MinimumStock, Unit, IsArchived, CreatedAtUtc, UpdatedAtUtc)
+                VALUES (71, 'Melamina cargada mal', 40, 5, 'Metro', 0,
+                        '2026-06-01T10:00:00Z', '2026-06-01T10:00:00Z');
+
+                INSERT INTO StockMovements (Id, ProductId, Type, Quantity, Reason, CreatedAtUtc)
+                VALUES (81, 71, 0, 40, 'Stock inicial', '2026-06-01T10:00:00Z'),
+                       (82, 71, 1, 6, 'Asignado a proyecto: Placard', '2026-06-10T10:00:00Z');
+                """);
+
+            var movements = legacy.Count("StockMovements");
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "versión del esquema");
+            Assert.Equal(legacy.Count("StockMovements"), movements, "movimientos preservados");
+            Assert.Equal(
+                legacy.ReadText("SELECT Unit FROM StockMovements WHERE Id = 81;"),
+                "Metro",
+                "la unidad se rellena con la del producto");
+
+            // Y acá está el punto: corregir la unidad del producto —que es exactamente lo
+            // que uno hace al notar que la cargó mal— ya no reescribe el pasado.
+            legacy.Execute("UPDATE Products SET Unit = 'Metro cuadrado' WHERE Id = 71;");
+
+            Assert.Equal(
+                legacy.ReadText("SELECT Unit FROM StockMovements WHERE Id = 82;"),
+                "Metro",
+                "el movimiento viejo conserva la unidad que tenía cuando pasó");
+
+            legacy.AssertIntegrity();
+        });
+
+        run("Migración v15: el material ya asignado se queda con lo que costaba", () =>
+        {
+            using var legacy = LegacyDatabase.Create();
+
+            legacy.Execute("""
+                INSERT INTO Products (Id, Name, CurrentStock, MinimumStock, Unit, IsArchived, CreatedAtUtc, UpdatedAtUtc)
+                VALUES (72, 'Melamina con precio', 30, 5, 'Metro cuadrado', 0,
+                        '2026-06-01T10:00:00Z', '2026-06-01T10:00:00Z'),
+                       (73, 'Tabla sin precio', 10, 2, 'Unidad', 0,
+                        '2026-06-01T10:00:00Z', '2026-06-01T10:00:00Z');
+
+                INSERT INTO Projects (Id, Title, ClientName, Budget, Status, IsArchived, CreatedAtUtc, UpdatedAtUtc)
+                VALUES (74, 'Mueble con material', 'Cliente', 200000, 1, 0,
+                        '2026-06-05T10:00:00Z', '2026-06-05T10:00:00Z');
+
+                INSERT INTO ProjectMaterials (Id, ProjectId, ProductId, Quantity, AssignedAtUtc)
+                VALUES (75, 74, 72, 4, '2026-06-05T11:00:00Z'),
+                       (76, 74, 73, 2, '2026-06-05T11:00:00Z');
+                """);
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            // El precio de costo lo crea la v1, así que el caso solo se puede sembrar
+            // después de migrar. Se vuelve la versión a 14 para reejecutar el paso v15 solo,
+            // que es la misma técnica que usa el test de la v13.
+            legacy.Execute("""
+                UPDATE Products SET CostPrice = 8500 WHERE Id = 72;
+                UPDATE ProjectMaterials SET UnitCost = NULL;
+                PRAGMA user_version = 14;
+                """);
+
+            new SchemaMigrator(legacy.Path).MigrateToLatest();
+
+            Assert.Equal(legacy.ReadUserVersion(), SchemaMigrator.LatestVersion, "versión del esquema");
+            Assert.Equal(
+                legacy.ReadDecimal("SELECT UnitCost FROM ProjectMaterials WHERE Id = 75;"),
+                8500m,
+                "el costo se rellena con el del producto");
+
+            // Y después sube la melamina: lo que costó ese trabajo no se mueve.
+            legacy.Execute("UPDATE Products SET CostPrice = 12000 WHERE Id = 72;");
+
+            Assert.Equal(
+                legacy.ReadDecimal("SELECT UnitCost FROM ProjectMaterials WHERE Id = 75;"),
+                8500m,
+                "subir el precio del producto no cambia lo que costó el trabajo");
+
+            // Un producto sin precio cargado queda en null: es «no sé cuánto costaba», que
+            // no es lo mismo que cero.
+            Assert.Equal(
+                legacy.ReadInt("SELECT COUNT(*) FROM ProjectMaterials WHERE Id = 76 AND UnitCost IS NULL;"),
+                1,
+                "sin precio de costo, el material queda sin valuar");
+
+            legacy.AssertIntegrity();
+        });
     }
 
     // --- v7: afinidad de las columnas de dinero -------------------------------
