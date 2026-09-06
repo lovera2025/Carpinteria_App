@@ -20,12 +20,19 @@ public partial class QuotesViewModel
             return;
         }
 
+        // Un presupuesto puede aprobarse sin materiales de inventario: hay trabajos que son
+        // solo mano de obra, o donde la madera la pone el cliente. Ahí el stock no se toca,
+        // así que ni el texto lo promete ni el botón dice «y descontar».
+        var touchesStock = Detail.Lines.Any(l => l.IsFromInventory);
+
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             "Aprobar el presupuesto",
             $"«{Detail.Title}» pasa a ser un trabajo en curso por {Detail.BudgetDisplay}.\n\n" +
-            "Del inventario se descuenta el stock disponible de los materiales cotizados. " +
-            "Lo que no alcance queda anotado como pendiente de compra.",
-            confirmText: "Aprobar y descontar");
+            (touchesStock
+                ? "Del inventario se descuenta el stock disponible de los materiales cotizados. " +
+                  "Lo que no alcance queda anotado como pendiente de compra."
+                : "No cotizaste materiales del inventario, así que el stock queda como está."),
+            confirmText: touchesStock ? "Aprobar y descontar" : "Aprobar");
 
         if (!confirmed)
         {

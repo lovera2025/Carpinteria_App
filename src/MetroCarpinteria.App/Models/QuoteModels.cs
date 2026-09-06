@@ -206,9 +206,15 @@ public sealed class QuoteApprovalResult
 
     public bool HasShortfalls => Shortfalls.Count > 0;
 
+    /// <summary>
+    /// Un presupuesto puede no tener materiales —solo mano de obra, o la madera la pone el
+    /// cliente—, y ahí decir «se descontaron todos» sería mentir sobre el inventario.
+    /// </summary>
     public string Summary => HasShortfalls
         ? $"Aprobado. Se descontó el stock disponible y quedan {Shortfalls.Count} materiales por comprar."
-        : "Aprobado. Se descontaron todos los materiales del inventario.";
+        : DiscountedLines == 0
+            ? "Aprobado. No había materiales que descontar del inventario."
+            : "Aprobado. Se descontaron todos los materiales del inventario.";
 }
 
 public sealed class QuotePendingSummary
