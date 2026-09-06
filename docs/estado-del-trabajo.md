@@ -105,8 +105,6 @@ por transferencia no suma al efectivo.
   devuelto a presupuesto con «Cancelar trabajo» — que es la prueba de que aprobar **no** es
   irreversible, el argumento con el que se justificaba la validación.
 
----
-
 ### Tanda C — la liquidación de los terminados
 
 `bf72917` · Lo último que pidió en la grabación: *"una vez terminado tendría que ir a
