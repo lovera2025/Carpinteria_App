@@ -436,6 +436,7 @@ internal static class Program
                 cash,
                 inventory,
                 projects,
+                employees,
                 new SettlementService(database, quotes, cash));
             ClientTests.Run(Run, new ClientService(database), quotes, inventory);
 

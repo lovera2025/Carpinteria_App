@@ -264,9 +264,10 @@ internal static class CommercialTests
         CashRegisterService cash,
         InventoryService inventory,
         ProjectService projects,
+        EmployeeService employees,
         SettlementService settlements)
     {
-        RunSettlementTests(run, quotes, cash, inventory, projects, settlements);
+        RunSettlementTests(run, quotes, cash, inventory, projects, employees, settlements);
         RunExtraMaterialTests(run, quotes, inventory, projects, settlements);
 
         run("Comercial: guardar IVA y descuento actualiza el total del presupuesto", () =>
@@ -586,6 +587,7 @@ internal static class CommercialTests
         CashRegisterService cash,
         InventoryService inventory,
         ProjectService projects,
+        EmployeeService employees,
         SettlementService settlements)
     {
         run("Liquidación: un trabajo terminado trae lo que le toca a cada operario", () =>
@@ -715,6 +717,131 @@ internal static class CommercialTests
                 movement.Reason.Contains("Pago de mano de obra", StringComparison.Ordinal),
                 $"el movimiento tendría que leerse como un pago de mano de obra, dice «{movement.Reason}».");
         });
+
+        run("Liquidación: el jornal marcado a mano se avisa, sin tocar un número", () =>
+        {
+            // El caso que puede costarle plata de verdad: antes de que esto existiera, él
+            // marcaba «pagado» con un tilde que no movía nada. Ese jornal no dejó egreso,
+            // así que acá figura pendiente y lo podría pagar dos veces.
+            var id = JobWithHandMarkedWorker(
+                quotes, inventory, projects, employees,
+                "Placard del tilde viejo", "Alejandro de la lista", "Javier tecleado");
+
+            var workers = settlements.GetWorkers(id);
+            var deLista = workers.Single(w => w.Description == "Alejandro de la lista");
+            var tecleado = workers.Single(w => w.Description == "Javier tecleado");
+            var suelto = workers.Single(w => w.Description == "Changarín suelto");
+
+            // Los números no se mueven: un booleano que nunca movió plata no puede decidir
+            // cuánto se debe, y si lo decidiera, la caja y la liquidación dirían distinto.
+            Assert.Equal(deLista.Due, 50000m, "le toca al que salió de la lista");
+            Assert.Equal(deLista.Paid, 0m, "el tilde viejo no es un pago: no hay egreso en la caja");
+            Assert.Equal(deLista.Pending, 50000m, "lo que falta lo dice la caja, no el tilde");
+            Assert.False(deLista.IsSettled, "el tilde viejo no puede saldar un jornal por sí solo.");
+
+            // Pero se lee y se avisa, que es lo que evita el doble pago.
+            Assert.True(deLista.WasMarkedPaidByHand, "con legajo, el cruce es directo.");
+            Assert.True(deLista.ShowHandPaidWarning, "con el jornal pendiente, la fila tiene que avisar.");
+            Assert.True(deLista.HandPaidWarning.Length > 0, "el aviso no puede salir vacío");
+
+            // Y el caso que de verdad existe en la base del taller: la asignación tiene
+            // ficha, el operario cotizado no. Sin cruzar por nombre, esto queda mudo.
+            Assert.True(tecleado.WasMarkedPaidByHand,
+                "el operario tecleado tiene que cruzarse por nombre con la ficha asignada.");
+            Assert.True(tecleado.ShowHandPaidWarning, "es el caso real: es el que más tiene que avisar.");
+            Assert.Equal(tecleado.Pending, 30000m, "y su número sigue siendo el de la caja");
+
+            // El changarín no está en Personal: no hay tilde que cruzar.
+            Assert.False(suelto.WasMarkedPaidByHand, "sin ficha con ese nombre no hay nada que cruzar.");
+            Assert.False(suelto.ShowHandPaidWarning, "no se le puede avisar de algo que no pasó.");
+
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+            Assert.True(job.HasHandPaidWarning, "desde la lista tiene que poder ver cuáles revisar.");
+            Assert.Equal(job.TotalPending, 90000m, "el total sigue saliendo de la caja");
+        });
+
+        run("Liquidación: pagado el jornal, el aviso del tilde viejo se calla", () =>
+        {
+            // Un cartel que no se va deja de leerse. Si ya lo pagó desde acá, el tilde
+            // viejo no agrega nada, pero el dato sigue guardado: no se borra.
+            var id = JobWithHandMarkedWorker(
+                quotes, inventory, projects, employees,
+                "Vestidor del tilde viejo", "Alejandro que cobró", "Javier que cobró");
+
+            var pendientes = settlements.GetWorkers(id).Where(w => w.ShowHandPaidWarning).ToList();
+            Assert.Equal(pendientes.Count, 2, "antes de pagar, los dos marcados tienen que avisar");
+
+            foreach (var line in pendientes)
+            {
+                settlements.Pay(line.LaborLineId, line.Pending);
+            }
+
+            var after = settlements.GetWorkers(id).Where(w => w.WasMarkedPaidByHand).ToList();
+            Assert.Equal(after.Count, 2, "el dato viejo no se borra: es su registro");
+            Assert.True(after.All(w => w.IsSettled), "pagados desde acá, tienen que quedar saldados.");
+            Assert.False(after.Any(w => w.ShowHandPaidWarning), "ya saldados, el aviso sería ruido.");
+            Assert.True(after.All(w => w.HandPaidRowNote.Length == 0), "y la fila no tiene nada que decir");
+
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+            Assert.False(job.HasHandPaidWarning, "el trabajo tampoco tiene ya nada que avisar.");
+        });
+    }
+
+    /// <summary>
+    /// Un trabajo terminado con dos operarios —uno con ficha y otro suelto— donde el de la
+    /// ficha ya figuraba pagado con el tilde viejo, el que no movía plata.
+    /// </summary>
+    /// <summary>
+    /// Un trabajo terminado con las tres formas que puede tener un operario, y el tilde
+    /// viejo puesto en las dos primeras.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// La tercera es la que importa y es la que hay en la base del taller: la asignación
+    /// apunta a la ficha, pero el operario del presupuesto se tecleó suelto. Cruzando solo
+    /// por legajo, el aviso no aparecería justo en el caso que existe de verdad.
+    /// </para>
+    /// </remarks>
+    private static int JobWithHandMarkedWorker(
+        QuoteService quotes,
+        InventoryService inventory,
+        ProjectService projects,
+        EmployeeService employees,
+        string title,
+        string conFicha,
+        string tecleado)
+    {
+        var deLista = employees.Create(conFicha, null, "Oficial", 25000m);
+        var aMano = employees.Create(tecleado, null, "Oficial", 30000m);
+        var productId = inventory.CreateProduct($"Material {title}", 100m, 0m, "Metro", 500m).Id;
+
+        var id = quotes.CreateQuote(title, "Cliente de antes", null).Id;
+        quotes.AddInventoryLine(id, productId, 3m);
+
+        // Elegido de la lista: queda con legajo.
+        quotes.AddLaborLine(id, deLista.Id, conFicha, 2m, 25000m);
+
+        // Tecleado, aunque exista la ficha con ese nombre: queda sin legajo. Es el camino
+        // del taller.
+        quotes.AddLaborLine(id, null, tecleado, 1m, 30000m);
+
+        // Y alguien que no está en Personal: no hay tilde que cruzar.
+        quotes.AddLaborLine(id, null, "Changarín suelto", 1m, 10000m);
+
+        quotes.SaveCalculation(id, 1500m, 2m, 30000m, BudgetRates.Defaults());
+        quotes.ApproveQuote(id);
+        projects.ChangeStatus(id, ProjectStatus.Completed);
+
+        // Aprobar ya asigna solo al que tiene legajo. Al tecleado lo asigna él a mano desde
+        // Proyectos, que es como quedó en la base del taller.
+        projects.AssignEmployee(id, aMano.Id, null);
+
+        foreach (var assignment in projects.GetProjectAssignments(id))
+        {
+            projects.SetAssignmentPaid(assignment.Id, true);
+        }
+
+        return id;
     }
 
     /// <summary>

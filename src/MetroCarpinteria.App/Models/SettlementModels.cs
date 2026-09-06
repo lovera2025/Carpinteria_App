@@ -34,6 +34,17 @@ public sealed class SettlementWorkerItem
     /// <summary>La suma de los egresos de caja anotados contra esta línea.</summary>
     public decimal Paid { get; init; }
 
+    /// <summary>
+    /// Él ya había marcado este jornal como pagado con el tilde viejo de Personal, el que
+    /// no movía un peso.
+    /// </summary>
+    /// <remarks>
+    /// No entra en ninguna cuenta: un booleano que nunca movió plata no puede decidir
+    /// cuánto se debe, y hacerlo dejaría la caja y la liquidación diciendo cosas
+    /// distintas. Sirve para avisar, que es lo que evita pagar dos veces.
+    /// </remarks>
+    public bool WasMarkedPaidByHand { get; init; }
+
     public decimal Pending => Math.Max(0m, Due - Paid);
 
     /// <summary>
@@ -66,6 +77,31 @@ public sealed class SettlementWorkerItem
         : Paid > 0m
             ? $"Cobró {PaidDisplay} de {DueDisplay} · falta {PendingDisplay}"
             : $"Le debés {DueDisplay}";
+
+    /// <summary>
+    /// Hay algo que avisar solo si además figura pendiente. Si ya se lo pagó desde acá, el
+    /// tilde viejo no agrega nada y el cartel sería ruido.
+    /// </summary>
+    public bool ShowHandPaidWarning => WasMarkedPaidByHand && Pending > 0m;
+
+    /// <summary>La versión corta, para la columna de estado.</summary>
+    public string HandPaidRowNote => ShowHandPaidWarning ? "Lo marcaste pagado a mano" : string.Empty;
+
+    /// <summary>
+    /// El aviso entero, donde importa: arriba del botón de pagar. Dice qué pasó y qué
+    /// hacer con las dos respuestas posibles, porque el único que sabe cuál es, es él.
+    /// </summary>
+    /// <remarks>
+    /// Nombra lo que <b>falta</b> y no el jornal entero: es el número que movería el botón
+    /// que tiene abajo. Si ya le pagó una parte desde acá, decirle «no pagues los 20.000»
+    /// le nombraría plata que no está por salir.
+    /// </remarks>
+    public string HandPaidWarning => ShowHandPaidWarning
+        ? "Este jornal figuraba como pagado en Personal, de antes, cuando ese tilde no " +
+          "movía plata: por eso no hay un egreso en la caja y acá aparece pendiente. " +
+          $"Si ya se lo pagaste, no le pagues los {PendingDisplay} que faltan. Si no, " +
+          "pagalos desde acá y queda asentado."
+        : string.Empty;
 }
 
 /// <summary>Un trabajo terminado con su desglose y lo que se le debe a cada uno.</summary>
@@ -165,6 +201,16 @@ public sealed class SettlementProjectItem
         : HasPending
             ? $"Falta pagar {TotalPendingDisplay}"
             : "Todo pagado";
+
+    /// <summary>
+    /// Alguno de los jornales pendientes ya estaba marcado a mano. Se dice en la lista y
+    /// no solo adentro del trabajo: es lo que le deja mirar de una cuáles revisar.
+    /// </summary>
+    public bool HasHandPaidWarning => Workers.Any(w => w.ShowHandPaidWarning);
+
+    public string HandPaidNote => HasHandPaidWarning
+        ? "Revisalo: hay jornales marcados a mano"
+        : string.Empty;
 }
 
 /// <summary>Cuánto se le debe a una persona sumando todos sus trabajos terminados.</summary>
