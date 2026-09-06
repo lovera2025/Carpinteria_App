@@ -38,6 +38,8 @@ public class ProjectsViewModel : ViewModelBase
     private ProjectStatusOption? _formStatus;
     private ProductListItem? _selectedProduct;
     private string _materialQuantity = string.Empty;
+    private bool _billsExtraMaterial;
+    private string _materialCharge = string.Empty;
     private EmployeeListItem? _selectedEmployee;
     private string _assignmentNotes = string.Empty;
     private string _statusMessage = string.Empty;
@@ -146,8 +148,12 @@ public class ProjectsViewModel : ViewModelBase
                 return;
             }
 
+            BillsExtraMaterial = false;
+            MaterialCharge = string.Empty;
+
             RefreshDeleteBlockReason();
             LoadProjectDetails();
+            OnPropertyChanged(nameof(CanBillExtraMaterial));
             OnPropertyChanged(nameof(CanArchiveSelected));
             OnPropertyChanged(nameof(CanRestoreSelected));
             OnPropertyChanged(nameof(CanAssignToProject));
@@ -278,13 +284,90 @@ public class ProjectsViewModel : ViewModelBase
     public ProductListItem? SelectedProduct
     {
         get => _selectedProduct;
-        set => SetProperty(ref _selectedProduct, value);
+        set
+        {
+            if (SetProperty(ref _selectedProduct, value) && BillsExtraMaterial)
+            {
+                ProposeMaterialCharge();
+            }
+        }
     }
 
     public string MaterialQuantity
     {
         get => _materialQuantity;
-        set => SetProperty(ref _materialQuantity, value);
+        set
+        {
+            if (SetProperty(ref _materialQuantity, value) && BillsExtraMaterial)
+            {
+                ProposeMaterialCharge();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Se le suma al cliente en vez de ponerlo el taller.
+    /// </summary>
+    /// <remarks>
+    /// Hasta acá la app decidía sola, y siempre para el mismo lado: cargar madera después de
+    /// aprobar salía del bolsillo del taller, sin preguntar. A veces es así —calculó de menos
+    /// y lo absorbe— y a veces el cliente pidió algo más. La decisión es de él.
+    /// </remarks>
+    public bool BillsExtraMaterial
+    {
+        get => _billsExtraMaterial;
+        set
+        {
+            if (!SetProperty(ref _billsExtraMaterial, value))
+            {
+                return;
+            }
+
+            if (value)
+            {
+                ProposeMaterialCharge();
+            }
+            else
+            {
+                MaterialCharge = string.Empty;
+            }
+        }
+    }
+
+    /// <summary>Cuánto se le suma al trabajo. La app propone, él decide.</summary>
+    public string MaterialCharge
+    {
+        get => _materialCharge;
+        set => SetProperty(ref _materialCharge, value);
+    }
+
+    /// <summary>
+    /// Preguntar solo tiene sentido en un trabajo que ya tiene precio acordado. En un
+    /// presupuesto todavía abierto, el material se carga en la calculadora y el precio se
+    /// recalcula solo.
+    /// </summary>
+    public bool CanBillExtraMaterial => SelectedProject is
+    {
+        IsArchived: false,
+        Budget: > 0m,
+        Status: not ProjectStatus.Quote and not ProjectStatus.Rejected
+    };
+
+    private void ProposeMaterialCharge()
+    {
+        if (SelectedProject is null
+            || SelectedProduct is null
+            || !NumberInput.TryParseQuantity(MaterialQuantity, out var quantity)
+            || quantity <= 0m)
+        {
+            MaterialCharge = string.Empty;
+            return;
+        }
+
+        var proposed = AppHost.ProjectService.ProposeExtraCharge(
+            SelectedProject.Id, SelectedProduct.Id, quantity);
+
+        MaterialCharge = proposed > 0m ? AppCulture.Quantity(proposed) : string.Empty;
     }
 
     public EmployeeListItem? SelectedEmployee
@@ -811,9 +894,31 @@ public class ProjectsViewModel : ViewModelBase
                 throw new InvalidOperationException("Cantidad inválida.");
             }
 
-            AppHost.ProjectService.AssignMaterial(SelectedProject.Id, SelectedProduct.Id, quantity);
+            decimal? billed = null;
+
+            if (BillsExtraMaterial)
+            {
+                if (!NumberInput.TryParseMoney(MaterialCharge, out var parsed) || parsed <= 0m)
+                {
+                    throw new InvalidOperationException(
+                        "Poné cuánto le sumás al trabajo, o destildá «Sumárselo al cliente».");
+                }
+
+                billed = parsed;
+            }
+
+            AppHost.ProjectService.AssignMaterial(
+                SelectedProject.Id, SelectedProduct.Id, quantity, billed);
+
             MaterialQuantity = string.Empty;
-            SetStatus("Material asignado y stock descontado.", isError: false);
+            MaterialCharge = string.Empty;
+            BillsExtraMaterial = false;
+
+            SetStatus(
+                billed is null
+                    ? "Material asignado y stock descontado. Lo ponés vos: el precio no se movió."
+                    : $"Material asignado. Se le sumaron {AppCulture.Money(billed.Value)} al trabajo.",
+                isError: false);
             Load();
         }
         catch (Exception ex)
@@ -850,9 +955,16 @@ public class ProjectsViewModel : ViewModelBase
             return;
         }
 
+        // Si ese material se le había cobrado al cliente, quitarlo también le baja el precio
+        // al trabajo. Es plata: no puede pasar sin decirlo.
+        var billedNote = material.WasBilled
+            ? $"\n\nComo se lo habías sumado al cliente, el trabajo también baja " +
+              $"{AppCulture.Money(material.BilledAmount!.Value)}."
+            : string.Empty;
+
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             "Quitar material del proyecto",
-            $"«{material.ProductName}» ({material.QuantityDisplay}) vuelve al inventario.",
+            $"«{material.ProductName}» ({material.QuantityDisplay}) vuelve al inventario." + billedNote,
             confirmText: "Quitar y devolver");
 
         if (!confirmed)

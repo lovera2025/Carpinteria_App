@@ -1,4 +1,4 @@
-using MetroCarpinteria.App.Data.Entities;
+﻿using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Models;
 using MetroCarpinteria.App.Services;
 
@@ -267,6 +267,7 @@ internal static class CommercialTests
         SettlementService settlements)
     {
         RunSettlementTests(run, quotes, cash, inventory, projects, settlements);
+        RunExtraMaterialTests(run, quotes, inventory, projects, settlements);
 
         run("Comercial: guardar IVA y descuento actualiza el total del presupuesto", () =>
         {
@@ -713,6 +714,123 @@ internal static class CommercialTests
             Assert.True(
                 movement.Reason.Contains("Pago de mano de obra", StringComparison.Ordinal),
                 $"el movimiento tendría que leerse como un pago de mano de obra, dice «{movement.Reason}».");
+        });
+    }
+
+    /// <summary>
+    /// Material cargado después de aprobar: el caso que aparece porque ahora se puede
+    /// aprobar sin materiales, y que antes la app resolvía sola y siempre para el mismo lado.
+    /// </summary>
+    private static void RunExtraMaterialTests(
+        Action<string, Action> run,
+        QuoteService quotes,
+        InventoryService inventory,
+        ProjectService projects,
+        SettlementService settlements)
+    {
+        run("Material extra: cargarlo después descuenta stock y no mueve el precio si lo pone él", () =>
+        {
+            // Es el caso del carpintero: aprueba un trabajo que es solo mano de obra y
+            // después le carga la madera. Calculó de menos, así que lo absorbe.
+            var productId = inventory.CreateProduct("Melamina absorbida", 50m, 0m, "Metro cuadrado", 9000m).Id;
+            var id = quotes.CreateQuote("Mueble sin materiales", "Cliente que agregó", null).Id;
+            quotes.SaveCalculation(id, 0m, 2m, 30000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(id);
+
+            var priceBefore = RequireQuote(quotes, id).Budget ?? 0m;
+
+            projects.AssignMaterial(id, productId, 4m);
+
+            Assert.Equal(
+                inventory.GetProducts(false, false, "Melamina absorbida").Single().CurrentStock,
+                46m,
+                "el stock baja igual, lo ponga quien lo ponga");
+            Assert.Equal(
+                RequireQuote(quotes, id).Budget ?? 0m,
+                priceBefore,
+                "si lo pone él, al cliente se le cobra lo mismo");
+
+            projects.ChangeStatus(id, ProjectStatus.Completed);
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            // 4 × $ 9.000 congelados al asignar.
+            Assert.Equal(job.SpentMaterials, 36000m, "lo que salió del inventario");
+            Assert.Equal(job.QuotedMaterials, 0m, "no se había cotizado material");
+            Assert.Equal(job.AbsorbedMaterials, 36000m, "lo puso él entero");
+            Assert.True(job.HasMaterialsNote, "gastar más de lo cotizado tiene que avisarse.");
+            Assert.True(
+                job.MaterialsNote.Contains("salen de tu ganancia", StringComparison.Ordinal),
+                $"la nota tendría que decir de dónde sale esa plata, y dice «{job.MaterialsNote}».");
+        });
+
+        run("Material extra: si se lo suma al cliente, el precio sube por ese importe", () =>
+        {
+            var productId = inventory.CreateProduct("Melamina cobrada", 50m, 0m, "Metro cuadrado", 10000m).Id;
+            var id = quotes.CreateQuote("Mueble con agregado", "Cliente que pidió más", null).Id;
+            quotes.SaveCalculation(id, 0m, 2m, 30000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(id);
+
+            var priceBefore = RequireQuote(quotes, id).Budget ?? 0m;
+
+            // La app propone material + desperdicio + desgaste con los porcentajes del
+            // trabajo: 2 × 10.000 = 20.000, +16% = 3.200, +9% = 1.800 → 25.000.
+            var proposed = projects.ProposeExtraCharge(id, productId, 2m);
+            Assert.Equal(proposed, 25000m, "lo que la app propone cobrar");
+
+            projects.AssignMaterial(id, productId, 2m, proposed);
+
+            Assert.Equal(
+                RequireQuote(quotes, id).Budget ?? 0m,
+                priceBefore + 25000m,
+                "el precio sube por lo que él decidió sumarle");
+
+            projects.ChangeStatus(id, ProjectStatus.Completed);
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            Assert.Equal(job.SpentMaterials, 20000m, "lo que costó el material");
+            Assert.Equal(job.BilledExtras, 25000m, "lo que se le sumó al trabajo");
+            Assert.Equal(job.AbsorbedMaterials, 0m, "no puso nada de su bolsillo");
+            Assert.True(
+                job.MaterialsNote.Contains("se la sumaste al trabajo", StringComparison.Ordinal),
+                $"la nota tendría que decir que se lo cobró, y dice «{job.MaterialsNote}».");
+        });
+
+        run("Material extra: quitarlo devuelve el stock y también el recargo", () =>
+        {
+            // Devolver la madera y seguir cobrándola sería quedarse con plata por algo que
+            // no se entregó.
+            var productId = inventory.CreateProduct("Melamina devuelta", 20m, 0m, "Metro cuadrado", 5000m).Id;
+            var id = quotes.CreateQuote("Mueble que se achicó", "Cliente que cambió de idea", null).Id;
+            quotes.SaveCalculation(id, 0m, 1m, 20000m, BudgetRates.Defaults());
+            quotes.ApproveQuote(id);
+
+            var priceBefore = RequireQuote(quotes, id).Budget ?? 0m;
+
+            projects.AssignMaterial(id, productId, 3m, 20000m);
+            Assert.Equal(RequireQuote(quotes, id).Budget ?? 0m, priceBefore + 20000m, "precio con el agregado");
+
+            var material = projects.GetProjectMaterials(id).Single();
+            projects.RemoveMaterial(material.Id);
+
+            Assert.Equal(
+                inventory.GetProducts(false, false, "Melamina devuelta").Single().CurrentStock,
+                20m,
+                "el stock vuelve entero");
+            Assert.Equal(
+                RequireQuote(quotes, id).Budget ?? 0m,
+                priceBefore,
+                "el precio vuelve a lo pactado");
+        });
+
+        run("Material extra: sin gastar de más, no hay nada que avisar", () =>
+        {
+            // El aviso solo aparece cuando hay algo real que decir. Un trabajo que gastó lo
+            // que cotizó no tiene por qué mostrar un cartel.
+            var id = FinishedJobWithWorkers(quotes, inventory, projects, "Trabajo prolijo", "Cliente tranquilo");
+            var job = settlements.GetFinished().Single(p => p.Id == id);
+
+            Assert.False(job.SpentMoreThanQuoted, "gastó lo que había cotizado.");
+            Assert.False(job.HasMaterialsNote, "sin diferencia no se muestra ninguna nota.");
         });
     }
 

@@ -99,6 +99,17 @@
                                            Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,4" />
                                 <TextBlock Text="De acá sale cada número. Es el mismo cálculo con el que se cotizó."
                                            Style="{StaticResource SubtitleStyle}" Margin="0,0,0,12" />
+
+                                <!-- Cuando gastó más material del que cotizó, el desglose solo
+                                     no alcanza: muestra lo cotizado, que es lo que armó el
+                                     precio, y no lo que realmente salió del depósito. -->
+                                <Border Background="{DynamicResource StateWarningSurfaceBrush}"
+                                        CornerRadius="6" Padding="10,8" Margin="0,0,0,12"
+                                        Visibility="{Binding SelectedProject.HasMaterialsNote, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding SelectedProject.MaterialsNote}"
+                                               FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource AlertBrush}" />
+                                </Border>
                                 <ItemsControl ItemsSource="{Binding BreakdownLines}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:BudgetBreakdownLine}">

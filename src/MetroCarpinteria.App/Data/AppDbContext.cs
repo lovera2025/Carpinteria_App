@@ -174,7 +174,9 @@ public class AppDbContext : DbContext
             entity.HasIndex(m => m.ProductId);
             entity.Property(m => m.Quantity).HasPrecision(18, 3);
             entity.Property(m => m.UnitCost).HasPrecision(18, 2);
+            entity.Property(m => m.BilledAmount).HasPrecision(18, 2);
             entity.Ignore(m => m.LineCost);
+            entity.Ignore(m => m.WasBilled);
             entity.HasOne(m => m.Project).WithMany(p => p.Materials).HasForeignKey(m => m.ProjectId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(m => m.Product).WithMany().HasForeignKey(m => m.ProductId).OnDelete(DeleteBehavior.Restrict);
         });

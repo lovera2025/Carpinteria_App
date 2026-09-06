@@ -61,6 +61,9 @@ public sealed class SettlementService
 
         foreach (var project in projects)
         {
+            var breakdown = _quoteService.GetDetail(project.Id)?.Breakdown;
+            var materials = GetMaterialSpend(project.Id);
+
             items.Add(new SettlementProjectItem
             {
                 Id = project.Id,
@@ -68,12 +71,42 @@ public sealed class SettlementService
                 ClientName = project.ClientName,
                 Budget = project.Budget,
                 UpdatedAtLocal = project.UpdatedAtUtc.ToLocalTime(),
-                Breakdown = _quoteService.GetDetail(project.Id)?.Breakdown,
+                Breakdown = breakdown,
+                QuotedMaterials = breakdown?.MaterialsCost ?? 0m,
+                SpentMaterials = materials.Spent,
+                BilledExtras = materials.Billed,
                 Workers = GetWorkers(project.Id)
             });
         }
 
         return items;
+    }
+
+    /// <summary>
+    /// Lo que salió del inventario para un trabajo, y cuánto de eso se le cobró al cliente.
+    /// </summary>
+    /// <remarks>
+    /// Se valúa con el costo congelado de cada material, no con el precio de hoy: lo que
+    /// costó un mueble de agosto no puede cambiar en octubre porque subió la melamina. Los
+    /// materiales sin costo cargado no suman nada — es «no sé cuánto costaba», no cero, y
+    /// hacerlos valer cero mentiría hacia abajo.
+    /// </remarks>
+    private (decimal Spent, decimal Billed) GetMaterialSpend(int projectId)
+    {
+        using var context = _databaseService.CreateContext();
+
+        // AsEnumerable antes de multiplicar: las cantidades y los costos son TEXT, y
+        // cualquier cuenta que quede del lado de SQL se resuelve como texto.
+        var rows = context.ProjectMaterials
+            .AsNoTracking()
+            .Where(m => m.ProjectId == projectId)
+            .Select(m => new { m.Quantity, m.UnitCost, m.BilledAmount })
+            .AsEnumerable()
+            .ToList();
+
+        return (
+            rows.Sum(m => m.UnitCost is null ? 0m : m.Quantity * m.UnitCost.Value),
+            rows.Sum(m => m.BilledAmount ?? 0m));
     }
 
     /// <summary>Lo que le toca a cada operario de un trabajo, con lo que ya cobró.</summary>

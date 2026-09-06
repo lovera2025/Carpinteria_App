@@ -266,6 +266,7 @@ public sealed class DatabaseService
                 ProductId INTEGER NOT NULL,
                 Quantity TEXT NOT NULL,
                 UnitCost TEXT NULL,
+                BilledAmount TEXT NULL,
                 AssignedAtUtc TEXT NOT NULL,
                 CONSTRAINT FK_ProjectMaterials_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (Id) ON DELETE CASCADE,
                 CONSTRAINT FK_ProjectMaterials_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products (Id) ON DELETE RESTRICT

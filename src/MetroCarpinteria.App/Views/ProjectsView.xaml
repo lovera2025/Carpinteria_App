@@ -222,6 +222,29 @@
                                 <TextBlock Text="Cantidad" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                                 <TextBox Text="{Binding MaterialQuantity, UpdateSourceTrigger=PropertyChanged}"
                                          Padding="10,8" Margin="0,0,0,12" />
+
+                                <!-- La decisión que la app tomaba sola, y siempre para el
+                                     mismo lado: la madera cargada después de aprobar salía
+                                     del bolsillo del taller. Solo aparece en un trabajo con
+                                     precio acordado; en un presupuesto abierto el material
+                                     va a la calculadora y el precio se recalcula solo. -->
+                                <StackPanel Margin="0,0,0,12"
+                                            Visibility="{Binding CanBillExtraMaterial, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <CheckBox Content="Sumárselo al cliente"
+                                              IsChecked="{Binding BillsExtraMaterial}"
+                                              Foreground="{DynamicResource TextPrimaryBrush}"
+                                              ToolTip="Si no lo marcás, el material sale igual del inventario pero el precio del trabajo no se mueve: lo ponés vos" />
+                                    <StackPanel Margin="0,10,0,0"
+                                                Visibility="{Binding BillsExtraMaterial, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="Cuánto le sumás al trabajo"
+                                                   Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding MaterialCharge, UpdateSourceTrigger=PropertyChanged}"
+                                                 Padding="10,8" Margin="0,0,0,4" />
+                                        <TextBlock Style="{StaticResource SubtitleStyle}" FontSize="11" TextWrapping="Wrap"
+                                                   Text="Viene calculado con el material, su desperdicio y su desgaste, con los porcentajes de este trabajo. Podés cambiarlo." />
+                                    </StackPanel>
+                                </StackPanel>
+
                                 <Button Content="Asignar material" Style="{StaticResource PrimaryButtonStyle}"
                                         Command="{Binding AssignMaterialCommand}" HorizontalAlignment="Left" />
                             </StackPanel>
@@ -244,6 +267,11 @@
                                                             <Run Text="{Binding AssignedAtLocal, Mode=OneWay, StringFormat=dd/MM/yyyy HH:mm}"
                                                                  Foreground="{DynamicResource TextSecondaryBrush}" />
                                                         </TextBlock>
+                                                        <!-- Solo cuando se lo cobró: si lo puso él, no hay nada que aclarar. -->
+                                                        <TextBlock Text="{Binding BilledDisplay}" FontSize="11" FontWeight="SemiBold"
+                                                                   Margin="0,2,0,0" TextWrapping="Wrap"
+                                                                   Foreground="{DynamicResource PrimaryBrownBrush}"
+                                                                   Visibility="{Binding WasBilled, Converter={StaticResource BoolToVisibilityConverter}}" />
                                                     </StackPanel>
                                                     <Button Content="✕" HorizontalAlignment="Right" VerticalAlignment="Top"
                                                             Style="{StaticResource SecondaryButtonStyle}"

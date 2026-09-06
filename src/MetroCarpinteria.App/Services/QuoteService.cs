@@ -1381,6 +1381,14 @@ public sealed class QuoteService
                 .Where(m => m.ProjectId == projectId)
                 .ToList();
 
+            // Lo que se le había sumado al precio por material cargado después vuelve atrás
+            // con el trabajo: el presupuesto tiene que quedar como estaba antes de aprobar.
+            var billedExtras = materials.Sum(m => m.BilledAmount ?? 0m);
+            if (billedExtras > 0m && project.Budget is not null)
+            {
+                project.Budget = Math.Max(0m, project.Budget.Value - billedExtras);
+            }
+
             foreach (var material in materials)
             {
                 material.Product.CurrentStock += material.Quantity;

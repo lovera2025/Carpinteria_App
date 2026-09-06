@@ -87,6 +87,63 @@ public sealed class SettlementProjectItem
 
     public IReadOnlyList<SettlementWorkerItem> Workers { get; init; } = [];
 
+    /// <summary>Lo que se cotizó de materiales, que es con lo que se armó el precio.</summary>
+    public decimal QuotedMaterials { get; init; }
+
+    /// <summary>
+    /// Lo que salió del inventario para este trabajo, valuado con los costos congelados.
+    /// </summary>
+    public decimal SpentMaterials { get; init; }
+
+    /// <summary>Cuánto de lo cargado después se le sumó al cliente.</summary>
+    public decimal BilledExtras { get; init; }
+
+    /// <summary>
+    /// Gastó más material del que cotizó. Es plata que sale de su ganancia, salvo la parte
+    /// que le haya sumado al cliente.
+    /// </summary>
+    public bool SpentMoreThanQuoted => SpentMaterials > QuotedMaterials;
+
+    /// <summary>Lo que puso él de su bolsillo: lo gastado de más que no le cobró a nadie.</summary>
+    public decimal AbsorbedMaterials =>
+        Math.Max(0m, SpentMaterials - QuotedMaterials - BilledExtras);
+
+    public string QuotedMaterialsDisplay => AppCulture.Money(QuotedMaterials);
+    public string SpentMaterialsDisplay => AppCulture.Money(SpentMaterials);
+    public string AbsorbedMaterialsDisplay => AppCulture.Money(AbsorbedMaterials);
+
+    /// <summary>
+    /// La frase que contesta «gasté más de lo que cobré». Vacía cuando no hay nada que
+    /// avisar: si gastó lo que cotizó, no hay por qué decir nada.
+    /// </summary>
+    public string MaterialsNote
+    {
+        get
+        {
+            if (!SpentMoreThanQuoted)
+            {
+                return string.Empty;
+            }
+
+            var note = $"Cotizaste {QuotedMaterialsDisplay} de materiales y gastaste {SpentMaterialsDisplay}.";
+
+            if (BilledExtras > 0m && AbsorbedMaterials > 0m)
+            {
+                return note + $" Le sumaste {AppCulture.Money(BilledExtras)} al trabajo y " +
+                       $"{AbsorbedMaterialsDisplay} los pusiste vos.";
+            }
+
+            if (BilledExtras > 0m)
+            {
+                return note + $" La diferencia se la sumaste al trabajo.";
+            }
+
+            return note + $" Los {AbsorbedMaterialsDisplay} de más salen de tu ganancia.";
+        }
+    }
+
+    public bool HasMaterialsNote => MaterialsNote.Length > 0;
+
     public decimal TotalDue => Workers.Sum(w => w.Due);
     public decimal TotalPaid => Workers.Sum(w => w.Paid);
     public decimal TotalPending => Workers.Sum(w => w.Pending);

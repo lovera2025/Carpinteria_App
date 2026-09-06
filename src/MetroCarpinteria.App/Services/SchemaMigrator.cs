@@ -493,6 +493,10 @@ public sealed class SchemaMigrator
         AddColumnIfMissing(connection, transaction, "StockMovements", "Unit", "TEXT NOT NULL DEFAULT ''");
         AddColumnIfMissing(connection, transaction, "ProjectMaterials", "UnitCost", "TEXT NULL");
 
+        // Sin relleno a propósito: todo lo que ya está cargado lo puso el taller de su
+        // bolsillo, porque hasta ahora la app no preguntaba. Null es exactamente eso.
+        AddColumnIfMissing(connection, transaction, "ProjectMaterials", "BilledAmount", "TEXT NULL");
+
         Execute(connection, transaction, """
             UPDATE "StockMovements"
                SET "Unit" = COALESCE(

@@ -457,10 +457,18 @@ public class InventoryViewModel : ViewModelBase
 
         var name = SelectedProduct.Name;
 
+        // Archivar con stock encima lo saca de la lista y del contador de stock bajo sin
+        // decir nada: esa madera sigue estando en el taller, pero la app deja de contarla.
+        var stockNote = SelectedProduct.CurrentStock > 0m
+            ? $"\n\nOjo: todavía figuran {SelectedProduct.StockDisplay}. Archivado, ese stock " +
+              "deja de aparecer en la lista y de contar para los avisos."
+            : string.Empty;
+
         var confirmed = await AppHost.DialogService.ConfirmAsync(
             "Archivar producto",
             $"«{name}» va a dejar de aparecer en la lista.\n\n" +
-            "Sus movimientos quedan guardados y lo podés volver a activar cuando quieras.",
+            "Sus movimientos quedan guardados y lo podés volver a activar cuando quieras." +
+            stockNote,
             confirmText: "Archivar");
 
         if (!confirmed)
