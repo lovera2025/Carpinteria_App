@@ -119,8 +119,8 @@ public sealed class CashMethodTotal
 /// </summary>
 /// <remarks>
 /// No hay sesión ni arqueo: es el acumulado de todo lo que entró menos todo lo que salió,
-/// desde siempre. El desglose por medio es lo que permite distinguir lo que está en el
-/// cajón de lo que está en el banco sin mezclarlos en un solo total.
+/// desde siempre. El desglose por medio sirve para filtrar y para leer cada movimiento; el
+/// saldo no se parte en «cajón» y «banco», porque el taller no hace esa división.
 /// </remarks>
 public sealed class CashBalance
 {
@@ -135,12 +135,15 @@ public sealed class CashBalance
     public string ExpenseDisplay => AppCulture.Money(Expense);
     public string BalanceDisplay => AppCulture.Money(Balance);
 
-    /// <summary>Lo que tiene que haber en billetes. El resto está en el banco.</summary>
+    /// <summary>
+    /// Cuánto del saldo se movió en efectivo. No se muestra en ninguna pantalla —
+    /// mostrarlo daba números negativos que en billetes son imposibles. Lo usan los tests
+    /// para verificar que un cobro entra con su medio y no se suma al efectivo si fue
+    /// transferencia.
+    /// </summary>
     public decimal CashOnHand => ByMethod
         .Where(m => m.Method == PaymentMethod.Cash)
         .Sum(m => m.Balance);
-
-    public string CashOnHandDisplay => AppCulture.Money(CashOnHand);
 
     public static CashBalance Empty { get; } = new();
 }

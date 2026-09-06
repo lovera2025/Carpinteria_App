@@ -96,15 +96,15 @@ public class HomeViewModel : ViewModelBase
                     : "Productos por debajo del mínimo",
                 AccentColor = "#C45C26"
             },
-            // La caja no se abre ni se cierra: el dato útil es cuánta plata hay, y cuánta
-            // de esa está en billetes.
+            // La caja no se abre ni se cierra: el dato útil es cuánta plata hay. Y es un solo
+            // número: la plata del taller no se parte por medio de pago.
             new DashboardCard
             {
                 Title = "Caja",
                 Value = cash.BalanceDisplay,
                 Description = cash.MovementCount == 0
                     ? "Todavía sin movimientos"
-                    : $"En efectivo: {cash.CashOnHandDisplay}",
+                    : "Lo que hay hoy en el taller",
                 AccentColor = "#4A7C59"
             },
             new DashboardCard

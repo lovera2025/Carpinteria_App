@@ -39,15 +39,12 @@ public sealed class ReportService
         // pasaría por punto flotante. Ver CashRegisterService.GetBalance.
         var cashRows = context.CashMovements
             .AsNoTracking()
-            .Select(m => new { m.Type, m.Amount, m.Method })
+            .Select(m => new { m.Type, m.Amount })
             .AsEnumerable()
             .ToList();
 
         var cashIncome = cashRows.Where(m => m.Type == CashMovementType.Income).Sum(m => m.Amount);
         var cashExpense = cashRows.Where(m => m.Type == CashMovementType.Expense).Sum(m => m.Amount);
-        var cashOnHand = cashRows
-            .Where(m => m.Method == PaymentMethod.Cash)
-            .Sum(m => m.Type == CashMovementType.Income ? m.Amount : -m.Amount);
 
         var projectsQuote = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Quote);
         var projectsApproved = context.Projects.Count(p => !p.IsArchived && p.Status == ProjectStatus.Approved);
@@ -75,7 +72,7 @@ public sealed class ReportService
                 Title = "Caja",
                 Icon = "💰",
                 Metrics = BuildCashMetrics(
-                    cashIncome, cashExpense, cashOnHand, cashRows.Count, culture)
+                    cashIncome, cashExpense, cashRows.Count, culture)
             },
             new ReportSection
             {
@@ -95,17 +92,23 @@ public sealed class ReportService
     }
 
     /// <summary>
-    /// La plata del taller. Ya no hay sesiones que abrir ni cerrar, así que lo que se
-    /// informa es el saldo real y cuánto de él está en billetes.
+    /// La plata del taller: cuánta hay, cuánta entró y cuánta salió.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Antes esto decía «Estado actual: Abierta/Cerrada» y contaba cajas cerradas: números
     /// que ya no significan nada y que la pantalla igual mostraría, siempre iguales.
+    /// </para>
+    /// <para>
+    /// Tampoco se parte el saldo por medio de pago. La plata del taller es una sola y el
+    /// medio se lee en cada movimiento, no en el total. Partirlo mostraba «En efectivo:
+    /// -$ 3.500,00 — lo que tendría que haber en billetes»: un imposible físico, porque los
+    /// gastos quedan en efectivo y los cobros entran con su medio real.
+    /// </para>
     /// </remarks>
     private static List<ReportMetric> BuildCashMetrics(
         decimal income,
         decimal expense,
-        decimal onHand,
         int movements,
         System.Globalization.CultureInfo culture) =>
         [
@@ -114,12 +117,6 @@ public sealed class ReportService
                 Label = "En la caja",
                 Value = (income - expense).ToString("C", culture),
                 Detail = movements == 1 ? "1 movimiento" : $"{movements} movimientos"
-            },
-            new ReportMetric
-            {
-                Label = "En efectivo",
-                Value = onHand.ToString("C", culture),
-                Detail = "Lo que tendría que haber en billetes"
             },
             new ReportMetric { Label = "Entró", Value = income.ToString("C", culture) },
             new ReportMetric { Label = "Salió", Value = expense.ToString("C", culture) }
