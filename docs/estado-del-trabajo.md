@@ -252,6 +252,17 @@ salida.
 - **El susto de la base «más nueva que el código» es solo de escritorio.** Pasa al pararse en
   una rama vieja teniendo la base local ya migrada. Al carpintero no le puede pasar por una
   actualización: su base va de v12 para arriba, y el guardián solo salta al revés.
+- ~~Ensayar la migración.~~ **Hecho el 2026-09-07, con el camino real completo.** Maximiliano
+  no podía abrir su copia instalada y preguntó si al carpintero le iba a pasar lo mismo. Se
+  ensayó en vez de contestarlo de memoria: se puso el respaldo `carpinteria_20260905_173708.db`
+  —**esquema v12**, el mismo estado en que está el taller— y se abrió la **1.9.1 instalada**.
+  Resultado, paso por paso: abrió sin guardián, encontró la 2.0.0, bajó el **delta** (parche
+  sobre la 1.9.1, no los 78 MB), se instaló al cerrar, y al reabrir migró sola
+  `v12 → v15` con las tres migraciones y los datos intactos.
+
+  Lo que le pasó a Maximiliano es de escritorio y no se puede repetir en el taller: su base
+  estaba en v15 porque el build de desarrollo comparte la carpeta `Documents\MetroCarpinteria`
+  con la copia instalada. El carpintero no tiene build de desarrollo.
 - **Opcional: ensayar la migración con la base del carpintero.** La app ya hace respaldo al cerrar (hasta 30 copias). Cierra la app antes de copiar (la base corre en modo WAL). Guardarla en `.local/` — **agregar `.local/` al `.gitignore` antes**, tiene nombres y teléfonos de sus clientes.
 
 ---
