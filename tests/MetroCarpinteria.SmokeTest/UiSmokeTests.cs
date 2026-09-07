@@ -1249,6 +1249,38 @@ internal static class UiSmokeTests
             Assert.False(PrivacyMaskConverter.HasMoney(null), "null tampoco");
         });
 
+        run("UI: la base más nueva que el programa ofrece actualizar, y los otros fallos no", () =>
+        {
+            // El cartel dice «actualizá antes de abrirla» y hasta ahora no daba con qué:
+            // el chequeo de versiones corre después de abrir la base, así que una copia
+            // atrasada quedaba trabada sin forma de salir sola. El botón es la salida, y
+            // si alguien lo saca de la vista nada falla ni avisa.
+            var vieja = new StartupFailureWindow(
+                new SchemaTooNewException(fileVersion: 15, supportedVersion: 12));
+
+            // Por nombre y no por el árbol visual: la ventana nunca se muestra, así que no
+            // tiene árbol que recorrer. Además es lo que se rompe si alguien saca el botón.
+            var boton = vieja.FindName("UpdateButton") as System.Windows.Controls.Button;
+
+            Assert.NotNull(boton, "con la base más nueva tiene que haber un botón para actualizar");
+            Assert.True(boton!.Visibility == Visibility.Visible, "y tiene que estar a la vista.");
+            Assert.True(boton.IsEnabled, "y se tiene que poder apretar.");
+
+            vieja.Close();
+
+            // En cualquier otro fallo, actualizar no arregla nada: ofrecerlo es mandar a
+            // alguien a perder el tiempo mientras el problema real sigue ahí.
+            var otra = new StartupFailureWindow(new UnauthorizedAccessException("sin permiso"));
+
+            var botonOtra = otra.FindName("UpdateButton") as System.Windows.Controls.Button;
+
+            Assert.True(
+                botonOtra is null || botonOtra.Visibility != Visibility.Visible,
+                "un problema de permisos no se arregla actualizando: el botón no va.");
+
+            otra.Close();
+        });
+
         run("UI: ninguna pantalla queda invisible por olvidar el trigger que la muestra", () =>
         {
             // Las pantallas arrancan con el root en Opacity 0 y una animación de entrada

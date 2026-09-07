@@ -1,15 +1,15 @@
-# Estado del trabajo — la caja del taller
+﻿# Estado del trabajo — la caja del taller
 
 Última actualización: **2026-09-07**. Publicado: **v2.0.0**.
 
 **Las cinco tandas están hechas** —A2, A, B, C y la revisión de Inventario—, la suite está en
-verde (309/309) y **no queda nada de plata abierto**: el riesgo de pagar dos veces un jornal
-se cerró el 2026-09-06. **Nada está publicado**: no se empujó ningún tag, y `master` está
-adelante del remoto.
+verde (315/315) y **no queda nada de plata abierto**: el riesgo de pagar dos veces un jornal
+se cerró el 2026-09-06.
 
-Falta **mergear `inventario-revision` a `master`, acordar el número y empujar el tag**. La
-idea sigue siendo la misma: **una sola versión con todo adentro**, en vez de ir tirando
-actualizaciones cada rato.
+**Publicado como `v2.0.0` el 2026-09-07**, con las cinco tandas adentro en una sola versión.
+El número lo eligió Maximiliano: el salto de 1.9 a 2.0 es porque la caja dejó de ser una
+registradora, que es un cambio de fondo y no una tanda de arreglos. Ver «Pendientes de
+publicación» abajo para cómo llega al taller.
 
 Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v15**, así que
 una rama que maneje hasta v14 no la abre. No es una falla —el guardián avisa y no toca los
@@ -231,6 +231,18 @@ Cómo llega al taller, verificado leyendo las dos puntas:
 3. Cuando terminó de bajar, avisa: un aviso flotante en pantalla, el badge en el menú y el
    detalle en Configuración.
 4. **Se instala sola al cerrar la app** (`ApplyPendingUpdateOnExit`). Él no aprieta nada.
+
+**El callejón sin salida del guardián, cerrado.** Si la base es más nueva que el programa,
+`AppHost.Initialize()` tira antes de llegar a la línea que busca actualizaciones: el cartel
+decía «actualizá antes de abrirla» y actualizar era justo lo único que la app no podía
+hacer. Ahora esa ventana tiene un botón que consulta, baja e instala reabriendo sola.
+Aparece **solo** en ese fallo —los otros no se arreglan actualizando— y se probó forzando
+el caso: `PRAGMA user_version = 99` sobre la base local, abrir, y volver a 15.
+
+Al carpintero no le puede pasar actualizando hacia adelante: su base va de v12 a v15 y el
+guardián solo salta al revés. Se cerró igual porque sí es alcanzable —una actualización que
+se aplica a medias, o una copia vieja que quedó dando vueltas— y ahí lo dejaba trabado sin
+salida.
 - **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
 - ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, más la
   recorrida completa de Inventario. Lo que cierra: los cobros de Clientes suman exacto contra

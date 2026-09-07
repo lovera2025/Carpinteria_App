@@ -53,6 +53,15 @@
         </StackPanel>
 
         <WrapPanel Grid.Row="4" Margin="0,18,0,0" HorizontalAlignment="Right">
+            <!-- Solo aparece cuando la base es más nueva que el programa, que es el único
+                 fallo de arranque que actualizar resuelve. Sin este botón el cartel pide
+                 actualizar y no deja: el chequeo de versiones corre después de abrir la
+                 base, así que una copia atrasada no puede salir sola del pozo. -->
+            <Button x:Name="UpdateButton" Content="Actualizar ahora"
+                    Click="OnUpdateNow" Padding="16,9" Margin="0,0,10,0"
+                    Visibility="Collapsed"
+                    Background="#6B4423" BorderThickness="0"
+                    Foreground="#F5F0E8" FontWeight="SemiBold" Cursor="Hand" />
             <Button x:Name="OpenDataFolderButton" Content="Abrir la carpeta de datos"
                     Click="OnOpenDataFolder" Padding="16,9" Margin="0,0,10,0"
                     Background="Transparent" BorderBrush="#6B4423" BorderThickness="2"

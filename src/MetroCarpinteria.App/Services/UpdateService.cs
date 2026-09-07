@@ -242,6 +242,42 @@ public sealed class UpdateService
         }
     }
 
+    /// <summary>
+    /// Aplica una actualización ya descargada y vuelve a abrir la app enseguida, sin
+    /// esperar a que el usuario la cierre.
+    /// </summary>
+    /// <remarks>
+    /// El camino normal es al revés —se instala al cerrar, para no interrumpir el
+    /// trabajo—. Esto es para el único caso donde esperar no sirve: la app no llegó a
+    /// abrir porque la base es más nueva que el programa, así que no hay trabajo que
+    /// interrumpir y actualizar es lo único que la destraba.
+    /// </remarks>
+    /// <returns>
+    /// Si quedó agendada. El reemplazo de archivos ocurre cuando este proceso termina, así
+    /// que quien llama tiene que cerrar la app a continuación.
+    /// </returns>
+    public bool ApplyAndRestart(UpdateInfo update)
+    {
+        if (!IsSupported || _manager is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            _manager.WaitExitThenApplyUpdates(update, silent: true, restart: true);
+            LogService.Info(
+                "UpdateService",
+                $"Instalando v{update.TargetFullRelease.Version} y reabriendo la app.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogService.Warning("UpdateService", $"No se pudo aplicar la actualización: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>Chequeo automático de arranque, según lo configurado.</summary>
     /// <returns>La versión ya descargada y lista, o null si no hay nada que avisar.</returns>
     public async Task<UpdateInfo?> CheckAndDownloadOnStartupAsync()
