@@ -114,9 +114,15 @@
                         </StackPanel>
 
                         <Grid Margin="0,0,0,10">
+                            <!-- Las dos columnas van al ancho de su contenido y el sobrante
+                                 queda vacío a la derecha. Con la última en «*», el Medio se
+                                 estiraba a lo que diera la pantalla: en un monitor grande
+                                 quedaba una lista desplegable de 700 píxeles para elegir
+                                 entre cinco palabras. -->
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <!-- Angosto y con el $ adelante, a propósito. Antes era un cajón
@@ -142,7 +148,8 @@
                                 <TextBlock Text="Medio" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
                                 <ComboBox ItemsSource="{Binding MovementMethods}"
                                           SelectedItem="{Binding MovementMethod}"
-                                          DisplayMemberPath="Label" Padding="8,8" />
+                                          DisplayMemberPath="Label" Padding="8,8"
+                                          Width="200" HorizontalAlignment="Left" />
                             </StackPanel>
                         </Grid>
 
