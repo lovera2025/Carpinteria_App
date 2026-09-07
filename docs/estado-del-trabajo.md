@@ -6,14 +6,16 @@
 verde (315/315) y **no queda nada de plata abierto**: el riesgo de pagar dos veces un jornal
 se cerró el 2026-09-06.
 
-**Publicado como `v2.0.0` el 2026-09-07**, con las cinco tandas adentro en una sola versión.
-El número lo eligió Maximiliano: el salto de 1.9 a 2.0 es porque la caja dejó de ser una
-registradora, que es un cambio de fondo y no una tanda de arreglos. Ver «Pendientes de
-publicación» abajo para cómo llega al taller.
+**Publicado como `v2.0.0` el 2026-09-07**, con las cinco tandas adentro en una sola versión,
+y **ensayada la actualización completa** desde la 1.9.1 con una base en el esquema real del
+taller. Ver «Publicado» para cómo llega y qué se probó.
 
-Ojo al cambiar a una rama vieja: la base local de prueba ya está en **esquema v15**, así que
-una rama que maneje hasta v14 no la abre. No es una falla —el guardián avisa y no toca los
-datos— y al carpintero no le puede pasar actualizando: su base va siempre hacia adelante.
+**Queda una sola decisión abierta** y no es urgente: publicar o no un `v2.0.1` con el arreglo
+del guardián, que está en `master` sin tag. Ver «Lo que falta».
+
+Ojo al cambiar a una rama vieja: la base local de prueba está en **esquema v15**, así que una
+rama que maneje hasta v14 no la abre. No es una falla —el guardián avisa y no toca los datos—
+y al carpintero no le puede pasar actualizando: su base va siempre hacia adelante.
 
 Este documento existe para poder retomar desde cero. Si arrancás una conversación nueva, leé esto primero.
 
@@ -56,8 +58,9 @@ Reglas de trabajo que puso él:
 
 ## Lo que está hecho
 
-Todo commiteado, **307/307 tests en verde**, y probado abriendo la app contra la base local
-real. Las tandas van en orden: A2, B, A, C y la revisión de Inventario.
+Todo commiteado, **315/315 tests en verde**, y probado abriendo la app contra la base local
+real. Las tandas van en orden: A2, B, A, C y la revisión de Inventario; al final, lo que
+salió el día de la publicación.
 
 ### Tanda A2 — el precio pactado (rama `precio-pactado-no-se-pisa`)
 
@@ -199,6 +202,49 @@ validaciones de stock insuficiente y producto archivado se respetan y se explica
 pantalla, el botón gris de Eliminar dice por qué está gris, y `ApplyPendingStock` **sí** tenía
 test, al revés de lo que suponía el plan.
 
+### 2026-09-07 — lo que salió el día de publicar
+
+Cuatro cosas, todas nacidas de preguntas de Maximiliano y no de un plan.
+
+`4310106` · **Dos cuentas de mano de obra que no seguían a la caja.** Salieron de preguntar
+si pagar un operario podía duplicar algo. Se escribió un test por sospecha antes de afirmar
+nada, y los dos fallaron.
+
+- La **deuda de una persona se partía en dos filas**: en un trabajo la elegía de la lista y
+  en otro tecleaba el mismo nombre, y agrupando por legajo a secas salía dos veces, con el
+  mismo nombre en ambas y ninguna diciendo lo que realmente le debe. Ahora un nombre suelto
+  que coincide con el de alguien de la lista cuenta como esa persona; dos fichas distintas
+  con el mismo nombre **no** se juntan.
+- **Lo pagado por línea miraba solo los egresos.** Una corrección se asienta al revés y
+  lleva la misma línea anotada, así que corregir un pago para abajo dejaba la liquidación
+  diciendo que el operario cobró más de lo que la caja dice que salió. Ahora se netea.
+  *Todavía no se puede disparar desde la app —`CorrectAmount` no está cableado a ninguna
+  pantalla—; se arregló porque es una trampa puesta para el día que se cablee.*
+- Lo que **no** se encontró: pagar dos veces de un clic. Cada pago es un movimiento, el
+  botón se apaga solo, y en pago parcial el importe se recarga con lo que falta.
+
+`5da5cfe` · **Tapar los importes cuando hay alguien mirando.** Botón en la barra de arriba y
+Ctrl+H. Está en Caja, en Trabajos terminados y en la tarjeta de Caja de Inicio.
+
+- **Tapa solo los importes, no las pantallas.** El primer intento difuminaba zonas enteras y
+  estaba mal por dos motivos: un importe borroso deja ver de cuántas cifras es, y se llevaba
+  puesto lo que él quiere seguir mirando —qué trabajos cerró, de quién es cada uno—. Un modo
+  que tapa todo no se usa. `PrivacyMaskConverter` cambia por puntos únicamente el texto que
+  tiene un importe adentro: «Todo pagado» y «Sin operarios» pasan enteros, y en la lista de
+  deudas queda el nombre y se va el número.
+- **Se guarda entre sesiones** a propósito: el momento más descuidado es abrir la app con el
+  cliente al lado. Se puede guardar sin riesgo porque lo tapado se lee como tapado —puntos,
+  no un número cambiado—.
+- El atajo va por `PreviewKeyDown` y no por `InputBindings`, por lo mismo que Esc. **Probado:
+  por `InputBindings` no hacía nada adentro de Trabajos terminados**, porque el botón que
+  abre esa pantalla ya no existe y el foco queda en el aire.
+
+`d2effce` · **La actualización lista avisa donde se ve.** Ya bajaba sola y se instalaba al
+cerrar, pero lo único que lo decía era un badge en la barra lateral y un texto adentro de
+Configuración. Ahora sale también el aviso flotante.
+
+`6ddd762` · **El guardián deja de ser un callejón sin salida.** Ver «Lo que falta».
+
 ---
 
 ## Barandas nuevas (por qué ya no falla en silencio)
@@ -213,57 +259,73 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 
 ---
 
-## Lo que falta
+## Publicado — v2.0.0, el 2026-09-07
 
-### Pendientes de publicación
+El número lo eligió Maximiliano: el salto de 1.9 a 2.0 es porque la caja dejó de ser una
+registradora, que es un cambio de fondo y no una tanda de arreglos.
 
-~~Falta mergear y empujar.~~ **Publicado como `v2.0.0` el 2026-09-07**, a pedido de
-Maximiliano. El número lo eligió él: el salto de 1.9 a 2.0 es porque la caja dejó de ser
-una registradora, que es un cambio de fondo y no una tanda de arreglos.
+**Cada tag se autoinstala solo en la notebook del taller. Confirmar con Maximiliano antes
+de empujarlo, siempre.**
 
-Cómo llega al taller, verificado leyendo las dos puntas:
+### Cómo llega al taller
 
-1. El tag dispara `.github/workflows/release.yml`, que compila en Release, **corre la suite
-   entera** y recién ahí empaqueta con `vpk` y sube el release. Una versión con las pruebas
-   en rojo no se publica: ese paso se agregó justamente porque antes solo compilaba.
+1. El tag dispara `.github/workflows/release.yml`: compila en Release, **corre la suite
+   entera**, y recién ahí empaqueta con `vpk` y sube el release. Una versión con las pruebas
+   en rojo no se publica — ese paso existe porque antes solo compilaba.
 2. Al abrir la app, `App.StartUpdateCheckInBackground` consulta y **descarga sola** en
    segundo plano. Sin internet no pasa nada y la app abre igual.
-3. Cuando terminó de bajar, avisa: un aviso flotante en pantalla, el badge en el menú y el
-   detalle en Configuración.
+3. Cuando terminó de bajar avisa: aviso flotante, badge en el menú, y el detalle en
+   Configuración.
 4. **Se instala sola al cerrar la app** (`ApplyPendingUpdateOnExit`). Él no aprieta nada.
 
-**El callejón sin salida del guardián, cerrado.** Si la base es más nueva que el programa,
-`AppHost.Initialize()` tira antes de llegar a la línea que busca actualizaciones: el cartel
-decía «actualizá antes de abrirla» y actualizar era justo lo único que la app no podía
-hacer. Ahora esa ventana tiene un botón que consulta, baja e instala reabriendo sola.
-Aparece **solo** en ese fallo —los otros no se arreglan actualizando— y se probó forzando
-el caso: `PRAGMA user_version = 99` sobre la base local, abrir, y volver a 15.
+### El ensayo del camino real (lo más importante de este día)
 
-Al carpintero no le puede pasar actualizando hacia adelante: su base va de v12 a v15 y el
-guardián solo salta al revés. Se cerró igual porque sí es alcanzable —una actualización que
-se aplica a medias, o una copia vieja que quedó dando vueltas— y ahí lo dejaba trabado sin
-salida.
-- **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
-- ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, más la
-  recorrida completa de Inventario. Lo que cierra: los cobros de Clientes suman exacto contra
-  lo que Caja dice que entró, el precio pactado aguanta que le toquen la calculadora, pagarle
-  a un operario baja el saldo de la caja por el importe justo, y cargar material después de
-  aprobar mueve el stock y el precio como corresponde según lo que él elija.
-- **El susto de la base «más nueva que el código» es solo de escritorio.** Pasa al pararse en
-  una rama vieja teniendo la base local ya migrada. Al carpintero no le puede pasar por una
-  actualización: su base va de v12 para arriba, y el guardián solo salta al revés.
-- ~~Ensayar la migración.~~ **Hecho el 2026-09-07, con el camino real completo.** Maximiliano
-  no podía abrir su copia instalada y preguntó si al carpintero le iba a pasar lo mismo. Se
-  ensayó en vez de contestarlo de memoria: se puso el respaldo `carpinteria_20260905_173708.db`
-  —**esquema v12**, el mismo estado en que está el taller— y se abrió la **1.9.1 instalada**.
-  Resultado, paso por paso: abrió sin guardián, encontró la 2.0.0, bajó el **delta** (parche
-  sobre la 1.9.1, no los 78 MB), se instaló al cerrar, y al reabrir migró sola
-  `v12 → v15` con las tres migraciones y los datos intactos.
+Maximiliano no podía abrir su copia instalada y preguntó si al carpintero le iba a pasar lo
+mismo. **Se ensayó en vez de contestarlo de memoria**, y esa es la única prueba que vale:
 
-  Lo que le pasó a Maximiliano es de escritorio y no se puede repetir en el taller: su base
-  estaba en v15 porque el build de desarrollo comparte la carpeta `Documents\MetroCarpinteria`
-  con la copia instalada. El carpintero no tiene build de desarrollo.
-- **Opcional: ensayar la migración con la base del carpintero.** La app ya hace respaldo al cerrar (hasta 30 copias). Cierra la app antes de copiar (la base corre en modo WAL). Guardarla en `.local/` — **agregar `.local/` al `.gitignore` antes**, tiene nombres y teléfonos de sus clientes.
+Se puso el respaldo `carpinteria_20260905_173708.db` —**esquema v12**, el estado exacto del
+taller— y se abrió la **1.9.1 instalada**, no el build de desarrollo. Abrió sin guardián,
+encontró la 2.0.0, bajó el **delta** (un parche contra la 1.9.1, 454 KB, no los 78 MB), se
+instaló al cerrar, y al reabrir migró sola `v12 → v15` con los datos intactos.
+
+Lo que le pasaba a Maximiliano era de escritorio y no se repite en el taller: su base estaba
+en v15 porque **el build de desarrollo comparte `Documents\MetroCarpinteria` con la copia
+instalada**. El carpintero no tiene build de desarrollo. Ojo con esto al desarrollar: correr
+el build de acá te migra la base que también usa tu copia instalada.
+
+---
+
+## Lo que falta
+
+### Una decisión, y nada más
+
+Después de `v2.0.0` quedaron en `master` dos commits sin publicar. Uno es este documento; el
+otro es `6ddd762`, **el callejón sin salida del guardián**:
+
+Si la base es más nueva que el programa, `AppHost.Initialize()` tira antes de llegar a la
+línea que busca actualizaciones. El cartel decía «actualizá antes de abrirla» y actualizar
+era justo lo único que la app no podía hacer. Ahora esa ventana tiene «Actualizar ahora»:
+consulta, baja, instala y reabre sola. Aparece **solo** en ese fallo —un problema de
+permisos no se arregla actualizando— y se probó forzando el caso real: `PRAGMA user_version
+= 99` sobre la base local, abrir la app, ver la ventana, y devolverla a 15.
+
+**No es urgente**: por el camino normal el carpintero no lo toca, y eso quedó probado en el
+ensayo de arriba. Es una red por si una actualización se aplica a medias o queda dando
+vueltas una copia vieja. La recomendación fue **dejarlo para la próxima versión**, en vez de
+publicar un tag solo por esto — que además es lo que él prefiere: una sola versión con todo
+adentro, en vez de ir tirando actualizaciones cada rato.
+
+### Lo único sin verificar
+
+Que él **vea** el aviso de actualización. El camino técnico está probado de punta a punta,
+pero el aviso de este salto lo dibuja la 1.9.1, que solo tiene el badge — el aviso flotante
+va a estar recién de la próxima actualización en adelante. Vale preguntarle si lo notó.
+
+### Opcional, si alguna vez hace falta
+
+Ensayar con la base **del carpintero**. La app ya hace respaldo al cerrar (hasta 30 copias).
+Cerrá la app antes de copiar (la base corre en modo WAL) y guardala en `.local/` —
+**agregar `.local/` al `.gitignore` antes**, tiene nombres y teléfonos de sus clientes.
 
 ---
 
@@ -295,7 +357,19 @@ Para no volver a proponerlo:
   Tornillo, una salida de 2 u. y su devolución: se asignaron cobrándoselos al cliente y después
   se quitaron, para ver que el precio subía y volvía. El stock y el precio quedaron como
   estaban; los dos renglones del historial no, porque no se borran.
+- **La copia instalada de Maximiliano vive en `%LOCALAPPDATA%\MetroCarpinteria`** y comparte
+  la carpeta de datos con el build de desarrollo. Correr el build de acá **le migra la base
+  que también usa su copia instalada**: es lo que el 2026-09-07 le dejó la instalada sin
+  poder abrir, hasta que se actualizó a la 2.0.0.
+- **Ver el esquema de un archivo**: `PRAGMA user_version`. Los respaldos de
+  `Documentos\MetroCarpinteriaackups` van de v10 a v15; el último en v12 —el estado en que
+  está el taller— es `carpinteria_20260905_173708.db`, y sirve para volver a ensayar una
+  actualización desde cero.
 - El plan de esta ronda está en `~/.claude/plans/eventual-baking-parrot.md`.
 - **Correr todo**: `dotnet build -warnaserror` y después `dotnet run --no-build` en `tests\MetroCarpinteria.SmokeTest`.
+- **Correr lo mismo que corre la publicación**: `dotnet build MetroCarpinteria.sln -c Release
+  --nologo -warnaserror` y `dotnet run --project tests/MetroCarpinteria.SmokeTest -c Release
+  --no-build`. Conviene antes de empujar un tag: si eso falla, la publicación se corta a
+  mitad de camino.
 - **Abrir la app**: `src\MetroCarpinteria.App\bin\Debug\net8.0-windows\MetroCarpinteria.exe`. Cerrarla antes de recompilar o el build falla por archivo bloqueado.
 - El plan completo original está en `~/.claude/plans/fijate-esto-me-dijo-jaunty-penguin.md`.
