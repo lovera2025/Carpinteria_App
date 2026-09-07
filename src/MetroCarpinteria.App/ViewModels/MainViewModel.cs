@@ -206,6 +206,13 @@ public class MainViewModel : ObservableObject
         UpdateReadyVersion = version;
         HasUpdateReady = true;
         _settingsViewModel.NotifyUpdateReady(version);
+
+        // El badge del menú solo lo ve quien ya está mirando la barra lateral, y el texto
+        // completo vive adentro de Configuración, que es donde menos entra. La versión ya
+        // está bajada y se instala sola al cerrar: eso hay que decirlo una vez, donde se
+        // vea, y sin pedir que apriete nada.
+        AppHost.NotificationService.Success(
+            $"Se descargó la versión {version}. Se instala sola la próxima vez que cierres la app.");
     }
 
     public ICommand NavigateCommand { get; }

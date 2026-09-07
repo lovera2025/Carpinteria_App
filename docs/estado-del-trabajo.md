@@ -1,6 +1,6 @@
 # Estado del trabajo — la caja del taller
 
-Última actualización: **2026-09-06**.
+Última actualización: **2026-09-07**. Publicado: **v2.0.0**.
 
 **Las cinco tandas están hechas** —A2, A, B, C y la revisión de Inventario—, la suite está en
 verde (309/309) y **no queda nada de plata abierto**: el riesgo de pagar dos veces un jornal
@@ -217,9 +217,20 @@ Además: **el saldo se calcula en un solo lugar** (`CashRegisterService.Signed`)
 
 ### Pendientes de publicación
 
-**El código está listo.** Falta mergear `inventario-revision` a `master`, acordar el número
-(el último tag es `v1.9.1`; se propuso `v1.10.0`) y empujarlo. Sale **una sola versión** con
-las cinco tandas adentro.
+~~Falta mergear y empujar.~~ **Publicado como `v2.0.0` el 2026-09-07**, a pedido de
+Maximiliano. El número lo eligió él: el salto de 1.9 a 2.0 es porque la caja dejó de ser
+una registradora, que es un cambio de fondo y no una tanda de arreglos.
+
+Cómo llega al taller, verificado leyendo las dos puntas:
+
+1. El tag dispara `.github/workflows/release.yml`, que compila en Release, **corre la suite
+   entera** y recién ahí empaqueta con `vpk` y sube el release. Una versión con las pruebas
+   en rojo no se publica: ese paso se agregó justamente porque antes solo compilaba.
+2. Al abrir la app, `App.StartUpdateCheckInBackground` consulta y **descarga sola** en
+   segundo plano. Sin internet no pasa nada y la app abre igual.
+3. Cuando terminó de bajar, avisa: un aviso flotante en pantalla, el badge en el menú y el
+   detalle en Configuración.
+4. **Se instala sola al cerrar la app** (`ApplyPendingUpdateOnExit`). Él no aprieta nada.
 - **Cada tag se autoinstala solo en la notebook del taller.** Confirmar con Maximiliano antes de empujarlo, siempre.
 - ~~Recorrer las pantallas que se tocaron.~~ **Hecho el 2026-09-06**, las siete, más la
   recorrida completa de Inventario. Lo que cierra: los cobros de Clientes suman exacto contra
