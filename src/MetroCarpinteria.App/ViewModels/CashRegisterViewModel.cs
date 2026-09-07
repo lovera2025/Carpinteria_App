@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows.Input;
 using MetroCarpinteria.App.Data.Entities;
 using MetroCarpinteria.App.Helpers;
@@ -57,7 +57,7 @@ public class CashRegisterViewModel : ViewModelBase
         _filterMethod = FilterMethods[0];
 
         LoadCommand = new RelayCommand(_ => Load());
-        RegisterMovementCommand = new RelayCommand(_ => RegisterMovement());
+        RegisterMovementCommand = new RelayCommand(_ => RegisterMovement(), _ => CanRegisterMovement);
         DismissSuspiciousCommand = new RelayCommand(_ => DismissSuspicious());
         DiscardOpeningCommand = new AsyncRelayCommand(DiscardOpeningAsync);
         OpenSettlementsCommand = new RelayCommand(_ => IsShowingSettlements = true);
@@ -178,8 +178,26 @@ public class CashRegisterViewModel : ViewModelBase
     public string MovementAmount
     {
         get => _movementAmount;
-        set => SetProperty(ref _movementAmount, value);
+        set
+        {
+            if (SetProperty(ref _movementAmount, value))
+            {
+                OnPropertyChanged(nameof(CanRegisterMovement));
+            }
+        }
     }
+
+    /// <summary>
+    /// Si hay algo que registrar. Apaga el botón mientras no lo haya.
+    /// </summary>
+    /// <remarks>
+    /// Antes el botón estaba siempre encendido y apretarlo sin monto contestaba «Monto
+    /// inválido» en la esquina opuesta de la pantalla. Cargando varios gastos seguidos —el
+    /// campo se limpia después de cada uno— eso pasa solo. Un botón apagado no necesita
+    /// explicar nada.
+    /// </remarks>
+    public bool CanRegisterMovement =>
+        NumberInput.TryParseMoney(MovementAmount, out var monto) && monto > 0m;
 
     public string MovementReason
     {
@@ -320,13 +338,38 @@ public class CashRegisterViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Por qué no se pudo leer el monto, dicho en concreto.
+    /// </summary>
+    /// <remarks>
+    /// «Monto inválido» no alcanzaba: el 2026-09-07 el motivo quedó escrito en el campo
+    /// del monto y el importe en el de abajo, y el mensaje no daba ninguna pista — se
+    /// probó cambiando el medio de pago, que no tenía nada que ver. Si los dos campos
+    /// están cambiados de lugar, la app lo puede ver y conviene que lo diga.
+    /// </remarks>
+    private string DescribeBadAmount()
+    {
+        if (string.IsNullOrWhiteSpace(MovementAmount))
+        {
+            return "Falta el monto.";
+        }
+
+        if (NumberInput.TryParseMoney(MovementReason, out _))
+        {
+            return $"En el monto dice «{MovementAmount.Trim()}» y en el motivo un número. " +
+                   "¿Los escribiste al revés?";
+        }
+
+        return $"El monto dice «{MovementAmount.Trim()}», que no es un número.";
+    }
+
     private void RegisterMovement()
     {
         try
         {
             if (!NumberInput.TryParseMoney(MovementAmount, out var amount))
             {
-                throw new InvalidOperationException("Monto inválido.");
+                throw new InvalidOperationException(DescribeBadAmount());
             }
 
             var type = MovementIsIncome ? CashMovementType.Income : CashMovementType.Expense;

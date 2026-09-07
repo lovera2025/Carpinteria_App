@@ -1249,6 +1249,56 @@ internal static class UiSmokeTests
             Assert.False(PrivacyMaskConverter.HasMoney(null), "null tampoco");
         });
 
+        run("UI: el campo de plata pone los miles solo y no deja escribir letras", () =>
+        {
+            // Nace del caso real del 2026-09-07: «arraial herrajes» quedó escrito en el
+            // campo Monto y el importe en Motivo. Si en el monto no entran letras, ese
+            // error no se puede cometer.
+            var Fmt = MetroCarpinteria.App.Controls.Ui.FormatMoneyInput;
+
+            Assert.Equal(Fmt("625800"), "625.800", "los miles se separan solos");
+            Assert.Equal(Fmt("1625800"), "1.625.800", "y también los millones");
+            Assert.Equal(Fmt("500"), "500", "hasta tres cifras no lleva punto");
+            Assert.Equal(Fmt("1000"), "1.000", "cuatro sí");
+            Assert.Equal(Fmt("625800,5"), "625.800,5", "la coma decimal se respeta");
+            Assert.Equal(Fmt("625800,50"), "625.800,50", "con dos decimales también");
+
+            // El punto es separador de miles y se descarta; la coma es el decimal. Sin esta
+            // regla la función no sabía releer lo suyo: insertaba «6.258» y en la tecla
+            // siguiente lo volvía a leer como 6,25. Además arregla el «1234.500», que antes
+            // se guardaba como 1.234,50 sin avisar.
+            Assert.Equal(Fmt("1234.500"), "1.234.500", "el punto son miles, no decimales");
+            Assert.Equal(Fmt("6.258"), "6.258", "y lo que escribe se tiene que poder releer igual");
+            Assert.Equal(Fmt(Fmt(Fmt("625800"))), "625.800", "formatear dos veces no cambia nada");
+            Assert.Equal(Fmt("625800,555"), "625.800,55", "no se aceptan más de dos decimales");
+
+            // Las letras no llegan al valor.
+            Assert.Equal(Fmt("arraial herrajes"), string.Empty, "un texto no deja ningún número");
+            Assert.Equal(Fmt("3500 pesos"), "3.500", "y de una mezcla queda solo el número");
+            Assert.Equal(Fmt(""), string.Empty, "vacío sigue vacío");
+            Assert.Equal(Fmt(null), string.Empty, "null también");
+
+            Assert.Equal(Fmt("007"), "7", "los ceros de adelante no se guardan");
+            Assert.Equal(Fmt(",50"), "0,50", "la coma sola arranca en cero");
+
+            // Y lo más importante: lo que el campo muestra tiene que leerse igual.
+            foreach (var escrito in new[] { "625800", "1625800", "625800,50", "1234.500", "1000" })
+            {
+                var mostrado = Fmt(escrito);
+                Assert.True(
+                    NumberInput.TryParseMoney(mostrado, out var leido),
+                    $"lo que muestra el campo tiene que poder leerse: «{mostrado}»");
+                Assert.Equal(
+                    NumberInput.Format(leido).Replace(".", ","),
+                    NumberInput.Format(leido).Replace(".", ","),
+                    "el valor no puede cambiar entre lo que se ve y lo que se guarda");
+            }
+
+            Assert.Equal(Fmt("625800"), "625.800", "y el caso que lo empezó todo");
+            Assert.True(NumberInput.TryParseMoney(Fmt("625800"), out var monto), "se lee");
+            Assert.Equal(monto, 625800m, "seiscientos veinticinco mil ochocientos, no 625,8");
+        });
+
         run("UI: la base más nueva que el programa ofrece actualizar, y los otros fallos no", () =>
         {
             // El cartel dice «actualizá antes de abrirla» y hasta ahora no daba con qué:

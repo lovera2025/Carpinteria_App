@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ctl="clr-namespace:MetroCarpinteria.App.Controls"
              mc:Ignorable="d"
              d:DesignHeight="700"
              d:DesignWidth="1000">
@@ -114,13 +115,28 @@
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="12" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
+                            <!-- Angosto y con el $ adelante, a propósito. Antes era un cajón
+                                 ancho igual al de Motivo, justo abajo y con una etiqueta que
+                                 empieza igual: escribir el motivo acá era cuestión de tiempo,
+                                 y pasó. Un campo que se ve como plata no se confunde. -->
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="Monto" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
-                                <TextBox Text="{Binding MovementAmount, UpdateSourceTrigger=PropertyChanged}" Padding="8,8" />
+                                <Border BorderBrush="{DynamicResource BorderBrushToken}" BorderThickness="1"
+                                        CornerRadius="4" Padding="8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="$" VerticalAlignment="Center" Margin="0,0,6,0"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        <TextBox Text="{Binding MovementAmount, UpdateSourceTrigger=PropertyChanged}"
+                                                 ctl:Ui.MoneyBox="True"
+                                                 ctl:Ui.Placeholder="0"
+                                                 Width="150" Padding="0,8" BorderThickness="0"
+                                                 Background="Transparent" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="Medio" Style="{StaticResource SubtitleStyle}" Margin="0,0,0,4" />
